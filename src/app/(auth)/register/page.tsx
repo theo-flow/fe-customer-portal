@@ -3,6 +3,7 @@ import { useState, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { signUp, friendlyError } from '@/lib/auth'
+import { LogoMark } from '@/components/LogoMark'
 
 // ── Constants ──────────────────────────────────────────────────────────────
 const PRODUCTS = [
@@ -261,12 +262,7 @@ export default function RegisterPage() {
         <motion.div className="flex items-center gap-2.5 flex-shrink-0"
           initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.35 }}>
-          <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
-               style={{ background:'rgba(255,255,255,0.10)', border:'1px solid rgba(255,255,255,0.16)' }}>
-            <svg className="w-3.5 h-3.5 text-white" viewBox="0 0 16 16" fill="none">
-              <path d="M3 4h10M3 8h7M3 12h5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
-            </svg>
-          </div>
+          <LogoMark size={28} className="text-white"/>
           <span className="font-display text-[1rem] tracking-tight text-white">theoflow</span>
         </motion.div>
 

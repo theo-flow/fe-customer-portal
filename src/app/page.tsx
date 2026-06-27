@@ -2,6 +2,7 @@
 import { useRef } from 'react'
 import { useAnimationFrame } from 'framer-motion'
 import Link from 'next/link'
+import { LogoMark } from '@/components/LogoMark'
 
 /* ═══════════════════════════════════════════════════════
    theoflow — Landing Page
@@ -79,7 +80,7 @@ function Hero() {
         <Link href="/register"
           className="flex items-center gap-2 bg-black text-white text-[13px] font-medium
                      px-[22px] py-[11px] rounded-full hover:bg-gray-800 transition-colors">
-          <Mark size={14} invert />
+          <LogoMark size={14} className="text-white"/>
           Upload a document
         </Link>
         <Link href="/login"
@@ -413,15 +414,6 @@ function Footer() {
 }
 
 /* ── Shared: logo mark ────────────────────────────────────────── */
-function Mark({ size = 26, invert = false }: { size?: number; invert?: boolean }) {
-  return (
-    <div style={{ width:size, height:size }}
-         className={`rounded-md flex items-center justify-center flex-shrink-0
-           ${invert ? 'bg-white' : 'bg-black'}`}>
-      <svg style={{ width:size*0.52, height:size*0.52 }} viewBox="0 0 16 16" fill="none">
-        <path d="M2 4h12M2 8h8M2 12h5" stroke={invert ? 'black' : 'white'}
-              strokeWidth="2" strokeLinecap="round"/>
-      </svg>
-    </div>
-  )
+function Mark({ size = 26 }: { size?: number }) {
+  return <LogoMark size={size} className="text-black"/>
 }

@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { LogoMark } from '@/components/LogoMark'
 
 const NAV = [
   { href: '/upload',    label: 'Upload' },
@@ -26,12 +27,7 @@ export function TopNav() {
         <div className="max-w-5xl mx-auto px-4 sm:px-6 flex items-center h-16 gap-8">
           {/* Logo */}
           <Link href="/dashboard" className="flex items-center gap-2.5 flex-shrink-0">
-            <div className="w-7 h-7 rounded-lg bg-black flex items-center justify-center">
-              <svg className="w-3.5 h-3.5 text-white" viewBox="0 0 16 16" fill="none">
-                <path d="M3 4h10M3 8h7M3 12h5" stroke="currentColor" strokeWidth="1.8"
-                      strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            </div>
+            <LogoMark size={28} className="text-black"/>
             <span className="font-display text-lg text-gray-900 tracking-tight">theoflow</span>
           </Link>
 

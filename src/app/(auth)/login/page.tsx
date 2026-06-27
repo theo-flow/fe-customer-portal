@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { signIn, friendlyError } from '@/lib/auth'
+import { LogoMark } from '@/components/LogoMark'
 
 export default function LoginPage() {
   return (
@@ -167,14 +168,7 @@ function LoginForm() {
 
 
 function Mark() {
-  return (
-    <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
-         style={{ background:'rgba(255,255,255,0.10)', border:'1px solid rgba(255,255,255,0.16)' }}>
-      <svg className="w-3.5 h-3.5 text-white" viewBox="0 0 16 16" fill="none">
-        <path d="M3 4h10M3 8h7M3 12h5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
-      </svg>
-    </div>
-  )
+  return <LogoMark size={28} className="text-white"/>
 }
 
 function DarkInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
