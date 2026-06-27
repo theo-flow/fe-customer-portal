@@ -3,38 +3,40 @@ interface Props {
   className?: string
 }
 
-export function LogoMark({ size = 28, className = '' }: Props) {
+export function LogoMark({ size, className = '' }: Props) {
   return (
     <svg
-      width={size}
-      height={size}
+      width={size ?? '100%'}
+      height={size ?? '100%'}
       viewBox="0 0 100 100"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       className={className}
       aria-label="theoflow"
     >
-      {/* Back document */}
-      <rect x="33" y="18" width="36" height="46" rx="3"
-            stroke="currentColor" strokeWidth="2.2" opacity="0.28"/>
+      {/* Back document — dashed, very faded (depth) */}
+      <rect x="37" y="14" width="28" height="46" rx="1.5"
+            stroke="currentColor" strokeWidth="1.6" strokeDasharray="3 2.5" opacity="0.2"/>
       {/* Mid document */}
-      <rect x="29" y="22" width="36" height="46" rx="3"
-            stroke="currentColor" strokeWidth="2.2" opacity="0.55"/>
-      {/* Front document */}
-      <rect x="25" y="26" width="36" height="46" rx="3"
-            stroke="currentColor" strokeWidth="2.4"/>
-      {/* Document content lines */}
-      <line x1="33" y1="39" x2="53" y2="39"
-            stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" opacity="0.75"/>
-      <line x1="33" y1="47" x2="53" y2="47"
-            stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" opacity="0.5"/>
-      <line x1="33" y1="55" x2="44" y2="55"
-            stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" opacity="0.3"/>
-      {/* Flow arrow */}
-      <line x1="64" y1="50" x2="75" y2="50"
-            stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"/>
-      <polyline points="71,45 75,50 71,55"
-                stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+      <rect x="33" y="18" width="28" height="46" rx="1.5"
+            stroke="currentColor" strokeWidth="1.8" opacity="0.45"/>
+      {/* Front document — heavy border */}
+      <rect x="29" y="22" width="28" height="46" rx="1.5"
+            stroke="currentColor" strokeWidth="3.2"/>
+      {/* Form header rule — thick bar across top of front doc */}
+      <line x1="29" y1="33" x2="57" y2="33"
+            stroke="currentColor" strokeWidth="3.2"/>
+      {/* Content lines — thick/thin contrast like old typeset text */}
+      <line x1="34" y1="41" x2="53" y2="41"
+            stroke="currentColor" strokeWidth="2.2" strokeLinecap="square"/>
+      <line x1="34" y1="49" x2="53" y2="49"
+            stroke="currentColor" strokeWidth="1.6" strokeLinecap="square" opacity="0.6"/>
+      <line x1="34" y1="57" x2="46" y2="57"
+            stroke="currentColor" strokeWidth="1.6" strokeLinecap="square" opacity="0.35"/>
+      {/* Flow arrow — solid filled head, engraving weight */}
+      <line x1="61" y1="46" x2="73" y2="46"
+            stroke="currentColor" strokeWidth="2.8" strokeLinecap="square"/>
+      <polygon points="69,40 77,46 69,52" fill="currentColor"/>
     </svg>
   )
 }

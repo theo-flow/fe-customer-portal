@@ -26,9 +26,11 @@ export function TopNav() {
       <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-gray-100">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 flex items-center h-16 gap-8">
           {/* Logo */}
-          <Link href="/dashboard" className="flex items-center gap-2.5 flex-shrink-0">
-            <LogoMark size={28} className="text-black"/>
-            <span className="font-display text-lg text-gray-900 tracking-tight">theoflow</span>
+          <Link href="/dashboard" className="flex items-center gap-3 flex-shrink-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10">
+              <LogoMark className="text-black"/>
+            </div>
+            <span className="font-display text-xl sm:text-2xl text-gray-900 tracking-tight">theoflow</span>
           </Link>
 
           {/* Nav links — hidden on mobile */}

@@ -17,10 +17,18 @@ const PRODUCTS = [
 ]
 const DOC_TYPES = ['Application Form', 'Claim Form']
 const ORG_TYPES = [
-  'Insurance Broker',
-  'Insurer',
-  'Financial Services Provider',
-  'Managing Agent',
+  'Agriculture, Forestry & Fishing',
+  'Construction & Engineering',
+  'Manufacturing',
+  'Retail & Wholesale Trade',
+  'Information Technology (ICT)',
+  'Financial & Professional Services',
+  'Healthcare & Medical Services',
+  'Education & Training',
+  'Hospitality, Tourism & Events',
+  'Transport, Logistics & Automotive',
+  'Real Estate & Property Services',
+  'Creative, Media & Personal Services',
   'Other',
 ]
 
@@ -262,7 +270,7 @@ export default function RegisterPage() {
         <motion.div className="flex items-center gap-2.5 flex-shrink-0"
           initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.35 }}>
-          <LogoMark size={28} className="text-white"/>
+          <LogoMark size={40} className="text-white"/>
           <span className="font-display text-[1rem] tracking-tight text-white">theoflow</span>
         </motion.div>
 
@@ -661,13 +669,13 @@ export default function RegisterPage() {
 
       {/* ── RIGHT panel: gradient art ────────────────────────────── */}
       <div className="hidden lg:block lg:w-[55%] xl:w-[58%] flex-shrink-0 p-5">
-        <div className="w-full h-full rounded-3xl overflow-hidden relative" style={{ minHeight:'94vh' }}>
+        <div className="w-full h-full rounded-3xl relative" style={{ minHeight:'94vh', contain:'paint' }}>
           <div className="absolute inset-0" style={{ background:'#F5EDD8' }}/>
-          <div className="blob-one absolute" style={{ top:'-8%', right:'-8%', width:'88%', height:'80%', background:'radial-gradient(ellipse at 58% 38%, #F2C060 0%, #E8A030 52%, transparent 78%)', filter:'blur(64px)', opacity:0.95, willChange:'transform' }}/>
-          <div className="blob-two absolute" style={{ bottom:'-12%', left:'-8%', width:'85%', height:'82%', background:'radial-gradient(ellipse at 38% 62%, #4E82CC 0%, #3668B8 48%, transparent 75%)', filter:'blur(64px)', opacity:0.92, willChange:'transform' }}/>
-          <div className="blob-three absolute" style={{ top:'-5%', left:'-5%', width:'68%', height:'65%', background:'radial-gradient(ellipse at 32% 32%, #7AAEE0 0%, #5890D4 52%, transparent 76%)', filter:'blur(56px)', opacity:0.75, willChange:'transform' }}/>
-          <div className="blob-four absolute" style={{ top:'22%', left:'18%', width:'62%', height:'56%', background:'radial-gradient(ellipse at 50% 50%, #FBF0D5 0%, #F5DFA8 62%, transparent 82%)', filter:'blur(52px)', opacity:0.68, willChange:'transform' }}/>
-          <div className="blob-five absolute" style={{ bottom:'-4%', right:'-4%', width:'62%', height:'58%', background:'radial-gradient(ellipse at 62% 65%, #F0B850 0%, #E89820 56%, transparent 78%)', filter:'blur(58px)', opacity:0.82, willChange:'transform' }}/>
+          <div className="absolute" style={{ top:'0', right:'0', width:'88%', height:'80%', transform:'translate(8%,-8%)', background:'radial-gradient(ellipse at 58% 38%, #F2C060 0%, #E8A030 52%, transparent 78%)', filter:'blur(64px)', opacity:0.95 }}/>
+          <div className="absolute" style={{ bottom:'0', left:'0', width:'85%', height:'82%', transform:'translate(-8%,12%)', background:'radial-gradient(ellipse at 38% 62%, #4E82CC 0%, #3668B8 48%, transparent 75%)', filter:'blur(64px)', opacity:0.92 }}/>
+          <div className="absolute" style={{ top:'0', left:'0', width:'68%', height:'65%', transform:'translate(-5%,-5%)', background:'radial-gradient(ellipse at 32% 32%, #7AAEE0 0%, #5890D4 52%, transparent 76%)', filter:'blur(56px)', opacity:0.75 }}/>
+          <div className="absolute" style={{ top:'22%', left:'18%', width:'62%', height:'56%', background:'radial-gradient(ellipse at 50% 50%, #FBF0D5 0%, #F5DFA8 62%, transparent 82%)', filter:'blur(52px)', opacity:0.68 }}/>
+          <div className="absolute" style={{ bottom:'0', right:'0', width:'62%', height:'58%', transform:'translate(4%,4%)', background:'radial-gradient(ellipse at 62% 65%, #F0B850 0%, #E89820 56%, transparent 78%)', filter:'blur(58px)', opacity:0.82 }}/>
           <svg className="absolute inset-0 w-full h-full pointer-events-none"
                style={{ opacity:0.45, mixBlendMode:'overlay' }}>
             <filter id="grain-reg">
@@ -676,6 +684,7 @@ export default function RegisterPage() {
             </filter>
             <rect width="100%" height="100%" filter="url(#grain-reg)"/>
           </svg>
+
         </div>
       </div>
     </div>
