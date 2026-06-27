@@ -179,7 +179,7 @@ function Logos() {
 function Stats() {
   return (
     <section className="max-w-[1200px] mx-auto px-8 py-28 grid md:grid-cols-2 gap-24 items-center">
-      <div className="flex gap-16">
+      <div className="flex gap-8 sm:gap-16">
         {[
           { n: '99.2%', d: 'field extraction accuracy across all form types' },
           { n: '<5 min', d: 'average time from upload to filing' },
@@ -293,7 +293,7 @@ function Card({ id, base, warm, cool }: {
 /* ── How it works ─────────────────────────────────────────────── */
 function Steps() {
   return (
-    <section className="bg-[#F9F8F6] px-8 py-28 border-t border-black/[0.06]">
+    <section className="bg-[#F5F6FA] px-8 py-28 border-t border-black/[0.06]">
       <div className="max-w-[1200px] mx-auto grid lg:grid-cols-2 gap-20 items-start">
         <div>
           <h2 className="font-display text-[clamp(2rem,3.5vw,3.2rem)] leading-tight

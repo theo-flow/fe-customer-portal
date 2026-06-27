@@ -2,7 +2,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
 import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb'
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
-import { fromNodeProviderChain } from '@aws-sdk/credential-providers'
+import { fromIni } from '@aws-sdk/credential-providers'
 import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
 
@@ -10,19 +10,19 @@ const REGION = process.env.AWS_REGION          ?? 'af-south-1'
 const BUCKET = process.env.S3_INTAKE_BUCKET    ?? 'daai-insure-intake'
 const TABLE  = process.env.DYNAMODB_TABLE_ORGS ?? 'daai-insure-orgs'
 
-const credentials = fromNodeProviderChain({
-  // Falls back to execution role in Lambda; uses local profile in dev
-  profile: process.env.AWS_PROFILE ?? 'Sithembiso',
-})
+function credentials() {
+  const profile = process.env.AWS_PROFILE
+  return profile ? fromIni({ profile }) : undefined
+}
 
 function dynamo() {
   return DynamoDBDocumentClient.from(
-    new DynamoDBClient({ region: REGION, credentials })
+    new DynamoDBClient({ region: REGION, credentials: credentials() })
   )
 }
 
 function s3() {
-  return new S3Client({ region: REGION, credentials })
+  return new S3Client({ region: REGION, credentials: credentials() })
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/

@@ -1,107 +1,180 @@
+'use client'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { StatusBadge } from '@/components/StatusBadge'
 
-const STATS = [
-  { label: 'Total', value: '24', icon: '📄' },
-  { label: 'Processing', value: '3',  icon: '⚙️' },
-  { label: 'Complete', value: '19', icon: '✅' },
-  { label: 'Failed', value: '2',  icon: '❌' },
-]
+interface Doc {
+  docId:     string
+  product:   string
+  docType:   string
+  filename:  string
+  status:    'pending' | 'received' | 'processing' | 'complete' | 'failed'
+  createdAt: string
+}
 
-const SUBMISSIONS = [
-  { id: 'DAI-2026-00142', type: 'Claim Form',    uploaded: '25 Jun 2026', status: 'processing' as const },
-  { id: 'DAI-2026-00141', type: 'Life Policy',   uploaded: '24 Jun 2026', status: 'complete' as const },
-  { id: 'DAI-2026-00140', type: 'Claim Form',    uploaded: '23 Jun 2026', status: 'failed' as const },
-  { id: 'DAI-2026-00139', type: 'Death Benefit', uploaded: '22 Jun 2026', status: 'complete' as const },
-  { id: 'DAI-2026-00138', type: 'Life Policy',   uploaded: '21 Jun 2026', status: 'complete' as const },
-  { id: 'DAI-2026-00137', type: 'Disability',    uploaded: '20 Jun 2026', status: 'complete' as const },
-]
+interface Summary { items: Doc[]; total: number; processing: number; complete: number; failed: number }
+
+function fmtDate(iso: string) {
+  return new Date(iso).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })
+}
 
 export default function DashboardPage() {
+  const [data,    setData]    = useState<Summary | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error,   setError]   = useState('')
+
+  useEffect(() => {
+    fetch('/api/documents')
+      .then(r => r.ok ? r.json() : Promise.reject(r.status))
+      .then((d: Summary) => setData(d))
+      .catch(() => setError('Could not load documents.'))
+      .finally(() => setLoading(false))
+  }, [])
+
+  const stats = [
+    { label: 'Total',      value: data?.total      ?? 0 },
+    { label: 'In progress',value: data?.processing  ?? 0 },
+    { label: 'Complete',   value: data?.complete    ?? 0 },
+    { label: 'Failed',     value: data?.failed      ?? 0 },
+  ]
+
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="font-display text-2xl sm:text-3xl text-forest-deep">My Documents</h1>
-        <p className="text-slate text-sm mt-1">All your insurance form submissions</p>
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6 gap-4">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-400 mb-0.5">
+            My documents
+          </p>
+          <h1 className="font-display text-[1.8rem] sm:text-[2.1rem] leading-tight text-black">
+            Submissions
+          </h1>
+        </div>
+        <Link href="/upload"
+          className="flex-shrink-0 flex items-center gap-2 bg-black text-white
+                     text-[13px] font-medium px-5 py-2.5 rounded-full
+                     hover:bg-gray-900 transition-colors">
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24"
+               stroke="currentColor" strokeWidth={2.2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4"/>
+          </svg>
+          <span className="hidden sm:inline">Upload</span>
+        </Link>
       </div>
 
-      {/* Stats bar */}
+      {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-        {STATS.map(s => (
-          <div key={s.label} className="bg-white rounded-xl border border-gray-200 p-4">
-            <p className="text-2xl font-display text-forest-deep">{s.value}</p>
-            <p className="text-xs text-slate mt-0.5">{s.label}</p>
+        {stats.map(s => (
+          <div key={s.label} className="bg-white rounded-xl border border-black/[0.08] px-4 py-4">
+            <p className="font-display text-[1.8rem] leading-none text-black">
+              {loading ? '—' : s.value}
+            </p>
+            <p className="text-[12px] text-gray-400 mt-1.5">{s.label}</p>
           </div>
         ))}
       </div>
 
-      {/* Upload CTA */}
-      <Link href="/upload"
-        className="flex items-center gap-3 bg-forest-deep text-white rounded-xl px-5 py-4 mb-6 hover:bg-forest-mid transition-colors group">
-        <div className="w-9 h-9 rounded-lg bg-accent/20 flex items-center justify-center flex-shrink-0 group-hover:bg-accent/30 transition-colors">
-          <svg className="w-5 h-5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-          </svg>
-        </div>
-        <div className="min-w-0">
-          <p className="font-semibold text-sm">Upload a new document</p>
-          <p className="text-white/60 text-xs">PDF, JPG or PNG · max 10MB</p>
-        </div>
-        <svg className="w-4 h-4 text-white/40 ml-auto flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-        </svg>
-      </Link>
+      {error && (
+        <p className="text-[13px] text-red-500 mb-4">{error}</p>
+      )}
 
-      {/* Table — card on mobile, full table on desktop */}
-      <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-        {/* Desktop table */}
-        <table className="hidden sm:table w-full text-sm">
-          <thead>
-            <tr className="border-b border-gray-100 bg-gray-50/60">
-              <th className="text-left px-5 py-3.5 text-xs font-medium text-slate uppercase tracking-wide">Reference</th>
-              <th className="text-left px-5 py-3.5 text-xs font-medium text-slate uppercase tracking-wide">Form Type</th>
-              <th className="text-left px-5 py-3.5 text-xs font-medium text-slate uppercase tracking-wide">Uploaded</th>
-              <th className="text-left px-5 py-3.5 text-xs font-medium text-slate uppercase tracking-wide">Status</th>
-              <th className="px-5 py-3.5" />
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {SUBMISSIONS.map(sub => (
-              <tr key={sub.id} className="hover:bg-gray-50/60 transition-colors">
-                <td className="px-5 py-4 font-mono text-xs text-gray-700">{sub.id}</td>
-                <td className="px-5 py-4 text-gray-800">{sub.type}</td>
-                <td className="px-5 py-4 text-slate">{sub.uploaded}</td>
-                <td className="px-5 py-4"><StatusBadge status={sub.status} /></td>
-                <td className="px-5 py-4 text-right">
-                  <Link href={`/status/${sub.id}`}
-                    className="text-xs text-accent hover:text-green-600 font-medium transition-colors">
-                    {sub.status === 'complete' ? 'Download →' : 'Track →'}
-                  </Link>
-                </td>
+      {/* Empty state */}
+      {!loading && !error && data?.total === 0 && (
+        <div className="bg-white rounded-2xl border border-black/[0.08] flex flex-col
+                        items-center justify-center py-20 px-6 text-center">
+          <div className="w-12 h-12 rounded-xl border border-black/[0.08] bg-gray-50
+                          flex items-center justify-center mb-4">
+            <svg className="w-5 h-5 text-gray-300" fill="none" viewBox="0 0 24 24"
+                 stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round"
+                d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125
+                   0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m6.75 12H9m1.5-12H5.625
+                   c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621
+                   0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/>
+            </svg>
+          </div>
+          <p className="text-[15px] font-semibold text-black mb-1">No documents yet</p>
+          <p className="text-[13px] text-gray-400 mb-6 max-w-xs">
+            Upload your first form and it will appear here.
+          </p>
+          <Link href="/upload"
+            className="px-6 py-2.5 bg-black text-white text-[13px] font-medium
+                       rounded-full hover:bg-gray-900 transition-colors">
+            Upload a document
+          </Link>
+        </div>
+      )}
+
+      {/* Submissions table */}
+      {!loading && data && data.total > 0 && (
+        <div className="bg-white rounded-2xl border border-black/[0.08] overflow-hidden">
+
+          {/* Desktop table */}
+          <table className="hidden sm:table w-full text-sm">
+            <thead>
+              <tr className="border-b border-black/[0.06]" style={{ background: 'rgba(0,0,0,0.02)' }}>
+                <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Reference</th>
+                <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Document</th>
+                <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Uploaded</th>
+                <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Status</th>
+                <th className="px-5 py-3.5"/>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-black/[0.04]">
+              {data.items.map(doc => (
+                <tr key={doc.docId} className="hover:bg-gray-50/60 transition-colors">
+                  <td className="px-5 py-4 font-mono text-[12px] text-gray-500">{doc.docId}</td>
+                  <td className="px-5 py-4">
+                    <p className="text-[13px] font-medium text-black">{doc.product}</p>
+                    <p className="text-[12px] text-gray-400">{doc.docType}</p>
+                  </td>
+                  <td className="px-5 py-4 text-[13px] text-gray-400">{fmtDate(doc.createdAt)}</td>
+                  <td className="px-5 py-4"><StatusBadge status={doc.status}/></td>
+                  <td className="px-5 py-4 text-right">
+                    <Link href={`/status/${doc.docId}`}
+                      className="text-[12px] font-medium text-black hover:text-gray-500 transition-colors">
+                      {doc.status === 'complete' ? 'View →' : 'Track →'}
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
 
-        {/* Mobile card list */}
-        <div className="sm:hidden divide-y divide-gray-100">
-          {SUBMISSIONS.map(sub => (
-            <Link key={sub.id} href={`/status/${sub.id}`} className="flex items-center gap-4 px-4 py-4 hover:bg-gray-50 transition-colors">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <StatusBadge status={sub.status} />
+          {/* Mobile card list */}
+          <div className="sm:hidden divide-y divide-black/[0.04]">
+            {data.items.map(doc => (
+              <Link key={doc.docId} href={`/status/${doc.docId}`}
+                className="flex items-center gap-4 px-4 py-4 hover:bg-gray-50 transition-colors">
+                <div className="flex-1 min-w-0">
+                  <p className="text-[13px] font-semibold text-black truncate mb-0.5">{doc.product}</p>
+                  <p className="text-[12px] text-gray-400">{doc.docType}</p>
+                  <p className="font-mono text-[11px] text-gray-400 mt-1">{doc.docId}</p>
+                  <p className="text-[11px] text-gray-400 mt-0.5">{fmtDate(doc.createdAt)}</p>
+                  <div className="mt-2"><StatusBadge status={doc.status}/></div>
                 </div>
-                <p className="text-sm font-medium text-gray-800 truncate">{sub.type}</p>
-                <p className="font-mono text-xs text-slate mt-0.5">{sub.id}</p>
-                <p className="text-xs text-gray-400 mt-0.5">{sub.uploaded}</p>
-              </div>
-              <svg className="w-4 h-4 text-gray-300 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-              </svg>
-            </Link>
+                <svg className="w-4 h-4 text-gray-300 flex-shrink-0" fill="none"
+                     viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7"/>
+                </svg>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Loading skeleton */}
+      {loading && (
+        <div className="bg-white rounded-2xl border border-black/[0.08] overflow-hidden">
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="flex gap-4 px-5 py-4 border-b border-black/[0.04]">
+              <div className="h-4 bg-gray-100 rounded animate-pulse w-40"/>
+              <div className="h-4 bg-gray-100 rounded animate-pulse flex-1"/>
+              <div className="h-4 bg-gray-100 rounded animate-pulse w-24"/>
+            </div>
           ))}
         </div>
-      </div>
+      )}
     </div>
   )
 }

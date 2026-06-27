@@ -1,4 +1,5 @@
 'use client'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
@@ -9,6 +10,14 @@ const NAV = [
 
 export function TopNav() {
   const path = usePathname()
+  const [initials, setInitials] = useState('··')
+
+  useEffect(() => {
+    fetch('/api/me')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.initials) setInitials(d.initials) })
+      .catch(() => {})
+  }, [])
 
   return (
     <>
@@ -43,7 +52,7 @@ export function TopNav() {
           {/* Right: avatar */}
           <div className="ml-auto flex items-center gap-3">
             <div className="w-8 h-8 rounded-full bg-black flex items-center justify-center cursor-pointer hover:opacity-70 transition-opacity">
-              <span className="font-medium text-white text-xs">TN</span>
+              <span className="font-medium text-white text-xs">{initials}</span>
             </div>
           </div>
         </div>
@@ -56,7 +65,7 @@ export function TopNav() {
             <Link key={n.href} href={n.href}
               className={`flex-1 flex flex-col items-center py-3 text-xs font-medium transition-colors ${
                 path?.startsWith(n.href)
-                  ? 'text-[#22C55E]'
+                  ? 'text-black'
                   : 'text-gray-400'
               }`}>
               {n.href === '/upload'

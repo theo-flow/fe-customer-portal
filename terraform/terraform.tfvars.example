@@ -1,0 +1,6 @@
+aws_profile          = "Sithembiso"
+aws_region           = "af-south-1"
+cognito_user_pool_id = "af-south-1_RujziOkMM"
+cognito_client_id    = "4smqcoj7jc58ptq84r8m2q9ku2"
+dynamodb_table       = "daai-insure-orgs"
+s3_intake_bucket     = "daai-insure-intake"
