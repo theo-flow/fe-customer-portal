@@ -68,11 +68,12 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 export default function RegisterPage() {
   const router = useRouter()
 
-  const [step, setStep]           = useState<Step>('org')
-  const [orgName, setOrgName]     = useState('')
-  const [regNumber, setRegNumber] = useState('')
-  const [orgType, setOrgType]     = useState('')
-  const [orgPhone, setOrgPhone]   = useState('')
+  const [step, setStep]             = useState<Step>('org')
+  const [orgName, setOrgName]       = useState('')
+  const [regNumber, setRegNumber]   = useState('')
+  const [orgType, setOrgType]       = useState('')
+  const [otherIndustry, setOtherIndustry] = useState('')
+  const [orgPhone, setOrgPhone]     = useState('')
 
   // Standard form-type selections
   const [selectedForms, setSelectedForms] = useState<FormType[]>([])
@@ -208,7 +209,7 @@ export default function RegisterPage() {
         body: JSON.stringify({
           orgName:   orgName.trim(),
           regNumber: regNumber.trim(),
-          orgType,
+          orgType:   orgType === 'Other' ? (otherIndustry.trim() || 'Other') : orgType,
           phone:     orgPhone.trim(),
           adminName: adminName.trim(),
           adminEmail: email,
@@ -335,8 +336,17 @@ export default function RegisterPage() {
               </DarkField>
 
               <DarkField label="Organisation type">
-                <DarkSelect value={orgType} onChange={setOrgType}
+                <DarkSelect value={orgType} onChange={v => { setOrgType(v); if (v !== 'Other') setOtherIndustry('') }}
                   options={ORG_TYPES} placeholder="Select type…"/>
+                {orgType === 'Other' && (
+                  <div className="mt-3">
+                    <DarkInput
+                      value={otherIndustry}
+                      onChange={setOtherIndustry}
+                      placeholder="Describe your industry…"
+                    />
+                  </div>
+                )}
               </DarkField>
 
               <DarkField label="Contact phone">

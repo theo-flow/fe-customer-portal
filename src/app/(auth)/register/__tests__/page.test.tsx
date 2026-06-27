@@ -118,6 +118,57 @@ describe('RegisterPage', () => {
       await goToForms(user)
       expect(screen.getByText(/select your form types/i)).toBeInTheDocument()
     })
+
+    it('shows free-text field when "Other" industry is selected', async () => {
+      const { user } = setup()
+      await user.selectOptions(screen.getByRole('combobox'), 'Other')
+      expect(screen.getByPlaceholderText(/describe your industry/i)).toBeInTheDocument()
+    })
+
+    it('hides free-text field when a non-Other industry is selected after Other', async () => {
+      const { user } = setup()
+      await user.selectOptions(screen.getByRole('combobox'), 'Other')
+      await user.selectOptions(screen.getByRole('combobox'), 'Manufacturing')
+      expect(screen.queryByPlaceholderText(/describe your industry/i)).not.toBeInTheDocument()
+    })
+
+    it('sends otherIndustry description instead of "Other" in API call', async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok:   true,
+        json: async () => ({ orgId: 'org-other-001', uploadUrls: [] }),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      mockSignUp.mockResolvedValueOnce(undefined)
+
+      const { user } = setup()
+      await user.type(screen.getByPlaceholderText(/abc brokers/i), 'Artisan Bakers Co')
+      await user.selectOptions(screen.getByRole('combobox'), 'Other')
+      await user.type(screen.getByPlaceholderText(/describe your industry/i), 'Artisanal Bakery')
+      await user.click(screen.getByRole('button', { name: /^continue$/i }))
+      await waitFor(() => expect(screen.getByText(/select your form types/i)).toBeInTheDocument())
+
+      const appFormLabels = screen.getAllByText('Application Form')
+      await user.click(appFormLabels[0])
+      await user.click(screen.getByRole('button', { name: /^continue$/i }))
+      await waitFor(() => expect(screen.getByText(/upload your blank templates/i)).toBeInTheDocument())
+
+      const standardLabels = screen.getAllByText('Standard')
+      for (const label of standardLabels) await user.click(label)
+      await user.click(screen.getByRole('button', { name: /^continue$/i }))
+      await waitFor(() => expect(screen.getByText(/create your account/i)).toBeInTheDocument())
+
+      await user.type(screen.getByPlaceholderText(/thabo nkosi/i),      'Test Admin')
+      await user.type(screen.getByPlaceholderText(/you@example\.com/i), 'admin@artisan.co.za')
+      await user.type(screen.getByPlaceholderText(/min\. 12/i),         'StrongPass12!')
+      await user.type(screen.getByPlaceholderText(/repeat password/i),  'StrongPass12!')
+      await user.click(screen.getByRole('button', { name: /register organisation/i }))
+
+      await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+      expect(body.orgType).toBe('Artisanal Bakery')
+
+      vi.unstubAllGlobals()
+    })
   })
 
   /* ════════════════════════════════════════════════════════
