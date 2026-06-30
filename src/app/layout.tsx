@@ -25,10 +25,6 @@ const jetbrains = JetBrains_Mono({
 export const metadata: Metadata = {
   title: 'theoflow | Document Intelligence',
   description: 'Upload and track your insurance documents — fast, secure, paperless.',
-  icons: [
-    { rel: 'icon', url: '/icon.svg', type: 'image/svg+xml' },
-    { rel: 'shortcut icon', url: '/icon.svg' },
-  ],
 }
 
 export const viewport: Viewport = {

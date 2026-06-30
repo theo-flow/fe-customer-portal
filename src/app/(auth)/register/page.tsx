@@ -3,19 +3,29 @@ import { useState, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { signUp, friendlyError } from '@/lib/auth'
+import Link from 'next/link'
 import { LogoMark } from '@/components/LogoMark'
 
 // ── Constants ──────────────────────────────────────────────────────────────
-const PRODUCTS = [
-  'Motor Car Insurance',
-  'Household Insurance',
-  'Building Insurance',
-  'Debt Management',
-  'Contractors All Risk',
-  'Insurance Guarantees',
-  'Liability Cover',
+const THEOFLOW_PRODUCTS = [
+  { key: 'forge',   label: 'TheoFlow Forge',   description: 'Convert physical documents into structured digital forms.' },
+  { key: 'channel', label: 'TheoFlow Channel', description: 'Publish and route forms to users and systems.' },
+  { key: 'harvest', label: 'TheoFlow Harvest', description: 'Capture structured responses from users at scale.' },
+  { key: 'decode',  label: 'TheoFlow Decode',  description: 'Convert unstructured documents into structured intelligence.' },
 ]
-const DOC_TYPES = ['Application Form', 'Claim Form']
+
+const FORM_GROUPS = [
+  { key: 'onboarding',      label: 'Onboarding',      description: 'New client, account, member, or employee registration' },
+  { key: 'application',     label: 'Application',     description: 'Applying for a product, policy, loan, or service' },
+  { key: 'claim',           label: 'Claim',           description: 'Requesting compensation, reporting a loss, or invoking a right' },
+  { key: 'declaration',     label: 'Declaration',     description: 'Disclosing facts — health, financial, risk, or material' },
+  { key: 'consent',         label: 'Consent',         description: 'Permission and authorisation — POPIA, payment mandate, treatment' },
+  { key: 'assessment',      label: 'Assessment',      description: 'Risk, needs analysis, survey, inspection, or credit evaluation' },
+  { key: 'compliance',      label: 'Compliance',      description: 'Regulatory requirements — FICA, KYC, AML, B-BBEE, tax' },
+  { key: 'amendment',       label: 'Amendment',       description: 'Changing existing records — address, beneficiary, contact details' },
+  { key: 'agreement',       label: 'Agreement',       description: 'Contracts and terms — service agreements, indemnity, SLA' },
+  { key: 'incident_report', label: 'Incident Report', description: 'Documenting events — accidents, complaints, near-misses, breaches' },
+]
 const ORG_TYPES = [
   'Agriculture, Forestry & Fishing',
   'Construction & Engineering',
@@ -33,12 +43,9 @@ const ORG_TYPES = [
 ]
 
 // ── Types ──────────────────────────────────────────────────────────────────
-type Step = 'org' | 'forms' | 'templates' | 'credentials' | 'submitting'
-interface FormType     { product: string; docType: string }
-interface Template     { product: string; docType: string; file: File | null; skip: boolean }
-interface CustomProduct { id: string; name: string; selectedDocs: string[] }
-
-function fkey(f: FormType) { return `${f.product}|${f.docType}` }
+type Step = 'org' | 'products' | 'forms' | 'templates' | 'credentials' | 'submitting'
+interface Template    { group: string; groupLabel: string; file: File | null; skip: boolean }
+interface CustomGroup { id: string; name: string }
 
 function pwStrength(p: string) {
   let s = 0
@@ -75,11 +82,9 @@ export default function RegisterPage() {
   const [otherIndustry, setOtherIndustry] = useState('')
   const [orgPhone, setOrgPhone]     = useState('')
 
-  // Standard form-type selections
-  const [selectedForms, setSelectedForms] = useState<FormType[]>([])
-
-  // Custom / Other form types
-  const [customProducts, setCustomProducts] = useState<CustomProduct[]>([])
+  const [selectedProducts, setSelectedProducts] = useState<string[]>([])
+  const [selectedGroups, setSelectedGroups]     = useState<string[]>([])
+  const [customGroups, setCustomGroups]         = useState<CustomGroup[]>([])
 
   const [templates, setTemplates] = useState<Template[]>([])
   const [adminName, setAdminName]   = useState('')
@@ -88,35 +93,27 @@ export default function RegisterPage() {
   const [confirm, setConfirm]       = useState('')
   const [error, setError]           = useState('')
 
-  // ── Standard product toggles ──────────────────────────────────────────
-  const toggleForm = (product: string, docType: string) => {
-    const ft = { product, docType }
-    setSelectedForms(prev =>
-      prev.some(f => fkey(f) === fkey(ft))
-        ? prev.filter(f => fkey(f) !== fkey(ft))
-        : [...prev, ft]
+  // ── Product toggles ───────────────────────────────────────────────────
+  const toggleProduct = (key: string) =>
+    setSelectedProducts(prev =>
+      prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
     )
-  }
 
-  // ── Custom product helpers ────────────────────────────────────────────
-  const addCustom = () =>
-    setCustomProducts(prev => [
-      ...prev,
-      { id: `c-${Date.now()}`, name: '', selectedDocs: [] },
-    ])
+  // ── Form group toggles ────────────────────────────────────────────────
+  const toggleGroup = (key: string) =>
+    setSelectedGroups(prev =>
+      prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
+    )
 
-  const removeCustom = (id: string) =>
-    setCustomProducts(prev => prev.filter(c => c.id !== id))
+  // ── Custom group helpers ──────────────────────────────────────────────
+  const addCustomGroup = () =>
+    setCustomGroups(prev => [...prev, { id: `c-${Date.now()}`, name: '' }])
 
-  const updateCustomName = (id: string, name: string) =>
-    setCustomProducts(prev => prev.map(c => c.id === id ? { ...c, name } : c))
+  const removeCustomGroup = (id: string) =>
+    setCustomGroups(prev => prev.filter(c => c.id !== id))
 
-  const toggleCustomDoc = (id: string, docType: string) =>
-    setCustomProducts(prev => prev.map(c => {
-      if (c.id !== id) return c
-      const has = c.selectedDocs.includes(docType)
-      return { ...c, selectedDocs: has ? c.selectedDocs.filter(d => d !== docType) : [...c.selectedDocs, docType] }
-    }))
+  const updateCustomGroupName = (id: string, name: string) =>
+    setCustomGroups(prev => prev.map(c => c.id === id ? { ...c, name } : c))
 
   // ── Template helpers ──────────────────────────────────────────────────
   const updateTemplate = (idx: number, patch: Partial<Template>) =>
@@ -124,49 +121,47 @@ export default function RegisterPage() {
 
   // ── Step navigation with validation ──────────────────────────────────
 
-  const goForms = () => {
+  const goProducts = () => {
     const name = orgName.trim()
-    if (!name)          { setError('Organisation name is required.'); return }
+    if (!name)            { setError('Organisation name is required.'); return }
     if (name.length < 2)  { setError('Organisation name must be at least 2 characters.'); return }
-    if (name.length > 100) { setError('Organisation name must be 100 characters or fewer.'); return }
+    if (name.length > 100){ setError('Organisation name must be 100 characters or fewer.'); return }
     if (orgPhone.trim() && !validatePhone(orgPhone.trim())) {
       setError('Enter a valid phone number (e.g. +27821234567 or 0821234567).')
       return
     }
     setError('')
-    setStep('forms')
+    setStep('products')
+  }
+
+  const goFromProducts = () => {
+    if (!selectedProducts.length) {
+      setError('Select at least one TheoFlow product to continue.')
+      return
+    }
+    setError('')
+    const needsForms = selectedProducts.includes('forge') || selectedProducts.includes('decode')
+    setStep(needsForms ? 'forms' : 'credentials')
   }
 
   const goTemplates = () => {
-    // Validate custom entries: name ↔ doc-type pairing must be consistent
-    for (let i = 0; i < customProducts.length; i++) {
-      const cp = customProducts[i]
-      const hasName = cp.name.trim().length > 0
-      const hasDocs = cp.selectedDocs.length > 0
-      if (hasDocs && !hasName) {
-        setError(`Custom form type ${i + 1}: enter a name before selecting form types.`)
-        return
-      }
-      if (hasName && !hasDocs) {
-        setError(`"${cp.name.trim()}" has a name but no form type selected (Application Form or Claim Form).`)
-        return
-      }
-    }
+    const validCustom = customGroups.filter(c => c.name.trim().length > 0)
 
-    // Combine standard + valid custom selections
-    const customForms = customProducts
-      .filter(cp => cp.name.trim() && cp.selectedDocs.length > 0)
-      .flatMap(cp => cp.selectedDocs.map(dt => ({ product: cp.name.trim(), docType: dt })))
+    const allGroups = [
+      ...selectedGroups.map(key => {
+        const g = FORM_GROUPS.find(g => g.key === key)!
+        return { group: key, groupLabel: g.label }
+      }),
+      ...validCustom.map(c => ({ group: c.id, groupLabel: c.name.trim() })),
+    ]
 
-    const allForms = [...selectedForms, ...customForms]
-
-    if (!allForms.length) {
-      setError('Select at least one form type, or add a custom form type.')
+    if (!allGroups.length) {
+      setError('Select at least one form group, or add a custom group.')
       return
     }
 
     setError('')
-    setTemplates(allForms.map(f => ({ ...f, file: null, skip: false })))
+    setTemplates(allGroups.map(g => ({ ...g, file: null, skip: false })))
     setStep('templates')
   }
 
@@ -213,10 +208,11 @@ export default function RegisterPage() {
           phone:     orgPhone.trim(),
           adminName: adminName.trim(),
           adminEmail: email,
-          formTypes: templates.map(t => ({ product: t.product, docType: t.docType })),
+          subscribedProducts: selectedProducts,
+          formGroups: templates.map(t => ({ group: t.group, groupLabel: t.groupLabel })),
           templates: toUpload.map(t => ({
-            product:     t.product,
-            docType:     t.docType,
+            group:       t.group,
+            groupLabel:  t.groupLabel,
             filename:    t.file!.name,
             contentType: t.file!.type || 'application/pdf',
           })),
@@ -228,13 +224,13 @@ export default function RegisterPage() {
       }
       const { orgId, uploadUrls } = await res.json() as {
         orgId: string
-        uploadUrls: { product: string; docType: string; uploadUrl: string }[]
+        uploadUrls: { group: string; groupLabel: string; uploadUrl: string }[]
       }
 
       // 2. Upload template files directly to S3
       await Promise.all(
         toUpload.map(t => {
-          const entry = uploadUrls.find(u => u.product === t.product && u.docType === t.docType)
+          const entry = uploadUrls.find(u => u.group === t.group)
           if (!entry) return Promise.resolve()
           return fetch(entry.uploadUrl, {
             method: 'PUT',
@@ -255,10 +251,23 @@ export default function RegisterPage() {
     }
   }
 
-  // ── Step indicator meta ───────────────────────────────────────────────
-  const STEPS: Step[] = ['org', 'forms', 'templates', 'credentials']
-  const stepIdx   = STEPS.indexOf(step === 'submitting' ? 'credentials' : step)
-  const stepLabels = ['Organisation', 'Form types', 'Templates', 'Account']
+  // ── Step indicator meta (dynamic based on selected products) ─────────
+  const needsForms     = selectedProducts.includes('forge') || selectedProducts.includes('decode')
+  const needsTemplates = selectedProducts.includes('forge')
+
+  const STEPS: Step[] = [
+    'org', 'products',
+    ...(needsForms     ? ['forms'     as Step] : []),
+    ...(needsTemplates ? ['templates' as Step] : []),
+    'credentials',
+  ]
+  const stepLabels = [
+    'Organisation', 'Products',
+    ...(needsForms     ? ['Form groups'] : []),
+    ...(needsTemplates ? ['Templates']   : []),
+    'Account',
+  ]
+  const stepIdx = STEPS.indexOf(step === 'submitting' ? 'credentials' : step)
 
   return (
     <div className="flex lg:h-[100dvh]" style={{ background: '#0B0B0B', minHeight: '100dvh' }}>
@@ -268,12 +277,14 @@ export default function RegisterPage() {
            style={{ minHeight: '100dvh' }}>
 
         {/* Logo */}
-        <motion.div className="flex items-center gap-2.5 flex-shrink-0"
-          initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.35 }}>
-          <LogoMark size={40} className="text-white"/>
-          <span className="font-display text-[1rem] tracking-tight text-white">theoflow</span>
-        </motion.div>
+        <Link href="/" className="inline-flex flex-shrink-0">
+          <motion.div className="flex items-center gap-2.5"
+            initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.35 }}>
+            <LogoMark size={40} className="text-white"/>
+            <span className="font-display text-[1rem] tracking-tight text-white">theoflow</span>
+          </motion.div>
+        </Link>
 
         {/* Step indicator */}
         {step !== 'submitting' && (
@@ -297,7 +308,7 @@ export default function RegisterPage() {
                   ${i === stepIdx ? 'text-white' : 'text-[rgba(255,255,255,0.2)]'}`}>
                   {label}
                 </span>
-                {i < 3 && (
+                {i < stepLabels.length - 1 && (
                   <div className="w-5 h-px hidden sm:block"
                        style={{ background:'rgba(255,255,255,0.12)' }}/>
                 )}
@@ -356,7 +367,7 @@ export default function RegisterPage() {
             </div>
 
             <div className="mt-8 flex items-center gap-5">
-              <button onClick={goForms}
+              <button onClick={goProducts}
                 className="px-8 py-3 rounded-full text-[14px] font-medium text-black bg-white
                            hover:bg-white/90 active:bg-white/80 transition-all flex-shrink-0">
                 Continue
@@ -369,52 +380,115 @@ export default function RegisterPage() {
           </motion.div>
         )}
 
-        {/* ── STEP 2: Form types ── */}
-        {step === 'forms' && (
-          <motion.div className="w-full max-w-[500px]"
+        {/* ── STEP 2: Products ── */}
+        {step === 'products' && (
+          <motion.div className="w-full max-w-[480px]"
             initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4 }}>
 
             <BackButton onClick={() => { setError(''); setStep('org') }}/>
 
             <h1 className="font-display text-[2.1rem] leading-tight text-white mb-2">
-              Select your form types
+              Choose your products
             </h1>
             <p className="text-[13px] mb-7" style={{ color:'rgba(255,255,255,0.36)' }}>
-              Choose which products and form types your organisation uses.
-              Add custom types under &ldquo;Other&rdquo; below.
+              Select the TheoFlow products your organisation will use.
+              You can change this later.
             </p>
 
             {error && <DarkError msg={error}/>}
 
-            {/* Standard products */}
-            <div className="space-y-2 mb-6">
-              {PRODUCTS.map(product => {
-                const appSel   = selectedForms.some(f => fkey(f) === fkey({ product, docType:'Application Form' }))
-                const claimSel = selectedForms.some(f => fkey(f) === fkey({ product, docType:'Claim Form' }))
-                const any      = appSel || claimSel
+            <div className="space-y-2.5 mb-8">
+              {THEOFLOW_PRODUCTS.map(({ key, label, description }) => {
+                const selected = selectedProducts.includes(key)
                 return (
-                  <div key={product}
-                    className="rounded-xl px-4 py-3 transition-all"
+                  <button
+                    key={key}
+                    onClick={() => toggleProduct(key)}
+                    className="w-full text-left rounded-xl px-5 py-4 transition-all"
                     style={{
-                      border:      any ? '1px solid rgba(255,255,255,0.28)' : '1px solid rgba(255,255,255,0.08)',
-                      background:  any ? 'rgba(255,255,255,0.04)' : 'transparent',
+                      border:     selected ? '1px solid rgba(255,255,255,0.4)' : '1px solid rgba(255,255,255,0.08)',
+                      background: selected ? 'rgba(255,255,255,0.06)' : 'transparent',
                     }}>
-                    <p className="text-[13px] font-semibold text-white mb-2.5">{product}</p>
-                    <div className="flex gap-5">
-                      {DOC_TYPES.map(docType => {
-                        const checked = selectedForms.some(f => fkey(f) === fkey({ product, docType }))
-                        return (
-                          <DarkCheckbox
-                            key={docType}
-                            checked={checked}
-                            label={docType}
-                            onChange={() => toggleForm(product, docType)}
-                          />
-                        )
-                      })}
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="min-w-0">
+                        <p className="text-[14px] font-semibold text-white mb-0.5">{label}</p>
+                        <p className="text-[12px]" style={{ color:'rgba(255,255,255,0.38)' }}>{description}</p>
+                      </div>
+                      <div className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center transition-all"
+                        style={{
+                          background: selected ? 'white' : 'transparent',
+                          border:     selected ? '1px solid white' : '1px solid rgba(255,255,255,0.25)',
+                        }}>
+                        {selected && (
+                          <svg className="w-3 h-3" fill="none" viewBox="0 0 10 10">
+                            <path d="M1.5 5l2.5 2.5 4.5-4" stroke="black" strokeWidth="1.5" strokeLinecap="round"/>
+                          </svg>
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  </button>
+                )
+              })}
+            </div>
+
+            <button onClick={goFromProducts}
+              className="px-8 py-3 rounded-full text-[14px] font-medium text-black bg-white
+                         hover:bg-white/90 transition-all">
+              Continue
+            </button>
+          </motion.div>
+        )}
+
+        {/* ── STEP 3: Form groups ── */}
+        {step === 'forms' && (
+          <motion.div className="w-full max-w-[540px]"
+            initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4 }}>
+
+            <BackButton onClick={() => { setError(''); setStep('products') }}/>
+
+            <h1 className="font-display text-[2.1rem] leading-tight text-white mb-2">
+              Select your form groups
+            </h1>
+            <p className="text-[13px] mb-7" style={{ color:'rgba(255,255,255,0.36)' }}>
+              Choose the categories of forms your organisation works with.
+              You can add custom groups below if yours is not listed.
+            </p>
+
+            {error && <DarkError msg={error}/>}
+
+            {/* Standard form groups — 2-column grid */}
+            <div className="grid grid-cols-2 gap-2 mb-6">
+              {FORM_GROUPS.map(({ key, label, description }) => {
+                const selected = selectedGroups.includes(key)
+                return (
+                  <button
+                    key={key}
+                    onClick={() => toggleGroup(key)}
+                    className="text-left rounded-xl px-4 py-3.5 transition-all"
+                    style={{
+                      border:     selected ? '1px solid rgba(255,255,255,0.35)' : '1px solid rgba(255,255,255,0.08)',
+                      background: selected ? 'rgba(255,255,255,0.06)' : 'transparent',
+                    }}>
+                    <div className="flex items-start justify-between gap-2 mb-1">
+                      <p className="text-[13px] font-semibold text-white leading-snug">{label}</p>
+                      <div className="w-4 h-4 rounded flex-shrink-0 mt-0.5 flex items-center justify-center transition-all"
+                        style={{
+                          background: selected ? 'white' : 'transparent',
+                          border:     selected ? '1px solid white' : '1px solid rgba(255,255,255,0.25)',
+                        }}>
+                        {selected && (
+                          <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 10 10">
+                            <path d="M1.5 5l2.5 2.5 4.5-4" stroke="black" strokeWidth="1.5" strokeLinecap="round"/>
+                          </svg>
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-[11px] leading-relaxed" style={{ color:'rgba(255,255,255,0.35)' }}>
+                      {description}
+                    </p>
+                  </button>
                 )
               })}
             </div>
@@ -429,63 +503,41 @@ export default function RegisterPage() {
               <div className="flex-1 h-px" style={{ background:'rgba(255,255,255,0.10)' }}/>
             </div>
 
-            {/* Custom product rows */}
-            {customProducts.length > 0 && (
-              <div className="space-y-3 mb-4">
-                {customProducts.map((cp, idx) => {
-                  const hasError = (cp.selectedDocs.length > 0 && !cp.name.trim()) ||
-                                   (cp.name.trim().length > 0 && cp.selectedDocs.length === 0)
-                  return (
-                    <div key={cp.id}
-                      className="rounded-xl px-4 py-3 transition-all"
-                      style={{
-                        border: hasError
-                          ? '1px solid rgba(239,68,68,0.4)'
-                          : cp.name.trim() && cp.selectedDocs.length
-                          ? '1px solid rgba(255,255,255,0.28)'
-                          : '1px solid rgba(255,255,255,0.12)',
-                        background: cp.name.trim() && cp.selectedDocs.length
-                          ? 'rgba(255,255,255,0.04)' : 'transparent',
-                      }}>
-                      <div className="flex items-start gap-2 mb-3">
-                        <input
-                          value={cp.name}
-                          onChange={e => updateCustomName(cp.id, e.target.value)}
-                          placeholder={`Custom form type ${idx + 1} name…`}
-                          className="flex-1 bg-transparent text-[13px] font-semibold text-white
-                                     placeholder:text-white/25 outline-none"
-                        />
-                        <button
-                          aria-label="Remove custom form type"
-                          onClick={() => removeCustom(cp.id)}
-                          className="flex-shrink-0 transition-colors mt-0.5"
-                          style={{ color:'rgba(255,255,255,0.25)' }}
-                          onMouseEnter={e => (e.currentTarget.style.color='rgba(239,68,68,0.8)')}
-                          onMouseLeave={e => (e.currentTarget.style.color='rgba(255,255,255,0.25)')}>
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24"
-                               stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
-                          </svg>
-                        </button>
-                      </div>
-                      <div className="flex gap-5">
-                        {DOC_TYPES.map(dt => (
-                          <DarkCheckbox
-                            key={dt}
-                            checked={cp.selectedDocs.includes(dt)}
-                            label={dt}
-                            onChange={() => toggleCustomDoc(cp.id, dt)}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  )
-                })}
+            {/* Custom group rows */}
+            {customGroups.length > 0 && (
+              <div className="space-y-2 mb-4">
+                {customGroups.map((cg, idx) => (
+                  <div key={cg.id}
+                    className="rounded-xl px-4 py-3 flex items-center gap-2 transition-all"
+                    style={{
+                      border:     cg.name.trim() ? '1px solid rgba(255,255,255,0.28)' : '1px solid rgba(255,255,255,0.12)',
+                      background: cg.name.trim() ? 'rgba(255,255,255,0.04)' : 'transparent',
+                    }}>
+                    <input
+                      value={cg.name}
+                      onChange={e => updateCustomGroupName(cg.id, e.target.value)}
+                      placeholder={`Custom group ${idx + 1} name…`}
+                      className="flex-1 bg-transparent text-[13px] font-semibold text-white
+                                 placeholder:text-white/25 outline-none"
+                    />
+                    <button
+                      aria-label="Remove custom group"
+                      onClick={() => removeCustomGroup(cg.id)}
+                      className="flex-shrink-0 transition-colors"
+                      style={{ color:'rgba(255,255,255,0.25)' }}
+                      onMouseEnter={e => (e.currentTarget.style.color='rgba(239,68,68,0.8)')}
+                      onMouseLeave={e => (e.currentTarget.style.color='rgba(255,255,255,0.25)')}>
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
+                      </svg>
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
 
-            {/* Add custom button */}
-            <button onClick={addCustom}
+            {/* Add custom group button */}
+            <button onClick={addCustomGroup}
               className="flex items-center gap-2 text-[12px] font-medium mb-8 transition-colors"
               style={{ color:'rgba(255,255,255,0.4)' }}
               onMouseEnter={e => (e.currentTarget.style.color='white')}
@@ -493,18 +545,14 @@ export default function RegisterPage() {
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4"/>
               </svg>
-              Add custom form type
+              Add custom group
             </button>
 
             {/* Selection count */}
-            {(selectedForms.length + customProducts.filter(c => c.name.trim() && c.selectedDocs.length).length > 0) && (
+            {(selectedGroups.length + customGroups.filter(c => c.name.trim()).length > 0) && (
               <p className="text-[12px] mb-6" style={{ color:'rgba(255,255,255,0.35)' }}>
-                {selectedForms.length +
-                  customProducts.filter(c => c.name.trim()).reduce((sum, c) => sum + c.selectedDocs.length, 0)
-                } form type{
-                  (selectedForms.length +
-                    customProducts.filter(c => c.name.trim()).reduce((sum, c) => sum + c.selectedDocs.length, 0)
-                  ) !== 1 ? 's' : ''
+                {selectedGroups.length + customGroups.filter(c => c.name.trim()).length} group{
+                  (selectedGroups.length + customGroups.filter(c => c.name.trim()).length) !== 1 ? 's' : ''
                 } selected
               </p>
             )}
@@ -542,7 +590,7 @@ export default function RegisterPage() {
             <div className="space-y-3 mb-8">
               {templates.map((t, idx) => (
                 <DarkTemplateCard
-                  key={fkey(t)}
+                  key={t.group}
                   template={t}
                   onFile={f  => updateTemplate(idx, { file: f, skip: false })}
                   onSkip={()  => updateTemplate(idx, { skip: !t.skip, file: null })}
@@ -579,7 +627,12 @@ export default function RegisterPage() {
             initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4 }}>
 
-            <BackButton onClick={() => { setError(''); setStep('templates') }}/>
+            <BackButton onClick={() => {
+              setError('')
+              if (needsTemplates)     setStep('templates')
+              else if (needsForms)    setStep('forms')
+              else                    setStep('products')
+            }}/>
 
             <h1 className="font-display text-[2.4rem] leading-tight text-white mb-2">
               Create your account
@@ -830,8 +883,7 @@ function DarkTemplateCard({ template, onFile, onSkip }: {
 
       <div className="flex items-start justify-between gap-3 mb-3">
         <div className="min-w-0">
-          <p className="text-[13px] font-semibold text-white truncate">{template.product}</p>
-          <p className="text-[11px]" style={{ color:'rgba(255,255,255,0.4)' }}>{template.docType}</p>
+          <p className="text-[13px] font-semibold text-white truncate">{template.groupLabel}</p>
         </div>
         <div className="flex items-center gap-3 flex-shrink-0">
           {/* Resolved indicator */}

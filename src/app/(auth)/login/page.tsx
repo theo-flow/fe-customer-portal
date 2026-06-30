@@ -51,12 +51,14 @@ function LoginForm() {
       {/* ── LEFT: form panel ── */}
       <div className="flex-1 flex flex-col px-6 py-8 sm:px-12 lg:px-16 min-h-[100dvh]">
 
-        <motion.div className="flex items-center gap-2.5"
-          initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.35 }}>
-          <Mark />
-          <span className="font-display text-[1rem] tracking-tight text-white">theoflow</span>
-        </motion.div>
+        <Link href="/" className="inline-flex">
+          <motion.div className="flex items-center gap-2.5"
+            initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.35 }}>
+            <Mark />
+            <span className="font-display text-[1rem] tracking-tight text-white">theoflow</span>
+          </motion.div>
+        </Link>
 
         <div className="flex-1 flex items-end pb-[10vh]">
           <motion.div className="w-full"

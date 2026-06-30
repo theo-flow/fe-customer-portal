@@ -35,12 +35,12 @@ export async function GET() {
   }))
 
   const items = (result.Items ?? []).map(item => ({
-    docId:     item.docId     as string,
-    product:   item.product   as string,
-    docType:   item.docType   as string,
-    filename:  item.filename  as string,
-    status:    mapStatus(item.status as string),
-    createdAt: item.createdAt as string,
+    docId:      item.docId      as string,
+    group:      item.group      as string,
+    groupLabel: item.groupLabel as string,
+    filename:   item.filename   as string,
+    status:     mapStatus(item.status as string),
+    createdAt:  item.createdAt  as string,
   }))
 
   const total      = items.length

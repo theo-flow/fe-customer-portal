@@ -1,27 +1,14 @@
 'use client'
 import { useState, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-
-const PRODUCTS = [
-  'Motor Car Insurance',
-  'Household Insurance',
-  'Building Insurance',
-  'Debt Management',
-  'Contractors All Risk',
-  'Insurance Guarantees',
-  'Liability Cover',
-]
-
-const DOC_TYPES = [
-  { label: 'Application Form', description: 'Primary submission form with client details and relevant information' },
-  { label: 'Request Form',     description: 'Secondary form — claims, orders, or requests against an existing record' },
-]
+import Link from 'next/link'
+import { useOrg } from '@/lib/org-context'
 
 const ACCEPTED  = ['application/pdf', 'image/jpeg', 'image/png', 'image/tiff']
 const MAX_MB    = 50
 const MAX_BYTES = MAX_MB * 1024 * 1024
 
-type Step = 'product' | 'doctype' | 'file' | 'uploading' | 'done'
+type Step = 'group' | 'file' | 'uploading' | 'done'
 
 function presignErrorMessage(status: number): string {
   switch (status) {
@@ -50,14 +37,14 @@ export default function UploadPage() {
   const router   = useRouter()
   const inputRef = useRef<HTMLInputElement>(null)
   const xhrRef   = useRef<XMLHttpRequest | null>(null)
+  const { subscribedProducts, formGroups, loading } = useOrg()
 
-  const [step,     setStep]     = useState<Step>('product')
-  const [product,  setProduct]  = useState('')
-  const [docType,  setDocType]  = useState('')
-  const [file,     setFile]     = useState<File | null>(null)
-  const [dragging, setDragging] = useState(false)
-  const [error,    setError]    = useState('')
-  const [progress, setProgress] = useState(0)
+  const [step,      setStep]     = useState<Step>('group')
+  const [group,     setGroup]    = useState<{ group: string; groupLabel: string } | null>(null)
+  const [file,      setFile]     = useState<File | null>(null)
+  const [dragging,  setDragging] = useState(false)
+  const [error,     setError]    = useState('')
+  const [progress,  setProgress] = useState(0)
 
   const validate = (f: File): string => {
     if (f.size === 0)               return 'This file appears to be empty. Please choose a valid document.'
@@ -101,8 +88,8 @@ export default function UploadPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          product,
-          docType,
+          group:         group?.group,
+          groupLabel:    group?.groupLabel,
           filename:      file.name,
           contentType:   file.type || 'application/octet-stream',
           contentLength: file.size,
@@ -166,15 +153,30 @@ export default function UploadPage() {
   }
 
   const reset = () => {
-    setStep('product')
-    setProduct('')
-    setDocType('')
+    setStep('group')
+    setGroup(null)
     setFile(null)
     setError('')
     setProgress(0)
   }
 
   const sizeMB = file ? (file.size / 1024 / 1024).toFixed(1) : ''
+
+  // Decode access guard
+  if (!loading && !subscribedProducts.includes('decode')) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 text-center">
+        <p className="text-[15px] font-semibold text-black mb-1">Access restricted</p>
+        <p className="text-[13px] text-gray-400 mb-6 max-w-xs">
+          Document upload requires a TheoFlow Decode subscription. Contact your administrator.
+        </p>
+        <Link href="/dashboard"
+          className="px-6 py-2.5 bg-black text-white text-[13px] font-medium rounded-full hover:bg-gray-900 transition-colors">
+          Back to dashboard
+        </Link>
+      </div>
+    )
+  }
 
   return (
     <div className="flex -mx-4 sm:-mx-6 -mt-6 sm:-mt-10 h-[calc(100vh-64px)]">
@@ -184,57 +186,42 @@ export default function UploadPage() {
 
         <div className="mb-8">
           <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-400 mb-2">
-            Document intake
+            TheoFlow Decode
           </p>
           <h1 className="font-display text-[2.2rem] leading-tight tracking-tight text-black">
-            Upload a form
+            Upload a document
           </h1>
           <p className="mt-2 text-[13px] text-gray-500">
-            Select the product and form type, attach your file, and submit.
+            Select the form group, attach the filled document, and submit it for extraction.
           </p>
         </div>
 
-        {/* Step 1 — Product / category */}
-        <StepRow n="1" label="Product" done={!!product} summary={product}
-          onEdit={() => { setProduct(''); setDocType(''); setFile(null); setStep('product') }}>
-          {step === 'product' && (
+        {/* Step 1 — Form group */}
+        <StepRow n="1" label="Form group" done={!!group} summary={group?.groupLabel}
+          onEdit={() => { setGroup(null); setFile(null); setStep('group') }}>
+          {step === 'group' && (
             <div className="mt-3 flex flex-wrap gap-2">
-              {PRODUCTS.map(p => (
-                <button key={p}
-                  onClick={() => { setProduct(p); setStep('doctype') }}
-                  className="px-4 py-2 rounded-full border border-black/[0.12] text-[13px]
-                             font-medium text-gray-700 hover:border-black hover:text-black
-                             transition-colors bg-white">
-                  {p}
-                </button>
-              ))}
+              {loading
+                ? <p className="text-[13px] text-gray-400">Loading…</p>
+                : formGroups.length === 0
+                  ? <p className="text-[13px] text-gray-400">No form groups configured for your organisation.</p>
+                  : formGroups.map(g => (
+                      <button key={g.group}
+                        onClick={() => { setGroup(g); setStep('file') }}
+                        className="px-4 py-2 rounded-full border border-black/[0.12] text-[13px]
+                                   font-medium text-gray-700 hover:border-black hover:text-black
+                                   transition-colors bg-white">
+                        {g.groupLabel}
+                      </button>
+                    ))
+              }
             </div>
           )}
         </StepRow>
 
-        {/* Step 2 — Document type */}
-        {product && (
-          <StepRow n="2" label="Document type" done={!!docType} summary={docType}
-            onEdit={() => { setDocType(''); setFile(null); setStep('doctype') }}>
-            {step === 'doctype' && (
-              <div className="mt-3 space-y-2">
-                {DOC_TYPES.map(dt => (
-                  <button key={dt.label}
-                    onClick={() => { setDocType(dt.label); setStep('file') }}
-                    className="w-full text-left px-4 py-3.5 rounded-xl border border-black/[0.1]
-                               hover:border-black/[0.35] hover:bg-gray-50/60 transition-all">
-                    <p className="text-[13px] font-semibold text-black">{dt.label}</p>
-                    <p className="text-[12px] text-gray-400 mt-0.5">{dt.description}</p>
-                  </button>
-                ))}
-              </div>
-            )}
-          </StepRow>
-        )}
-
-        {/* Step 3 — File */}
-        {docType && (
-          <StepRow n="3" label="Attach document" done={step === 'uploading' || step === 'done'}>
+        {/* Step 2 — File */}
+        {group && (
+          <StepRow n="2" label="Attach document" done={step === 'uploading' || step === 'done'}>
 
             {step === 'file' && (
               <>
