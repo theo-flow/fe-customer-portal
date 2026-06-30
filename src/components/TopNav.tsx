@@ -12,9 +12,9 @@ function navItemsFor(products: string[]): NavItem[] {
   const items: NavItem[] = [
     { href: '/dashboard', label: 'Home', built: true },
   ]
-  if (products.includes('forge'))   items.push({ href: '/templates',   label: 'Templates',   built: false })
-  if (products.includes('channel')) items.push({ href: '/forms',       label: 'Forms',       built: false })
-  if (products.includes('harvest')) items.push({ href: '/submissions', label: 'Submissions', built: false })
+  if (products.includes('forge'))   items.push({ href: '/templates',   label: 'Templates',   built: true })
+  if (products.includes('channel')) items.push({ href: '/forms',       label: 'Forms',       built: true })
+  if (products.includes('harvest')) items.push({ href: '/submissions', label: 'Submissions', built: true })
   if (products.includes('decode'))  items.push({ href: '/upload',      label: 'Upload',      built: true  })
   return items
 }
