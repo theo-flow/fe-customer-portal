@@ -1,6 +1,6 @@
 data "archive_file" "server" {
   type        = "zip"
-  source_dir  = "${path.module}/../.open-next/server-function"
+  source_dir  = "${path.module}/../.open-next/server-functions/default"
   output_path = "${path.module}/.builds/server.zip"
 }
 
