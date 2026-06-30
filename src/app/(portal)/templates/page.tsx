@@ -1,0 +1,370 @@
+'use client'
+import { useState, useRef } from 'react'
+import Link from 'next/link'
+import { useOrg } from '@/lib/org-context'
+
+const ACCEPTED  = ['application/pdf', 'image/jpeg', 'image/png', 'image/tiff']
+const MAX_MB    = 50
+const MAX_BYTES = MAX_MB * 1024 * 1024
+
+type Phase = 'idle' | 'ready' | 'uploading' | 'done' | 'error'
+
+interface GroupState {
+  phase:    Phase
+  file?:    File
+  progress: number
+  error:    string
+}
+
+function validate(f: File): string {
+  if (f.size === 0)               return 'File appears empty.'
+  if (!ACCEPTED.includes(f.type)) return `Unsupported type. Upload a PDF, JPG, PNG or TIFF.`
+  if (f.size > MAX_BYTES)         return `File too large (${(f.size / 1024 / 1024).toFixed(1)} MB). Max ${MAX_MB} MB.`
+  return ''
+}
+
+// ── Single group upload card ──────────────────────────────────────────────────
+
+function GroupCard({ fg, state, onFileSelect, onUpload, onRetry }: {
+  fg:           { group: string; groupLabel: string }
+  state:        GroupState
+  onFileSelect: (group: string, file: File) => void
+  onUpload:     (group: string) => void
+  onRetry:      (group: string) => void
+}) {
+  const inputRef  = useRef<HTMLInputElement>(null)
+  const [drag, setDrag] = useState(false)
+
+  const pick = (f: File) => {
+    const err = validate(f)
+    if (err) { onFileSelect(fg.group, f); return }
+    onFileSelect(fg.group, f)
+  }
+
+  const { phase, file, progress, error } = state
+
+  return (
+    <div className="rounded-2xl border border-black/[0.08] p-5">
+
+      {/* Header row */}
+      <div className="flex items-center gap-3 mb-4">
+        <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0
+                         ${phase === 'done' ? 'bg-green-50' : 'bg-gray-50'}`}>
+          {phase === 'done' ? (
+            <svg className="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24"
+                 stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/>
+            </svg>
+          ) : (
+            <svg className="w-4 h-4 text-gray-300" fill="none" viewBox="0 0 24 24"
+                 stroke="currentColor" strokeWidth={1.8}>
+              <path strokeLinecap="round" strokeLinejoin="round"
+                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0
+                       01.707.293l5.414 5.414A1 1 0 0119 9.414V19a2 2 0 01-2 2z"/>
+            </svg>
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-[14px] font-semibold text-black">{fg.groupLabel}</p>
+          {phase === 'done' && (
+            <p className="text-[12px] text-amber-600 font-medium mt-0.5">
+              Analysing template…
+            </p>
+          )}
+        </div>
+        {phase === 'done' && (
+          <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full
+                           bg-amber-50 text-amber-700">
+            Processing
+          </span>
+        )}
+      </div>
+
+      {/* Drop zone — idle or error */}
+      {(phase === 'idle' || phase === 'error') && (
+        <>
+          <div
+            onDragOver={e  => { e.preventDefault(); setDrag(true) }}
+            onDragLeave={() => setDrag(false)}
+            onDrop={e => {
+              e.preventDefault(); setDrag(false)
+              const f = e.dataTransfer.files[0]
+              if (f) pick(f)
+            }}
+            onClick={() => inputRef.current?.click()}
+            className={`border-2 border-dashed rounded-xl cursor-pointer flex flex-col
+                        items-center justify-center py-8 transition-all duration-200
+                        ${drag
+                          ? 'border-black bg-gray-50 scale-[1.01]'
+                          : 'border-black/[0.12] hover:border-black/[0.3] hover:bg-gray-50/40'}`}>
+            <input
+              ref={inputRef} type="file"
+              accept=".pdf,.jpg,.jpeg,.png,.tiff,.tif"
+              className="hidden"
+              onChange={e => { const f = e.target.files?.[0]; if (f) pick(f) }}
+            />
+            <svg className="w-5 h-5 text-gray-300 mb-2" fill="none" viewBox="0 0 24 24"
+                 stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round"
+                    d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021
+                       18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/>
+            </svg>
+            <p className="text-[12px] font-medium text-gray-500">Drop blank template here</p>
+            <p className="text-[11px] text-gray-300 mt-1">or click to browse · PDF · JPG · PNG · TIFF</p>
+          </div>
+          {phase === 'error' && (
+            <p className="text-[12px] text-red-500 font-medium mt-2">{error}</p>
+          )}
+        </>
+      )}
+
+      {/* File selected — ready to upload */}
+      {phase === 'ready' && file && (
+        <>
+          <div className="flex items-center gap-3 px-4 py-3 border border-black/[0.08]
+                          rounded-xl bg-gray-50/50 mb-3">
+            <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24"
+                 stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round"
+                    d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0
+                       0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621
+                       0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0
+                       1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/>
+            </svg>
+            <div className="flex-1 min-w-0">
+              <p className="text-[13px] font-medium text-black truncate">{file.name}</p>
+              <p className="text-[11px] text-gray-400">{(file.size / 1024 / 1024).toFixed(1)} MB</p>
+            </div>
+            <button
+              onClick={() => onRetry(fg.group)}
+              className="text-gray-300 hover:text-gray-600 transition-colors">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
+              </svg>
+            </button>
+          </div>
+          <button
+            onClick={() => onUpload(fg.group)}
+            className="w-full bg-black text-white text-[13px] font-medium py-3 rounded-full
+                       hover:bg-gray-900 transition-colors">
+            Upload template
+          </button>
+        </>
+      )}
+
+      {/* Uploading */}
+      {phase === 'uploading' && file && (
+        <div className="py-2">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-5 h-5 rounded-full border-2 border-black border-t-transparent
+                            animate-spin flex-shrink-0"/>
+            <p className="text-[13px] font-medium text-black flex-1 truncate">{file.name}</p>
+            <span className="font-mono text-[12px] text-black">{progress}%</span>
+          </div>
+          <div className="h-[2px] bg-gray-100 rounded-full overflow-hidden">
+            <div className="h-full bg-black transition-all duration-75 rounded-full"
+                 style={{ width: `${progress}%` }}/>
+          </div>
+        </div>
+      )}
+
+    </div>
+  )
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
+
+export default function TemplatesPage() {
+  const { orgId, orgName, subscribedProducts, formGroups, loading } = useOrg()
+
+  const [states, setStates] = useState<Record<string, GroupState>>({})
+
+  function getState(group: string): GroupState {
+    return states[group] ?? { phase: 'idle', progress: 0, error: '' }
+  }
+
+  function setState(group: string, patch: Partial<GroupState>) {
+    setStates(prev => ({
+      ...prev,
+      [group]: { ...getState(group), ...patch },
+    }))
+  }
+
+  function handleFileSelect(group: string, file: File) {
+    const err = validate(file)
+    if (err) {
+      setState(group, { phase: 'error', file, error: err })
+    } else {
+      setState(group, { phase: 'ready', file, error: '' })
+    }
+  }
+
+  async function handleUpload(group: string) {
+    const st = getState(group)
+    if (!st.file) return
+    const fg = formGroups.find(g => g.group === group)
+    if (!fg) return
+
+    setState(group, { phase: 'uploading', progress: 0, error: '' })
+
+    try {
+      // 1. Get presigned URL
+      const res = await fetch('/api/templates/presign', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          group:         fg.group,
+          groupLabel:    fg.groupLabel,
+          filename:      st.file.name,
+          contentType:   st.file.type || 'application/octet-stream',
+          contentLength: st.file.size,
+        }),
+      })
+
+      if (!res.ok) {
+        const msg = res.status === 403 ? 'Forge subscription required.'
+                  : res.status === 415 ? 'Unsupported file type.'
+                  : res.status === 413 ? `File too large. Max ${MAX_MB} MB.`
+                  : 'Something went wrong — please try again.'
+        setState(group, { phase: 'error', error: msg })
+        return
+      }
+
+      const { uploadUrl } = await res.json() as { uploadUrl: string; key: string }
+
+      // 2. PUT directly to S3 with progress
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest()
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable)
+            setState(group, { progress: Math.round((e.loaded / e.total) * 100) })
+        }
+        xhr.onload = () => {
+          xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error('Upload failed.'))
+        }
+        xhr.onerror   = () => reject(new Error('No internet connection.'))
+        xhr.ontimeout = () => reject(new Error('Upload timed out.'))
+        xhr.timeout   = 120_000
+        xhr.open('PUT', uploadUrl)
+        xhr.setRequestHeader('Content-Type', st.file!.type || 'application/octet-stream')
+        xhr.send(st.file)
+      })
+
+      setState(group, { phase: 'done', progress: 100, error: '' })
+
+    } catch (err) {
+      setState(group, {
+        phase: 'error',
+        error: err instanceof Error ? err.message : 'Upload failed — please try again.',
+      })
+    }
+  }
+
+  function handleRetry(group: string) {
+    setState(group, { phase: 'idle', file: undefined, progress: 0, error: '' })
+  }
+
+  const doneCount = formGroups.filter(fg => getState(fg.group).phase === 'done').length
+
+  // Forge access guard
+  if (!loading && !subscribedProducts.includes('forge')) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 text-center">
+        <p className="text-[15px] font-semibold text-black mb-1">Access restricted</p>
+        <p className="text-[13px] text-gray-400 mb-6 max-w-xs">
+          Template upload requires a TheoFlow Forge subscription. Contact your administrator.
+        </p>
+        <Link href="/dashboard"
+              className="px-6 py-2.5 bg-black text-white text-[13px] font-medium
+                         rounded-full hover:bg-gray-900 transition-colors">
+          Back to dashboard
+        </Link>
+      </div>
+    )
+  }
+
+  if (loading) {
+    return (
+      <div className="space-y-3">
+        {[1, 2, 3].map(i => (
+          <div key={i} className="h-[140px] rounded-2xl border border-black/[0.06] animate-pulse bg-gray-50"/>
+        ))}
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      {/* Header */}
+      <div className="mb-8">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-400 mb-1">
+          {orgName} · TheoFlow Forge
+        </p>
+        <h1 className="font-display text-[2.1rem] leading-tight text-black">Blank templates</h1>
+        <p className="text-[13px] text-gray-400 mt-1">
+          Upload a blank PDF for each form group. Once analysed, a shareable digital form appears on your Forms page.
+        </p>
+      </div>
+
+      {/* Progress banner when some are done */}
+      {doneCount > 0 && doneCount < formGroups.length && (
+        <div className="rounded-2xl border border-amber-100 bg-amber-50 px-5 py-3.5 mb-6
+                        flex items-center gap-3">
+          <div className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse flex-shrink-0"/>
+          <p className="text-[13px] text-amber-800">
+            {doneCount} of {formGroups.length} templates uploaded and being analysed.
+            Upload the remaining templates or{' '}
+            <Link href="/forms" className="font-semibold underline underline-offset-2">
+              view your forms
+            </Link>.
+          </p>
+        </div>
+      )}
+
+      {/* All done banner */}
+      {doneCount === formGroups.length && formGroups.length > 0 && (
+        <div className="rounded-2xl border border-green-100 bg-green-50 px-5 py-3.5 mb-6
+                        flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <svg className="w-4 h-4 text-green-600 flex-shrink-0" fill="none" viewBox="0 0 24 24"
+                 stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/>
+            </svg>
+            <p className="text-[13px] text-green-800 font-medium">
+              All templates uploaded. TheoFlow Forge is analysing them now.
+            </p>
+          </div>
+          <Link href="/forms"
+                className="flex-shrink-0 text-[12px] font-semibold px-4 py-2 rounded-full
+                           bg-black text-white hover:bg-gray-800 transition-colors">
+            View forms →
+          </Link>
+        </div>
+      )}
+
+      {/* No form groups */}
+      {formGroups.length === 0 && (
+        <div className="rounded-2xl border border-black/[0.06] py-20 text-center">
+          <p className="text-[15px] font-semibold text-black mb-1">No form groups configured</p>
+          <p className="text-[13px] text-gray-400">Contact your administrator.</p>
+        </div>
+      )}
+
+      {/* Group cards */}
+      {formGroups.length > 0 && (
+        <div className="space-y-3">
+          {formGroups.map(fg => (
+            <GroupCard
+              key={fg.group}
+              fg={fg}
+              state={getState(fg.group)}
+              onFileSelect={handleFileSelect}
+              onUpload={handleUpload}
+              onRetry={handleRetry}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
