@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 
-type Status = 'done' | 'active' | 'pending'
+type Status = 'done' | 'active' | 'pending' | 'failed'
 
 interface Stage {
   n:      string
@@ -21,7 +21,7 @@ const PIPELINE: Omit<Stage, 'status'>[] = [
   { n: '06', label: 'Notified',   detail: 'User and operator confirmed via email'      },
 ]
 
-function buildStages(activeStage: number): Stage[] {
+function buildStages(activeStage: number, failed: boolean): Stage[] {
   return PIPELINE.map((s, i) => ({
     ...s,
     status: activeStage === -1
@@ -29,7 +29,7 @@ function buildStages(activeStage: number): Stage[] {
       : i < activeStage
         ? 'done'
         : i === activeStage
-          ? 'active'
+          ? (failed ? 'failed' : 'active')
           : 'pending',
   }))
 }
@@ -51,6 +51,15 @@ function StepIcon({ status, n }: { status: Status; n: string }) {
       </div>
     )
   }
+  if (status === 'failed') {
+    return (
+      <div className="w-6 h-6 rounded-full bg-red-500 flex items-center justify-center flex-shrink-0">
+        <svg className="w-3 h-3" fill="none" viewBox="0 0 10 10">
+          <path d="M2.5 2.5l5 5M7.5 2.5l-5 5" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
+        </svg>
+      </div>
+    )
+  }
   return (
     <div className="w-6 h-6 rounded-full border border-black/[0.15] flex items-center justify-center
                     flex-shrink-0 text-[11px] font-semibold text-gray-300">
@@ -69,10 +78,12 @@ interface DocMeta {
 
 export default function StatusPage() {
   const { id } = useParams<{ id: string }>()
-  const [stages,  setStages]  = useState<Stage[]>(buildStages(0))
-  const [loading, setLoading] = useState(true)
-  const [error,   setError]   = useState('')
-  const [meta,    setMeta]    = useState<DocMeta | null>(null)
+  const [stages,     setStages]     = useState<Stage[]>(buildStages(0, false))
+  const [loading,    setLoading]    = useState(true)
+  const [error,      setError]      = useState('')
+  const [meta,       setMeta]       = useState<DocMeta | null>(null)
+  const [failed,     setFailed]     = useState(false)
+  const [validationErrors, setValidationErrors] = useState<string[]>([])
 
   useEffect(() => {
     let stopped = false
@@ -88,10 +99,14 @@ export default function StatusPage() {
           }
           return
         }
-        const data = await res.json() as { activeStage: number } & DocMeta
-        setStages(buildStages(data.activeStage))
+        const data = await res.json() as { activeStage: number; failed?: boolean; validationErrors?: string[] } & DocMeta
+        setStages(buildStages(data.activeStage, !!data.failed))
+        setFailed(!!data.failed)
+        setValidationErrors(data.validationErrors ?? [])
         setMeta({ filename: data.filename, fileSize: data.fileSize, product: data.product, docType: data.docType, createdAt: data.createdAt })
         setError('')
+        // Terminal states (filed/complete or rejected) never change again — stop polling.
+        if (data.activeStage === -1 || data.failed) stopped = true
       } catch {
         setError('Connection error — retrying…')
       } finally {
@@ -100,7 +115,7 @@ export default function StatusPage() {
     }
 
     poll()
-    const t = setInterval(() => { if (!stopped) poll() }, 5000)
+    const t = setInterval(() => { if (stopped) clearInterval(t); else poll() }, 5000)
     return () => { stopped = true; clearInterval(t) }
   }, [id])
 
@@ -113,15 +128,22 @@ export default function StatusPage() {
 
       {/* Header */}
       <div className="mb-10">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-400 mb-1">
-          {loading ? 'Loading…' : allDone ? 'Complete' : 'Processing'}
+        <p className={`text-[11px] font-semibold uppercase tracking-[0.12em] mb-1 ${failed ? 'text-red-500' : 'text-gray-400'}`}>
+          {loading ? 'Loading…' : failed ? 'Needs attention' : allDone ? 'Complete' : 'Processing'}
         </p>
         <h1 className="font-display text-[2rem] leading-tight text-black mb-1">
-          {loading ? 'Checking status' : allDone ? 'Document filed' : 'In the pipeline'}
+          {loading ? 'Checking status' : failed ? 'We couldn’t validate this document' : allDone ? 'Document filed' : 'In the pipeline'}
         </h1>
         <p className="font-mono text-[13px] text-gray-400">{id}</p>
         {error && (
           <p className="mt-2 text-[12px] text-red-500">{error}</p>
+        )}
+        {failed && validationErrors.length > 0 && (
+          <ul className="mt-3 space-y-1">
+            {validationErrors.map((msg, i) => (
+              <li key={i} className="text-[12px] text-red-500">{msg}</li>
+            ))}
+          </ul>
         )}
       </div>
 
@@ -153,6 +175,7 @@ export default function StatusPage() {
                 <p className={`text-[13px] font-semibold ${
                   s.status === 'done'    ? 'text-black'    :
                   s.status === 'active'  ? 'text-black'    :
+                  s.status === 'failed'  ? 'text-red-600'  :
                                           'text-gray-300'
                 }`}>
                   {s.label}
@@ -161,6 +184,12 @@ export default function StatusPage() {
                   <span className="text-[10px] font-medium px-2 py-0.5 rounded-full
                                    border border-amber-300 text-amber-600 leading-none">
                     In progress
+                  </span>
+                )}
+                {s.status === 'failed' && (
+                  <span className="text-[10px] font-medium px-2 py-0.5 rounded-full
+                                   bg-red-500 text-white leading-none">
+                    Rejected
                   </span>
                 )}
                 {s.status === 'done' && i === 0 && (
