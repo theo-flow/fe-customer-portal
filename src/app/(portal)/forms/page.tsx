@@ -4,11 +4,13 @@ import Link from 'next/link'
 import { useOrg } from '@/lib/org-context'
 
 interface FormSchema {
-  group:      string
-  groupLabel: string
-  status:     'ANALYZING' | 'READY' | 'ERROR'
-  fieldCount: number
-  updatedAt:  string
+  group:            string
+  groupLabel:       string
+  status:           'DRAFT' | 'ANALYZING' | 'READY' | 'ERROR'
+  fieldCount:        number
+  updatedAt:         string
+  latestVersion:     number
+  publishedVersion:  number | null
 }
 
 // ── Status pill ───────────────────────────────────────────────────────────────
@@ -17,13 +19,19 @@ function SchemaStatus({ status }: { status: string }) {
   if (status === 'READY') return (
     <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1
                      rounded-full bg-green-50 text-green-700">
-      <span className="w-1.5 h-1.5 rounded-full bg-green-500"/>Ready
+      <span className="w-1.5 h-1.5 rounded-full bg-green-500"/>Published
     </span>
   )
   if (status === 'ANALYZING') return (
     <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1
                      rounded-full bg-amber-50 text-amber-700">
       <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"/>Analysing
+    </span>
+  )
+  if (status === 'DRAFT') return (
+    <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1
+                     rounded-full bg-gray-100 text-gray-500">
+      <span className="w-1.5 h-1.5 rounded-full bg-gray-400"/>Not published
     </span>
   )
   return (
@@ -73,9 +81,11 @@ function GroupRow({ group, groupLabel, schema, orgId }: {
       <div className="flex-1 min-w-0">
         <p className="text-[14px] font-semibold text-black">{groupLabel}</p>
         <p className="text-[12px] text-gray-400 mt-0.5">
-          {schema
-            ? `${schema.fieldCount} field${schema.fieldCount !== 1 ? 's' : ''}`
-            : 'No template uploaded yet'}
+          {!schema
+            ? 'No template uploaded yet'
+            : isReady
+              ? `${schema.fieldCount} field${schema.fieldCount !== 1 ? 's' : ''}`
+              : `v${schema.latestVersion} forged — not yet published`}
           {isReady && (
             <button onClick={copyLink}
                     className="ml-3 text-indigo-500 hover:text-indigo-700 font-medium transition-colors">
@@ -90,6 +100,12 @@ function GroupRow({ group, groupLabel, schema, orgId }: {
         {schema ? (
           <>
             <SchemaStatus status={schema.status}/>
+            {schema.latestVersion > 0 && (
+              <Link href={`/forms/${group}/history`}
+                    className="text-[12px] font-medium text-gray-400 hover:text-black transition-colors whitespace-nowrap">
+                History →
+              </Link>
+            )}
             {isReady && (
               <Link href={`/fill/${orgId}/${group}`} target="_blank"
                     className="text-[12px] font-medium text-black hover:text-gray-500 transition-colors whitespace-nowrap">
@@ -125,7 +141,14 @@ export default function FormsPage() {
   }, [])
 
   const schemaMap = Object.fromEntries(schemas.map(s => [s.group, s]))
-  const readyCount = schemas.filter(s => s.status === 'READY').length
+  // /api/forms returns every SCHEMA# pointer for the org, which can include
+  // orphaned groups left over from earlier form-group configurations that
+  // are no longer in the org's current formGroups list -- only count READY
+  // schemas that still belong to a current group, or this diverges from the
+  // "X of Y" denominator (Y = formGroups.length) and produces a nonsensical
+  // count like "5 of 3".
+  const currentGroupKeys = new Set(formGroups.map(fg => fg.group))
+  const readyCount = schemas.filter(s => s.status === 'READY' && currentGroupKeys.has(s.group)).length
 
   if (orgLoading || loadingSchemas) {
     return (

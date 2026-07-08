@@ -21,17 +21,17 @@ const PRODUCT_META: ProductMeta[] = [
   {
     key: 'forge', name: 'TheoFlow Forge', tagline: 'Form creation',
     description: 'Convert your blank paper forms into structured digital schemas.',
-    color: '#F59E0B', built: false, href: '/templates', actionLabel: 'Manage templates',
+    color: '#F59E0B', built: true, href: '/templates', actionLabel: 'Manage templates',
   },
   {
     key: 'channel', name: 'TheoFlow Channel', tagline: 'Form publishing',
     description: 'Publish forms and route them to clients, staff, or the public.',
-    color: '#6366F1', built: false, href: '/forms', actionLabel: 'Manage forms',
+    color: '#6366F1', built: true, href: '/forms', actionLabel: 'Manage forms',
   },
   {
     key: 'harvest', name: 'TheoFlow Harvest', tagline: 'Data collection',
     description: 'Capture structured responses from users at scale.',
-    color: '#10B981', built: false, href: '/submissions', actionLabel: 'View submissions',
+    color: '#10B981', built: true, href: '/submissions', actionLabel: 'View submissions',
   },
   {
     key: 'decode', name: 'TheoFlow Decode', tagline: 'Document intelligence',

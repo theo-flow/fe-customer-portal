@@ -18,13 +18,28 @@ export async function GET() {
     ExpressionAttributeValues: { ':pk': `ORG#${orgId}`, ':prefix': 'SCHEMA#' },
   }))
 
-  const forms = (result.Items ?? []).map(item => ({
-    group:      item.group       as string,
-    groupLabel: item.group_label as string,
-    status:     item.status      as string,
-    fieldCount: (item.fields as unknown[])?.length ?? 0,
-    updatedAt:  item.updated_at  as string,
-  }))
+  // SK is either the pointer (SCHEMA#{group}) or an immutable version item
+  // (SCHEMA#{group}#v{n}) -- only pointers belong in the forms list.
+  const pointers = (result.Items ?? []).filter(item => (item.SK as string).split('#').length === 2)
+
+  const forms = pointers.map(item => {
+    const publishedVersion = (item.published_version as number) ?? null
+    // The pointer only ever legitimately reaches READY via an explicit publish
+    // action (see api/forms/[group]/publish/route.ts), which always sets
+    // published_version together with status. Deriving status from
+    // published_version's presence -- rather than trusting a stored status
+    // string -- means stale pre-Module-7 values (ANALYZING/ERROR) left on
+    // never-republished pointers can never leak through as a false "Error".
+    return {
+      group:            item.group       as string,
+      groupLabel:       item.group_label as string,
+      status:           publishedVersion != null ? 'READY' : 'DRAFT',
+      fieldCount:       (item.fields as unknown[])?.length ?? 0,
+      updatedAt:        item.updated_at  as string,
+      latestVersion:    (item.latest_version as number) ?? 0,
+      publishedVersion,
+    }
+  })
 
   return NextResponse.json({ forms })
 }

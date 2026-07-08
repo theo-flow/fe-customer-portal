@@ -10,6 +10,14 @@ interface Field {
   options:    string[] | null
 }
 
+interface Branding {
+  source:       string
+  logo_s3_key?:  string
+  company_name?: string | null
+  slogan?:       string | null
+  brand_color?:  string | null
+}
+
 async function getSchema(orgId: string, group: string) {
   const result = await ddbDocClient().send(new GetCommand({
     TableName: TABLE,
@@ -48,31 +56,48 @@ export default async function FillPage({
   }
 
   const groupLabel = schema.group_label as string
-  const fields     = (schema.fields as Field[]) ?? []
+  const fields      = (schema.fields as Field[]) ?? []
+  const branding    = schema.branding as Branding | undefined
+  const hasLogo     = branding?.source === 'extracted' && branding.logo_s3_key
+  const brandColor  = branding?.brand_color ?? null
+  const logoUrl     = hasLogo
+    ? `/api/public/branding/${orgId}/${group}/${schema.published_version}`
+    : null
 
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header bar */}
       <div className="bg-white border-b border-black/[0.06] px-4 py-4">
         <div className="max-w-lg mx-auto flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-black flex items-center justify-center">
-            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24"
-                 stroke="currentColor" strokeWidth={2.2}>
-              <path strokeLinecap="round" strokeLinejoin="round"
-                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586
-                       a1 1 0 01.707.293l5.414 5.414A1 1 0 0119 9.414V19a2 2 0 01-2 2z"/>
-            </svg>
-          </div>
+          {logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={logoUrl} alt={branding?.company_name ?? groupLabel}
+                 className="h-8 max-w-[120px] object-contain rounded"/>
+          ) : (
+            <div className="w-8 h-8 rounded-lg bg-black flex items-center justify-center">
+              <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24"
+                   stroke="currentColor" strokeWidth={2.2}>
+                <path strokeLinecap="round" strokeLinejoin="round"
+                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586
+                         a1 1 0 01.707.293l5.414 5.414A1 1 0 0119 9.414V19a2 2 0 01-2 2z"/>
+              </svg>
+            </div>
+          )}
           <div>
-            <p className="text-[13px] font-semibold text-black leading-none">{groupLabel}</p>
-            <p className="text-[11px] text-gray-400 mt-0.5">Powered by TheoFlow</p>
+            <p className="text-[13px] font-semibold text-black leading-none">
+              {branding?.company_name || groupLabel}
+            </p>
+            <p className="text-[11px] text-gray-400 mt-0.5">
+              {branding?.slogan || 'Powered by TheoFlow'}
+            </p>
           </div>
         </div>
       </div>
 
       {/* Form body */}
       <div className="max-w-lg mx-auto px-4 py-8">
-        <div className="bg-white rounded-2xl border border-black/[0.08] shadow-sm px-6 py-7">
+        <div className="bg-white rounded-2xl border border-black/[0.08] shadow-sm px-6 py-7"
+             style={brandColor ? { borderTopWidth: '3px', borderTopColor: brandColor } : undefined}>
           <h1 className="text-[20px] font-semibold text-black mb-1">{groupLabel}</h1>
           <p className="text-[13px] text-gray-400 mb-7">
             Please fill in all required fields and submit the form.
@@ -86,6 +111,7 @@ export default async function FillPage({
               group={group}
               groupLabel={groupLabel}
               fields={fields}
+              brandColor={brandColor}
             />
           )}
         </div>

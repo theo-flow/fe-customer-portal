@@ -21,6 +21,8 @@ resource "aws_lambda_function" "server" {
       NEXT_PUBLIC_COGNITO_REGION       = var.aws_region
       S3_INTAKE_BUCKET                 = var.s3_intake_bucket
       DYNAMODB_TABLE_ORGS              = var.dynamodb_table
+      CACHE_BUCKET_NAME                = var.cache_bucket_name
+      DYNAMODB_TABLE_FORMS             = var.dynamodb_table_forms
       # AWS_REGION is set automatically by the Lambda runtime to the deployment region
     }
   }

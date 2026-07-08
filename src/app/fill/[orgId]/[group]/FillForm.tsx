@@ -102,11 +102,12 @@ function FieldInput({ field, value, error, onChange }: {
   )
 }
 
-export default function FillForm({ orgId, group, groupLabel, fields }: {
+export default function FillForm({ orgId, group, groupLabel, fields, brandColor }: {
   orgId:      string
   group:      string
   groupLabel: string
   fields:     Field[]
+  brandColor?: string | null
 }) {
   const [values, setValues]     = useState<Record<string, string>>(
     Object.fromEntries(fields.map(f => [f.key, '']))
@@ -200,9 +201,10 @@ export default function FillForm({ orgId, group, groupLabel, fields }: {
       <button
         type="submit"
         disabled={submitting}
-        className="w-full py-3.5 rounded-xl bg-black text-white text-[14px] font-semibold
-                   hover:bg-gray-800 active:bg-gray-900 transition-colors disabled:opacity-50
-                   disabled:cursor-not-allowed">
+        style={brandColor ? { backgroundColor: brandColor } : undefined}
+        className={`w-full py-3.5 rounded-xl text-white text-[14px] font-semibold
+                   transition-colors disabled:opacity-50 disabled:cursor-not-allowed
+                   ${brandColor ? '' : 'bg-black hover:bg-gray-800 active:bg-gray-900'}`}>
         {submitting ? 'Submitting…' : 'Submit'}
       </button>
     </form>

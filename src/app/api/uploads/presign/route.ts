@@ -50,13 +50,13 @@ export async function POST(req: NextRequest) {
     // 1. Status record — looked up by docId on the status page
     await db.send(new PutCommand({
       TableName: TABLE,
-      Item: { PK: `DOC#${docId}`, SK: 'STATUS', docId, orgId, status: 'PENDING', group, groupLabel, filename, fileSize: contentLength ?? 0, s3Key: key, createdAt: now, updatedAt: now },
+      Item: { PK: `DOC#${docId}`, SK: 'STATUS', docId, orgId, status: 'PENDING', product: 'decode', docType: groupLabel, group, groupLabel, filename, fileSize: contentLength ?? 0, s3Key: key, createdAt: now, updatedAt: now },
     }))
 
     // 2. Org index record — queried by orgId on the dashboard
     await db.send(new PutCommand({
       TableName: TABLE,
-      Item: { PK: `ORG#${orgId}`, SK: `DOC#${docId}`, docId, orgId, status: 'PENDING', group, groupLabel, filename, createdAt: now, updatedAt: now },
+      Item: { PK: `ORG#${orgId}`, SK: `DOC#${docId}`, docId, orgId, status: 'PENDING', product: 'decode', docType: groupLabel, group, groupLabel, filename, createdAt: now, updatedAt: now },
     }))
   } catch (err) {
     console.error('[presign] DynamoDB write failed', { orgId, docId, error: err })

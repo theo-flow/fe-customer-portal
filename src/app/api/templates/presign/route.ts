@@ -52,7 +52,6 @@ export async function POST(req: NextRequest) {
       s3Client(),
       new PutObjectCommand({
         Bucket: BUCKET, Key: key, ContentType: contentType,
-        Metadata: { 'org-id': orgId, 'group': group, 'group-label': groupLabel },
       }),
       { expiresIn: 600 }
     )

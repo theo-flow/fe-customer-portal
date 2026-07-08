@@ -29,3 +29,13 @@ variable "dynamodb_table" {
 variable "s3_intake_bucket" {
   default = "daai-insure-intake"
 }
+
+variable "cache_bucket_name" {
+  description = "S3 bucket OpenNext uses for ISR cache (fixes 'No value provided for Bucket' error)"
+  default     = "theoflow-portal-production-cache"
+}
+
+variable "dynamodb_table_forms" {
+  description = "DynamoDB table for form submissions, used by /status and related pages"
+  default     = "daai-insure-forms"
+}
