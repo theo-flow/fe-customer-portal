@@ -1,6 +1,7 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb'
 import { S3Client } from '@aws-sdk/client-s3'
+import { SQSClient } from '@aws-sdk/client-sqs'
 import { fromIni } from '@aws-sdk/credential-providers'
 
 const REGION = process.env.AWS_REGION ?? 'af-south-1'
@@ -20,6 +21,10 @@ export function ddbDocClient() {
 
 export function s3Client() {
   return new S3Client({ region: REGION, credentials: credentials() })
+}
+
+export function sqsClient() {
+  return new SQSClient({ region: REGION, credentials: credentials() })
 }
 
 export const TABLE  = process.env.DYNAMODB_TABLE_ORGS ?? 'daai-insure-orgs'

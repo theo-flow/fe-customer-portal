@@ -38,6 +38,11 @@ const PRODUCT_META: ProductMeta[] = [
     description: 'Upload filled paper documents and extract structured data automatically.',
     color: '#3B82F6', built: true, href: '/upload', actionLabel: 'Upload document',
   },
+  {
+    key: 'sign', name: 'TheoFlow Sign', tagline: 'E-signatures',
+    description: 'Request signatures on validated submissions, or sign any document standalone.',
+    color: '#EC4899', built: true, href: '/sign', actionLabel: 'Manage signatures',
+  },
 ]
 
 // ── Decode stats (only fetched when decode is subscribed) ─────────────────────

@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
     formGroups:         { group: string; groupLabel: string }[]
   }
 
-  const VALID_PRODUCTS = new Set(['forge', 'channel', 'harvest', 'decode', 'print'])
+  const VALID_PRODUCTS = new Set(['forge', 'channel', 'harvest', 'decode', 'sign', 'print'])
   if (!orgName?.trim() || !adminEmail?.trim()) {
     return NextResponse.json({ error: 'orgName and adminEmail are required' }, { status: 400 })
   }

@@ -23,6 +23,8 @@ resource "aws_lambda_function" "server" {
       DYNAMODB_TABLE_ORGS              = var.dynamodb_table
       CACHE_BUCKET_NAME                = var.cache_bucket_name
       DYNAMODB_TABLE_FORMS             = var.dynamodb_table_forms
+      SQS_SIGN_URL                     = "https://sqs.${var.aws_region}.amazonaws.com/${var.aws_account_id}/daai-insure-sign"
+      SQS_GENERATE_URL                 = "https://sqs.${var.aws_region}.amazonaws.com/${var.aws_account_id}/daai-insure-generate"
       # AWS_REGION is set automatically by the Lambda runtime to the deployment region
     }
   }

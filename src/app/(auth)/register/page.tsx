@@ -12,6 +12,7 @@ const THEOFLOW_PRODUCTS = [
   { key: 'channel', label: 'TheoFlow Channel', description: 'Publish and route forms to users and systems.' },
   { key: 'harvest', label: 'TheoFlow Harvest', description: 'Capture structured responses from users at scale.' },
   { key: 'decode',  label: 'TheoFlow Decode',  description: 'Convert unstructured documents into structured intelligence.' },
+  { key: 'sign',    label: 'TheoFlow Sign',    description: 'Request signatures on validated submissions, or sign any document standalone.' },
 ]
 
 const FORM_GROUPS = [

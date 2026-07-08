@@ -76,6 +76,19 @@ interface DocMeta {
   createdAt: string
 }
 
+interface SignerRow {
+  name:  string
+  email: string
+  role:  string
+}
+
+interface SignerLink {
+  signerId: string
+  name:     string
+  email:    string
+  signUrl:  string
+}
+
 export default function StatusPage() {
   const { id } = useParams<{ id: string }>()
   const [stages,     setStages]     = useState<Stage[]>(buildStages(0, false))
@@ -84,6 +97,16 @@ export default function StatusPage() {
   const [meta,       setMeta]       = useState<DocMeta | null>(null)
   const [failed,     setFailed]     = useState(false)
   const [validationErrors, setValidationErrors] = useState<string[]>([])
+
+  // TheoFlow Sign / Print actions (Module 9)
+  const [showSignForm,    setShowSignForm]    = useState(false)
+  const [signerRows,      setSignerRows]      = useState<SignerRow[]>([{ name: '', email: '', role: '' }])
+  const [signSubmitting,  setSignSubmitting]  = useState(false)
+  const [signError,       setSignError]       = useState<string | null>(null)
+  const [signLinks,       setSignLinks]       = useState<SignerLink[] | null>(null)
+  const [printSubmitting, setPrintSubmitting] = useState(false)
+  const [printMessage,    setPrintMessage]    = useState<string | null>(null)
+  const [copiedLink,      setCopiedLink]      = useState<string | null>(null)
 
   useEffect(() => {
     let stopped = false
@@ -122,6 +145,74 @@ export default function StatusPage() {
   const doneCount = stages.filter(s => s.status === 'done').length
   const allDone   = doneCount === stages.length
   const pct       = Math.round((doneCount / stages.length) * 100)
+
+  function updateSignerRow(i: number, field: keyof SignerRow, value: string) {
+    setSignerRows(rows => rows.map((r, idx) => idx === i ? { ...r, [field]: value } : r))
+  }
+
+  function addSignerRow() {
+    setSignerRows(rows => [...rows, { name: '', email: '', role: '' }])
+  }
+
+  function removeSignerRow(i: number) {
+    setSignerRows(rows => rows.filter((_, idx) => idx !== i))
+  }
+
+  async function submitSignRequest() {
+    setSignError(null)
+    const signers = signerRows
+      .filter(r => r.name.trim() || r.email.trim())
+      .map(r => ({ name: r.name.trim(), email: r.email.trim(), role: r.role.trim() || undefined }))
+
+    if (signers.length === 0) {
+      setSignError('Add at least one signer.')
+      return
+    }
+
+    setSignSubmitting(true)
+    try {
+      const res = await fetch('/api/sign/sessions', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ submissionId: id, signers }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setSignLinks(data.signers)
+      } else {
+        setSignError(data.error ?? 'Failed to create signing session.')
+      }
+    } catch {
+      setSignError('Something went wrong. Please try again.')
+    } finally {
+      setSignSubmitting(false)
+    }
+  }
+
+  function copyLink(url: string) {
+    navigator.clipboard.writeText(url).then(() => {
+      setCopiedLink(url)
+      setTimeout(() => setCopiedLink(null), 2000)
+    })
+  }
+
+  async function triggerGeneratePdf() {
+    setPrintMessage(null)
+    setPrintSubmitting(true)
+    try {
+      const res = await fetch('/api/print/generate', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ submissionId: id }),
+      })
+      const data = await res.json()
+      setPrintMessage(res.ok ? 'PDF generation started.' : (data.error ?? 'Failed to start PDF generation.'))
+    } catch {
+      setPrintMessage('Something went wrong. Please try again.')
+    } finally {
+      setPrintSubmitting(false)
+    }
+  }
 
   return (
     <div className="max-w-xl mx-auto pb-4">
@@ -243,6 +334,94 @@ export default function StatusPage() {
           Use this reference to track or query your document.
         </p>
       </div>
+
+      {/* TheoFlow Sign / Print — VALIDATED-attach entry points (Module 9) */}
+      {allDone && !failed && (
+        <div className="border border-black/[0.08] rounded-2xl p-5 mb-8 space-y-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-400">
+            Next steps
+          </p>
+
+          <div className="flex gap-3 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setShowSignForm(v => !v)}
+              className="px-5 py-2.5 rounded-full border border-black/[0.12] text-[13px] font-medium
+                         text-gray-700 hover:border-black hover:text-black transition-colors">
+              Request signature
+            </button>
+            <button
+              type="button"
+              onClick={triggerGeneratePdf}
+              disabled={printSubmitting}
+              className="px-5 py-2.5 rounded-full border border-black/[0.12] text-[13px] font-medium
+                         text-gray-700 hover:border-black hover:text-black transition-colors disabled:opacity-50">
+              {printSubmitting ? 'Starting…' : 'Generate PDF'}
+            </button>
+          </div>
+
+          {printMessage && <p className="text-[12px] text-gray-500">{printMessage}</p>}
+
+          {showSignForm && !signLinks && (
+            <div className="space-y-3 pt-2 border-t border-black/[0.06]">
+              {signerRows.map((row, i) => (
+                <div key={i} className="flex gap-2 items-center">
+                  <input
+                    type="text" placeholder="Signer name" value={row.name}
+                    onChange={e => updateSignerRow(i, 'name', e.target.value)}
+                    className="flex-1 px-3 py-2 rounded-lg border border-black/[0.12] text-[13px] outline-none focus:border-black/40"
+                  />
+                  <input
+                    type="email" placeholder="Email" value={row.email}
+                    onChange={e => updateSignerRow(i, 'email', e.target.value)}
+                    className="flex-1 px-3 py-2 rounded-lg border border-black/[0.12] text-[13px] outline-none focus:border-black/40"
+                  />
+                  <input
+                    type="text" placeholder="Role (optional)" value={row.role}
+                    onChange={e => updateSignerRow(i, 'role', e.target.value)}
+                    className="w-32 px-3 py-2 rounded-lg border border-black/[0.12] text-[13px] outline-none focus:border-black/40"
+                  />
+                  {signerRows.length > 1 && (
+                    <button type="button" onClick={() => removeSignerRow(i)}
+                            className="text-gray-300 hover:text-red-500 transition-colors px-1">✕</button>
+                  )}
+                </div>
+              ))}
+              <button type="button" onClick={addSignerRow}
+                      className="text-[12px] font-medium text-gray-400 hover:text-black transition-colors">
+                + Add signer
+              </button>
+              {signError && <p className="text-[12px] text-red-500">{signError}</p>}
+              <button
+                type="button"
+                onClick={submitSignRequest}
+                disabled={signSubmitting}
+                className="px-5 py-2.5 rounded-full bg-black text-white text-[13px] font-medium
+                           hover:bg-gray-900 transition-colors disabled:opacity-50">
+                {signSubmitting ? 'Sending…' : 'Send for signature'}
+              </button>
+            </div>
+          )}
+
+          {signLinks && (
+            <div className="space-y-2 pt-2 border-t border-black/[0.06]">
+              <p className="text-[12px] text-gray-500">Share these links with each signer:</p>
+              {signLinks.map(link => (
+                <div key={link.signerId} className="flex items-center justify-between gap-3 bg-gray-50 rounded-lg px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-medium text-black truncate">{link.name}</p>
+                    <p className="text-[11px] text-gray-400 truncate">{link.email}</p>
+                  </div>
+                  <button type="button" onClick={() => copyLink(link.signUrl)}
+                          className="text-[12px] font-medium text-indigo-500 hover:text-indigo-700 transition-colors whitespace-nowrap">
+                    {copiedLink === link.signUrl ? '✓ Copied' : 'Copy link'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Actions */}
       <div className="flex gap-3 flex-wrap">

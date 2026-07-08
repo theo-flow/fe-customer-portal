@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 // Routes that require a valid session
-const PROTECTED = ['/dashboard', '/upload', '/status', '/forms', '/submissions', '/templates']
+const PROTECTED = ['/dashboard', '/upload', '/status', '/forms', '/submissions', '/templates', '/sign/new']
+
+// Exact-match protected routes -- /sign itself (the org's session list) needs auth,
+// but /sign/{sessionId}/{signerId}/{token} (the public signing link) must not, so it
+// can't use a blanket '/sign' prefix like the entries above.
+const PROTECTED_EXACT = ['/sign']
 
 // Routes that authenticated users should be bounced away from
 const AUTH_ROUTES = ['/login', '/register', '/verify', '/forgot-password']
@@ -30,7 +35,8 @@ export function middleware(req: NextRequest) {
   }
 
   // Protect portal routes
-  if (PROTECTED.some(r => pathname.startsWith(r))) {
+  const isProtected = PROTECTED.some(r => pathname.startsWith(r)) || PROTECTED_EXACT.includes(pathname)
+  if (isProtected) {
     if (!authenticated) {
       const loginUrl = new URL('/login', req.url)
       loginUrl.searchParams.set('next', pathname)
@@ -49,6 +55,8 @@ export const config = {
     '/forms/:path*',
     '/submissions/:path*',
     '/templates/:path*',
+    '/sign',
+    '/sign/new',
     '/login',
     '/register',
     '/verify',

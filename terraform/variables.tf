@@ -6,6 +6,10 @@ variable "aws_profile" {
   default = "Sithembiso"
 }
 
+variable "aws_account_id" {
+  default = "922318569961"
+}
+
 variable "app_name" {
   default = "theoflow-portal"
 }

@@ -38,6 +38,16 @@ resource "aws_iam_role_policy" "portal_permissions" {
         Action   = ["s3:PutObject", "s3:GetObject"]
         Resource = "arn:aws:s3:::${var.s3_intake_bucket}/*"
       },
+      {
+        # TheoFlow Sign (Module 9): publish {session_id} once the last signer
+        # completes, and publish the "Generate PDF" direct-print trigger.
+        Effect = "Allow"
+        Action = ["sqs:SendMessage"]
+        Resource = [
+          "arn:aws:sqs:${var.aws_region}:${var.aws_account_id}:daai-insure-sign",
+          "arn:aws:sqs:${var.aws_region}:${var.aws_account_id}:daai-insure-generate",
+        ]
+      },
     ]
   })
 }
