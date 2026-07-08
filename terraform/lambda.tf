@@ -1,6 +1,10 @@
 data "archive_file" "server" {
-  type        = "zip"
-  source_dir  = "${path.module}/../.open-next/server-functions/default"
+  type = "zip"
+  # OpenNext's output layout has flipped between server-function/ and
+  # server-functions/default/ across versions before (see KNOWN ISSUES,
+  # 2026-06-27) -- confirm against the actual .open-next/ output before
+  # changing this if the build ever fails here again.
+  source_dir  = "${path.module}/../.open-next/server-function"
   output_path = "${path.module}/.builds/server.zip"
 }
 
