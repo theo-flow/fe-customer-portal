@@ -210,7 +210,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Failed to create signing session' }, { status: 500 })
   }
 
-  const origin = req.nextUrl.origin
+  // req.nextUrl.origin is unreliable inside the OpenNext/Lambda runtime (it
+  // resolves to the Next.js dev-server default, localhost:3000, since there's
+  // no trusted proxy config threading the real Host through) -- prefer the
+  // deployed app's known public URL, falling back to nextUrl for local dev.
+  const origin = process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin
   const signerLinks = signers.map(s => ({
     signerId: s.signer_id,
     name:      s.name,

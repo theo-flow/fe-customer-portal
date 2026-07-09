@@ -8,12 +8,16 @@ import { forgotPassword, confirmNewPassword, friendlyError } from '@/lib/auth'
 const EMAIL_RE  = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const DIGIT_RE  = /^\d{6}$/
 
+// Mirrors the Cognito user pool's actual password policy exactly
+// (infrastructure/modules/auth/main.tf: length>=12, upper, lower, number
+// all mandatory; symbols are NOT required) -- all 4 must pass, not "any 3",
+// or a password that looks "Strong" here can still be rejected by Cognito.
 function pwStrength(p: string) {
   let s = 0
-  if (p.length >= 12)          s++
-  if (/[A-Z]/.test(p))         s++
-  if (/[0-9]/.test(p))         s++
-  if (/[^A-Za-z0-9]/.test(p))  s++
+  if (p.length >= 12)  s++
+  if (/[A-Z]/.test(p)) s++
+  if (/[a-z]/.test(p)) s++
+  if (/[0-9]/.test(p)) s++
   return s
 }
 const SMETA = [
@@ -73,8 +77,8 @@ export default function ForgotPasswordPage() {
       setError('Enter the 6-digit code from your email.')
       return
     }
-    if (s < 3) {
-      setError('Use 12+ characters with an uppercase letter, a number, and a symbol.')
+    if (s < 4) {
+      setError('Use 12+ characters with an uppercase letter, a lowercase letter, and a number.')
       return
     }
     if (newPassword !== confirm) {
@@ -98,17 +102,19 @@ export default function ForgotPasswordPage() {
       {/* ── LEFT: form panel ── */}
       <div className="flex-1 flex flex-col px-6 py-8 sm:px-12 lg:px-16 min-h-[100dvh]">
 
-        <motion.div className="flex items-center gap-2.5"
-          initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.35 }}>
-          <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
-               style={{ background:'rgba(255,255,255,0.10)', border:'1px solid rgba(255,255,255,0.16)' }}>
-            <svg className="w-3.5 h-3.5 text-white" viewBox="0 0 16 16" fill="none">
-              <path d="M3 4h10M3 8h7M3 12h5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
-            </svg>
-          </div>
-          <span className="font-display text-[1rem] tracking-tight text-white">theoflow</span>
-        </motion.div>
+        <Link href="/" className="inline-flex">
+          <motion.div className="flex items-center gap-2.5"
+            initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.35 }}>
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
+                 style={{ background:'rgba(255,255,255,0.10)', border:'1px solid rgba(255,255,255,0.16)' }}>
+              <svg className="w-3.5 h-3.5 text-white" viewBox="0 0 16 16" fill="none">
+                <path d="M3 4h10M3 8h7M3 12h5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+              </svg>
+            </div>
+            <span className="font-display text-[1rem] tracking-tight text-white">theoflow</span>
+          </motion.div>
+        </Link>
 
         <div className="flex-1 flex items-end pb-[10vh]">
           <motion.div className="w-full max-w-[400px]"
@@ -206,8 +212,8 @@ export default function ForgotPasswordPage() {
                           </div>
                           <p className={`text-[0.7rem] mt-1.5 font-medium ${smeta.text}`}>
                             {smeta.label} — {
-                              s < 3
-                                ? 'must include 12+ chars, uppercase, number, and symbol'
+                              s < 4
+                                ? 'must include 12+ chars, uppercase, lowercase, and a number'
                                 : 'password meets requirements'
                             }
                           </p>

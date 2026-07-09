@@ -1,6 +1,7 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { confirmSignUp, resendCode, friendlyError } from '@/lib/auth'
 
 export default function VerifyPage() {
@@ -71,14 +72,14 @@ export default function VerifyPage() {
     <div className="min-h-screen bg-white flex flex-col items-center justify-center px-4 py-12">
       <div className="w-full max-w-[380px]">
         {/* Logo */}
-        <div className="flex items-center gap-2 mb-12">
+        <Link href="/" className="flex items-center gap-2 mb-12 w-fit">
           <div className="w-7 h-7 rounded-lg bg-black flex items-center justify-center flex-shrink-0">
             <svg className="w-3.5 h-3.5 text-white" viewBox="0 0 16 16" fill="none">
               <path d="M3 4h10M3 8h7M3 12h5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
             </svg>
           </div>
           <span className="font-display text-[1rem] tracking-tight text-black">theoflow</span>
-        </div>
+        </Link>
 
         <h1 className="font-display text-[2.4rem] leading-tight text-black mb-2">Check your email</h1>
         <p className="text-[13px] text-gray-400 mb-8 leading-relaxed">

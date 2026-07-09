@@ -33,7 +33,11 @@ export function setAuthCookie(token: string): void {
 }
 
 export function clearAuthCookie(): void {
-  document.cookie = `${COOKIE_NAME}=; path=/; max-age=0`
+  // Must mirror setAuthCookie's attributes exactly (SameSite/Secure) --
+  // a mismatched attribute set can make the browser treat this as setting
+  // a *different* cookie rather than overwriting/deleting the original one.
+  const secure = location.protocol === 'https:' ? '; Secure' : ''
+  document.cookie = `${COOKIE_NAME}=; path=/; max-age=0; SameSite=Strict${secure}`
 }
 
 export function getAuthCookie(): string | null {

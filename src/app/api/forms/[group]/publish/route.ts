@@ -58,7 +58,7 @@ export async function POST(
       Key:       { PK: `ORG#${orgId}`, SK: `SCHEMA#${group}` },
       UpdateExpression: [
         'SET published_version = :version',
-        'status = :status',
+        '#st = :status',
         'fields = :fields',
         'group_label = :groupLabel',
         'branding = :branding',
@@ -66,6 +66,9 @@ export async function POST(
         'updated_at = :now',
         'published_at = :now',
       ].join(', '),
+      ExpressionAttributeNames: {
+        '#st': 'status', // "status" is a DynamoDB reserved keyword -- must be aliased
+      },
       ExpressionAttributeValues: {
         ':version':     version,
         ':status':      'READY',

@@ -48,12 +48,16 @@ type Step = 'org' | 'products' | 'forms' | 'templates' | 'credentials' | 'submit
 interface Template    { group: string; groupLabel: string; file: File | null; skip: boolean }
 interface CustomGroup { id: string; name: string }
 
+// Mirrors the Cognito user pool's actual password policy exactly
+// (infrastructure/modules/auth/main.tf: length>=12, upper, lower, number
+// all mandatory; symbols are NOT required) -- all 4 must pass, not "any 3",
+// or a password that looks "Strong" here can still be rejected by Cognito.
 function pwStrength(p: string) {
   let s = 0
-  if (p.length >= 12)          s++
-  if (/[A-Z]/.test(p))         s++
-  if (/[0-9]/.test(p))         s++
-  if (/[^A-Za-z0-9]/.test(p))  s++
+  if (p.length >= 12)  s++
+  if (/[A-Z]/.test(p)) s++
+  if (/[a-z]/.test(p)) s++
+  if (/[0-9]/.test(p)) s++
   return s
 }
 
@@ -189,7 +193,7 @@ export default function RegisterPage() {
     if (!adminName.trim()) { setError('Full name is required.'); return }
     if (!EMAIL_RE.test(adminEmail.trim())) { setError('Enter a valid email address.'); return }
     if (password !== confirm) { setError('Passwords do not match.'); return }
-    if (s < 3) { setError('Use 12+ characters with an uppercase letter, a number, and a symbol.'); return }
+    if (s < 4) { setError('Use 12+ characters with an uppercase letter, a lowercase letter, and a number.'); return }
 
     setError('')
     setStep('submitting')
@@ -671,8 +675,8 @@ export default function RegisterPage() {
                       </div>
                       <p className={`text-[0.7rem] mt-1.5 font-medium ${smeta.text}`}>
                         {smeta.label} — {
-                          s < 3
-                            ? 'must include 12+ chars, uppercase, number, and symbol'
+                          s < 4
+                            ? 'must include 12+ chars, uppercase, lowercase, and a number'
                             : 'password meets requirements'
                         }
                       </p>

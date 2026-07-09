@@ -193,7 +193,7 @@ test.describe('Registration — bytheodore', () => {
       // Fill correct email, try without password
       await emailInput.fill(USER.email)
       await page.getByRole('button', { name: 'Register organisation' }).click()
-      await expectError(page, 'uppercase letter, number, and symbol')
+      await expectError(page, 'uppercase letter, a lowercase letter, and a number')
       await shot(page, '13-step4-error-weak-password')
 
       // ❌ Show strength meter with a weak password
