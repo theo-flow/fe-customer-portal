@@ -58,8 +58,27 @@ test.describe('Registration — bytheodore', () => {
 
       // ✅ Advance
       await page.getByRole('button', { name: 'Continue' }).click()
-      await expect(page.getByText('Select your form types')).toBeVisible()
+      await expect(page.getByText('Choose your products')).toBeVisible()
       console.log('  ✓  Step 1 passed')
+
+      /* ═══════════════════════════════════════════════════════════════════
+         STEP 1.5 — Choose products
+      ═══════════════════════════════════════════════════════════════════ */
+      console.log('\n── Step: Choose products ──')
+
+      // ❌ Error: Continue with nothing selected
+      await page.getByRole('button', { name: 'Continue' }).click()
+      await expectError(page, 'Select at least one TheoFlow product')
+      await shot(page, '02b-products-error-none-selected')
+
+      // ✅ Select Forge — unlocks the form-types and templates steps this
+      // test exercises next (needsForms/needsTemplates both key off it)
+      await page.getByText('TheoFlow Forge', { exact: true }).click()
+      await shot(page, '02c-products-forge-selected')
+
+      await page.getByRole('button', { name: 'Continue' }).click()
+      await expect(page.getByText('Select your form types')).toBeVisible()
+      console.log('  ✓  Products step passed — Forge selected')
 
       /* ═══════════════════════════════════════════════════════════════════
          STEP 2 — Form types
