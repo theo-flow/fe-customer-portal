@@ -93,6 +93,49 @@ describe('GET /api/status/[docId]', () => {
     expect(body.failed).toBe(false)
   })
 
+  it('surfaces a review payload when the pipeline reports PARTIAL', async () => {
+    mockSend
+      .mockResolvedValueOnce({ Item: docStatusItem })
+      .mockResolvedValueOnce({
+        Items: [{
+          status:             'PARTIAL',
+          document_id:        'DOC-001',
+          org_id:             'org-abc123',
+          group:              'claim',
+          fields_json:        JSON.stringify({ id_number: '8001015009087' }),
+          ai_resolved_fields: ['phone'],
+          flagged_fields:     [],
+          unresolved_fields:  [],
+        }],
+      })
+      .mockResolvedValueOnce({
+        Item: { fields: [{ key: 'id_number', label: 'ID Number', field_type: 'sa_id', required: true, options: null }] },
+      })
+
+    const res = await GET(makeRequest(), { params: { docId: 'doc-1' } })
+    const body = await res.json()
+
+    expect(body.failed).toBe(false)
+    expect(body.review).toEqual({
+      fields:            { id_number: '8001015009087' },
+      schemaFields:      [{ key: 'id_number', label: 'ID Number', field_type: 'sa_id', required: true, options: null }],
+      aiResolvedFields:  ['phone'],
+      flaggedFields:     [],
+      unresolvedFields:  [],
+    })
+  })
+
+  it('does not surface a review payload for non-PARTIAL statuses', async () => {
+    mockSend
+      .mockResolvedValueOnce({ Item: docStatusItem })
+      .mockResolvedValueOnce({ Items: [{ status: 'VALID' }] })
+
+    const res = await GET(makeRequest(), { params: { docId: 'doc-1' } })
+    const body = await res.json()
+
+    expect(body.review).toBeNull()
+  })
+
   it('falls back to portal status when the pipeline GSI has no record yet', async () => {
     mockSend
       .mockResolvedValueOnce({ Item: docStatusItem })

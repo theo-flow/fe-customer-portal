@@ -60,6 +60,57 @@ describe('StatusPage', () => {
     expect(screen.getByText('Missing signature')).toBeInTheDocument()
   })
 
+  it('shows a review panel (not the failed state) when the pipeline reports PARTIAL via review data', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({
+        activeStage: 4,
+        failed: false,
+        validationErrors: [],
+        review: {
+          fields: { id_number: '8001015009087' },
+          schemaFields: [
+            { key: 'id_number', label: 'ID Number', field_type: 'sa_id', required: true, options: null },
+          ],
+          aiResolvedFields: ['id_number'],
+          flaggedFields: [],
+          unresolvedFields: [],
+        },
+        ...baseMeta,
+      })
+    )
+
+    render(<StatusPage />)
+
+    expect(await screen.findByText('A few fields need your input')).toBeInTheDocument()
+    expect(screen.getAllByText('Needs your review').length).toBeGreaterThan(0)
+    expect(screen.getByRole('button', { name: /accept and continue/i })).toBeInTheDocument()
+    expect(screen.queryByText('We couldn’t validate this document')).not.toBeInTheDocument()
+  })
+
+  it('keeps polling while the document is PARTIAL, unlike the terminal rejected state', async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        activeStage: 4,
+        failed: false,
+        validationErrors: [],
+        review: {
+          fields: {}, schemaFields: [], aiResolvedFields: [], flaggedFields: [], unresolvedFields: [],
+        },
+        ...baseMeta,
+      })
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<StatusPage />)
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
   it('stops polling once the document is rejected, instead of polling forever', async () => {
     vi.useFakeTimers()
     const fetchMock = vi.fn().mockResolvedValue(

@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
+import PartialReviewPanel, { type ReviewData } from '@/components/PartialReviewPanel'
 
 type Status = 'done' | 'active' | 'pending' | 'failed'
 
@@ -97,6 +98,7 @@ export default function StatusPage() {
   const [meta,       setMeta]       = useState<DocMeta | null>(null)
   const [failed,     setFailed]     = useState(false)
   const [validationErrors, setValidationErrors] = useState<string[]>([])
+  const [review,     setReview]     = useState<ReviewData | null>(null)
 
   // TheoFlow Sign / Print actions (Module 9)
   const [showSignForm,    setShowSignForm]    = useState(false)
@@ -122,13 +124,18 @@ export default function StatusPage() {
           }
           return
         }
-        const data = await res.json() as { activeStage: number; failed?: boolean; validationErrors?: string[] } & DocMeta
+        const data = await res.json() as {
+          activeStage: number; failed?: boolean; validationErrors?: string[]; review?: ReviewData | null
+        } & DocMeta
         setStages(buildStages(data.activeStage, !!data.failed))
         setFailed(!!data.failed)
         setValidationErrors(data.validationErrors ?? [])
+        setReview(data.review ?? null)
         setMeta({ filename: data.filename, fileSize: data.fileSize, product: data.product, docType: data.docType, createdAt: data.createdAt })
         setError('')
         // Terminal states (filed/complete or rejected) never change again — stop polling.
+        // PARTIAL keeps polling: once the human accepts, the next tick picks up
+        // the transition to VALIDATED on its own.
         if (data.activeStage === -1 || data.failed) stopped = true
       } catch {
         setError('Connection error — retrying…')
@@ -142,9 +149,16 @@ export default function StatusPage() {
     return () => { stopped = true; clearInterval(t) }
   }, [id])
 
-  const doneCount = stages.filter(s => s.status === 'done').length
-  const allDone   = doneCount === stages.length
-  const pct       = Math.round((doneCount / stages.length) * 100)
+  const doneCount   = stages.filter(s => s.status === 'done').length
+  const allDone     = doneCount === stages.length
+  const pct         = Math.round((doneCount / stages.length) * 100)
+  const needsReview = !!review
+
+  function handleAccepted() {
+    // Optimistic: hide the panel immediately, the next poll (≤5s) confirms
+    // the transition to VALIDATED and updates the pipeline stages.
+    setReview(null)
+  }
 
   function updateSignerRow(i: number, field: keyof SignerRow, value: string) {
     setSignerRows(rows => rows.map((r, idx) => idx === i ? { ...r, [field]: value } : r))
@@ -219,11 +233,17 @@ export default function StatusPage() {
 
       {/* Header */}
       <div className="mb-10">
-        <p className={`text-[11px] font-semibold uppercase tracking-[0.12em] mb-1 ${failed ? 'text-red-500' : 'text-gray-400'}`}>
-          {loading ? 'Loading…' : failed ? 'Needs attention' : allDone ? 'Complete' : 'Processing'}
+        <p className={`text-[11px] font-semibold uppercase tracking-[0.12em] mb-1 ${
+          failed ? 'text-red-500' : needsReview ? 'text-amber-600' : 'text-gray-400'
+        }`}>
+          {loading ? 'Loading…' : failed ? 'Needs attention' : needsReview ? 'Needs your review' : allDone ? 'Complete' : 'Processing'}
         </p>
         <h1 className="font-display text-[2rem] leading-tight text-black mb-1">
-          {loading ? 'Checking status' : failed ? 'We couldn’t validate this document' : allDone ? 'Document filed' : 'In the pipeline'}
+          {loading ? 'Checking status'
+            : failed ? 'We couldn’t validate this document'
+            : needsReview ? 'A few fields need your input'
+            : allDone ? 'Document filed'
+            : 'In the pipeline'}
         </h1>
         <p className="font-mono text-[13px] text-gray-400">{id}</p>
         {error && (
@@ -274,7 +294,7 @@ export default function StatusPage() {
                 {s.status === 'active' && (
                   <span className="text-[10px] font-medium px-2 py-0.5 rounded-full
                                    border border-amber-300 text-amber-600 leading-none">
-                    In progress
+                    {needsReview ? 'Needs review' : 'In progress'}
                   </span>
                 )}
                 {s.status === 'failed' && (
@@ -299,6 +319,11 @@ export default function StatusPage() {
           </div>
         ))}
       </div>
+
+      {/* Human review panel — surfaces when the pipeline reports PARTIAL */}
+      {review && (
+        <PartialReviewPanel docId={id} review={review} onAccepted={handleAccepted} />
+      )}
 
       {/* Document ref card */}
       <div className="border border-black/[0.08] rounded-2xl p-5 mb-8 bg-gray-50/60">
