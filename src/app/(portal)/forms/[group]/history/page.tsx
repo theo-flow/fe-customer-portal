@@ -14,6 +14,14 @@ interface VersionRow {
   published:       boolean
 }
 
+// Versions migrated from before per-version history existed (Module 7) never
+// had a created_at recorded -- show that plainly instead of "Invalid Date".
+function formatForgedDate(createdAt: string): string {
+  if (!createdAt) return 'date unknown'
+  const d = new Date(createdAt)
+  return Number.isNaN(d.getTime()) ? 'date unknown' : d.toLocaleString()
+}
+
 function StatusPill({ status }: { status: string }) {
   if (status === 'READY') return (
     <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1
@@ -57,7 +65,7 @@ function VersionRow({ v, onPublish, publishing }: {
           )}
         </p>
         <p className="text-[12px] text-gray-400 mt-0.5">
-          {v.fieldCount} field{v.fieldCount !== 1 ? 's' : ''} · forged {new Date(v.createdAt).toLocaleString()}
+          {v.fieldCount} field{v.fieldCount !== 1 ? 's' : ''} · forged {formatForgedDate(v.createdAt)}
           {v.brandingSource === 'extracted' && ' · branding detected'}
         </p>
       </div>
