@@ -1,5 +1,5 @@
 'use client'
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { useOrg } from '@/lib/org-context'
 
@@ -8,12 +8,28 @@ const MAX_MB    = 50
 const MAX_BYTES = MAX_MB * 1024 * 1024
 
 type Phase = 'idle' | 'ready' | 'uploading' | 'done' | 'error'
+type ServerStatus = 'ANALYZING' | 'READY' | 'ERROR'
+
+// Mirrors fn-00-template-analyser's 6-stage pipeline (Module 8).
+const STAGE_LABELS: Record<string, string> = {
+  QUEUED:                'Queued',
+  OCR:                   'Reading document',
+  STRUCTURING:           'Structuring fields',
+  DOCUMENT_INTELLIGENCE: 'Assessing complexity',
+  FIELD_INFERENCE:       'Inferring field types',
+  LLM:                   'Resolving ambiguous fields',
+  VALIDATION:            'Validating schema',
+}
 
 interface GroupState {
-  phase:    Phase
-  file?:    File
-  progress: number
-  error:    string
+  phase:             Phase
+  file?:             File
+  progress:          number
+  error:             string
+  serverStatus?:     ServerStatus
+  serverStage?:      string | null
+  serverError?:      string | null
+  serverFieldCount?: number | null
 }
 
 function validate(f: File): string {
@@ -41,7 +57,10 @@ function GroupCard({ fg, state, onFileSelect, onUpload, onRetry }: {
     onFileSelect(fg.group, f)
   }
 
-  const { phase, file, progress, error } = state
+  const { phase, file, progress, error, serverStatus, serverStage, serverError, serverFieldCount } = state
+  const analysed = phase === 'done' && serverStatus === 'READY'
+  const failed    = phase === 'done' && serverStatus === 'ERROR'
+  const analysing = phase === 'done' && (!serverStatus || serverStatus === 'ANALYZING')
 
   return (
     <div className="rounded-2xl border border-black/[0.08] p-5">
@@ -49,11 +68,16 @@ function GroupCard({ fg, state, onFileSelect, onUpload, onRetry }: {
       {/* Header row */}
       <div className="flex items-center gap-3 mb-4">
         <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0
-                         ${phase === 'done' ? 'bg-green-50' : 'bg-gray-50'}`}>
-          {phase === 'done' ? (
+                         ${analysed ? 'bg-green-50' : failed ? 'bg-red-50' : 'bg-gray-50'}`}>
+          {analysed ? (
             <svg className="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24"
                  stroke="currentColor" strokeWidth={2.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/>
+            </svg>
+          ) : failed ? (
+            <svg className="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24"
+                 stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
             </svg>
           ) : (
             <svg className="w-4 h-4 text-gray-300" fill="none" viewBox="0 0 24 24"
@@ -66,17 +90,42 @@ function GroupCard({ fg, state, onFileSelect, onUpload, onRetry }: {
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-[14px] font-semibold text-black">{fg.groupLabel}</p>
-          {phase === 'done' && (
+          {analysing && (
             <p className="text-[12px] text-amber-600 font-medium mt-0.5">
-              Analysing template…
+              {serverStage && STAGE_LABELS[serverStage] ? STAGE_LABELS[serverStage] : 'Analysing template…'}
+            </p>
+          )}
+          {analysed && (
+            <p className="text-[12px] text-green-600 font-medium mt-0.5">
+              {serverFieldCount ?? 0} field{serverFieldCount === 1 ? '' : 's'} extracted
+            </p>
+          )}
+          {failed && (
+            <p className="text-[12px] text-red-500 font-medium mt-0.5">
+              {serverError || 'Something went wrong while analysing this template.'}
             </p>
           )}
         </div>
-        {phase === 'done' && (
+        {analysing && (
           <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full
                            bg-amber-50 text-amber-700">
             Processing
           </span>
+        )}
+        {analysed && (
+          <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full
+                           bg-green-50 text-green-700">
+            Ready
+          </span>
+        )}
+        {failed && (
+          <button
+            onClick={() => onRetry(fg.group)}
+            className="text-[11px] font-semibold px-3 py-1.5 rounded-full
+                       bg-black text-white hover:bg-gray-800 transition-colors whitespace-nowrap"
+          >
+            Try again
+          </button>
         )}
       </div>
 
@@ -189,6 +238,48 @@ export default function TemplatesPage() {
       [group]: { ...getState(group), ...patch },
     }))
   }
+
+  // Poll for pipeline status on every group whose upload finished but hasn't
+  // resolved server-side yet — without this, "done" just sits on a static
+  // "Analysing template…" label forever regardless of what actually happens.
+  useEffect(() => {
+    const pending = Object.entries(states)
+      .filter(([, s]) => s.phase === 'done' && s.serverStatus !== 'READY' && s.serverStatus !== 'ERROR')
+      .map(([group]) => group)
+
+    if (pending.length === 0) return
+
+    let cancelled = false
+    const checkAll = async () => {
+      for (const group of pending) {
+        try {
+          const res = await fetch(`/api/forms/${group}/versions`)
+          if (!res.ok || cancelled) continue
+          const data = await res.json() as { versions: Array<{
+            status: 'ANALYZING' | 'READY' | 'ERROR'
+            processingStage: string | null
+            errorMessage: string | null
+            fieldCount: number
+          }> }
+          const latest = data.versions[0]
+          if (!latest || cancelled) continue
+          setState(group, {
+            serverStatus:     latest.status,
+            serverStage:      latest.processingStage,
+            serverError:      latest.errorMessage,
+            serverFieldCount: latest.fieldCount,
+          })
+        } catch {
+          // transient — next 5s tick retries
+        }
+      }
+    }
+
+    checkAll()
+    const t = setInterval(checkAll, 5000)
+    return () => { cancelled = true; clearInterval(t) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [states])
 
   function handleFileSelect(group: string, file: File) {
     const err = validate(file)

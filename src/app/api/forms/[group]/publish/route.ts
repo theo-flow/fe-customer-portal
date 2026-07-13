@@ -59,7 +59,7 @@ export async function POST(
       UpdateExpression: [
         'SET published_version = :version',
         '#st = :status',
-        'fields = :fields',
+        '#fld = :fields',
         'group_label = :groupLabel',
         'branding = :branding',
         'source_s3_key = :sourceKey',
@@ -67,7 +67,8 @@ export async function POST(
         'published_at = :now',
       ].join(', '),
       ExpressionAttributeNames: {
-        '#st': 'status', // "status" is a DynamoDB reserved keyword -- must be aliased
+        '#st':  'status', // "status" is a DynamoDB reserved keyword -- must be aliased
+        '#fld': 'fields', // "fields" is also a DynamoDB reserved keyword -- must be aliased
       },
       ExpressionAttributeValues: {
         ':version':     version,

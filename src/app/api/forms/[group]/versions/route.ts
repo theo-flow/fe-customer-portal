@@ -41,14 +41,16 @@ export async function GET(
 
   const versions = (versionItems.Items ?? [])
     .map(item => ({
-      version:        item.version        as number,
-      status:         item.status         as string,
-      fieldCount:     (item.fields as unknown[])?.length ?? 0,
-      brandingSource: (item.branding as { source?: string } | undefined)?.source ?? null,
-      createdAt:      item.created_at     as string,
-      updatedAt:      item.updated_at     as string,
-      sourceS3Key:    item.source_s3_key  as string,
-      published:      item.version === publishedVersion,
+      version:         item.version         as number,
+      status:          item.status          as string,
+      processingStage: (item.processing_stage as string) ?? null,
+      errorMessage:    (item.error_message    as string) ?? null,
+      fieldCount:      (item.fields as unknown[])?.length ?? 0,
+      brandingSource:  (item.branding as { source?: string } | undefined)?.source ?? null,
+      createdAt:       item.created_at      as string,
+      updatedAt:       item.updated_at      as string,
+      sourceS3Key:     item.source_s3_key   as string,
+      published:       item.version === publishedVersion,
     }))
     .sort((a, b) => b.version - a.version)
 

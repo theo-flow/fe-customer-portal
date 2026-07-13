@@ -9,12 +9,16 @@ interface SubmitResult {
   errors?: Record<string, string>
 }
 
-export default function FillForm({ orgId, group, groupLabel, fields, brandColor }: {
+export default function FillForm({ orgId, group, groupLabel, fields, brandColor, preview }: {
   orgId:      string
   group:      string
   groupLabel: string
   fields:     Field[]
   brandColor?: string | null
+  // Read-only preview of an unpublished version -- renders exactly like the
+  // live form but never calls the public submit API, so it can't create a
+  // real Harvest submission for a form that isn't actually live yet.
+  preview?:   boolean
 }) {
   const [values, setValues]     = useState<Record<string, string>>(
     Object.fromEntries(fields.map(f => [f.key, '']))
@@ -30,6 +34,7 @@ export default function FillForm({ orgId, group, groupLabel, fields, brandColor 
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (preview) return
     setResult(null)
 
     // Client-side validation first
@@ -107,12 +112,13 @@ export default function FillForm({ orgId, group, groupLabel, fields, brandColor 
 
       <button
         type="submit"
-        disabled={submitting}
-        style={brandColor ? { backgroundColor: brandColor } : undefined}
+        disabled={submitting || preview}
+        style={brandColor && !preview ? { backgroundColor: brandColor } : undefined}
+        title={preview ? 'This is a preview — publish this version to accept real submissions' : undefined}
         className={`w-full py-3.5 rounded-xl text-white text-[14px] font-semibold
                    transition-colors disabled:opacity-50 disabled:cursor-not-allowed
-                   ${brandColor ? '' : 'bg-black hover:bg-gray-800 active:bg-gray-900'}`}>
-        {submitting ? 'Submitting…' : 'Submit'}
+                   ${brandColor && !preview ? '' : 'bg-black hover:bg-gray-800 active:bg-gray-900'}`}>
+        {preview ? 'Preview — submission disabled' : submitting ? 'Submitting…' : 'Submit'}
       </button>
     </form>
   )

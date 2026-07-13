@@ -4,8 +4,10 @@ import Link from 'next/link'
 import { useOrg } from '@/lib/org-context'
 
 interface VersionRow {
-  version:        number
-  status:         'ANALYZING' | 'READY' | 'ERROR'
+  version:         number
+  status:          'ANALYZING' | 'READY' | 'ERROR'
+  processingStage: string | null
+  errorMessage:    string | null
   fieldCount:      number
   brandingSource:  string | null
   createdAt:       string
@@ -14,12 +16,51 @@ interface VersionRow {
   published:       boolean
 }
 
+// Mirrors fn-00-template-analyser's 6-stage pipeline (Module 8).
+const STAGE_ORDER = ['QUEUED', 'OCR', 'STRUCTURING', 'DOCUMENT_INTELLIGENCE', 'FIELD_INFERENCE', 'LLM', 'VALIDATION']
+const STAGE_LABELS: Record<string, string> = {
+  QUEUED:                'Queued',
+  OCR:                   'Reading document',
+  STRUCTURING:           'Structuring fields',
+  DOCUMENT_INTELLIGENCE: 'Assessing complexity',
+  FIELD_INFERENCE:       'Inferring field types',
+  LLM:                   'Resolving ambiguous fields',
+  VALIDATION:            'Validating schema',
+}
+
+function StageProgress({ stage }: { stage: string | null }) {
+  const idx = stage ? STAGE_ORDER.indexOf(stage) : 0
+  const pct = idx < 0 ? 8 : Math.round(((idx + 1) / STAGE_ORDER.length) * 100)
+  return (
+    <div className="mt-2">
+      <div className="flex items-center gap-2 mb-1">
+        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse flex-shrink-0"/>
+        <p className="text-[11px] font-medium text-amber-700">
+          {stage && STAGE_LABELS[stage] ? STAGE_LABELS[stage] : 'Analysing'}
+        </p>
+      </div>
+      <div className="h-[2px] w-40 bg-amber-100 rounded-full overflow-hidden">
+        <div className="h-full bg-amber-400 rounded-full transition-all duration-700" style={{ width: `${pct}%` }}/>
+      </div>
+    </div>
+  )
+}
+
 // Versions migrated from before per-version history existed (Module 7) never
 // had a created_at recorded -- show that plainly instead of "Invalid Date".
 function formatForgedDate(createdAt: string): string {
   if (!createdAt) return 'date unknown'
   const d = new Date(createdAt)
   return Number.isNaN(d.getTime()) ? 'date unknown' : d.toLocaleString()
+}
+
+// Different uploads to the same group can look identical at a glance
+// (same field count, forged minutes apart) -- the source filename is the
+// one thing that reliably tells versions of genuinely different documents
+// apart, so every row shows it rather than just a version number.
+function filenameFromKey(sourceS3Key: string): string {
+  if (!sourceS3Key) return 'unknown file'
+  return sourceS3Key.split('/').pop() || 'unknown file'
 }
 
 function StatusPill({ status }: { status: string }) {
@@ -43,8 +84,9 @@ function StatusPill({ status }: { status: string }) {
   )
 }
 
-function VersionRow({ v, onPublish, publishing }: {
+function VersionRow({ v, group, onPublish, publishing }: {
   v:          VersionRow
+  group:      string
   onPublish:  (version: number) => void
   publishing: number | null
 }) {
@@ -57,21 +99,41 @@ function VersionRow({ v, onPublish, publishing }: {
 
       <div className="flex-1 min-w-0">
         <p className="text-[14px] font-semibold text-black">
-          Version {v.version}
+          {/* Only something actually published earns the word "Version" --
+              everything else is a draft attempt, whether it succeeded or not. */}
+          {v.published ? `Version ${v.version}` : `Draft ${v.version}`}
           {v.published && (
             <span className="ml-2 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">
               Published
             </span>
           )}
         </p>
+        <p className="text-[12px] font-medium text-gray-600 mt-0.5 truncate">
+          {filenameFromKey(v.sourceS3Key)}
+        </p>
         <p className="text-[12px] text-gray-400 mt-0.5">
           {v.fieldCount} field{v.fieldCount !== 1 ? 's' : ''} · forged {formatForgedDate(v.createdAt)}
           {v.brandingSource === 'extracted' && ' · branding detected'}
         </p>
+        {v.status === 'ANALYZING' && <StageProgress stage={v.processingStage}/>}
+        {v.status === 'ERROR' && (
+          <p className="text-[12px] text-red-600 mt-1.5">
+            {v.errorMessage || 'Something went wrong while analysing this template.'}
+          </p>
+        )}
       </div>
 
-      <div className="flex items-center gap-3 flex-shrink-0">
+      <div className="flex items-center gap-3 flex-shrink-0 self-start">
         <StatusPill status={v.status}/>
+        {v.status === 'READY' && (
+          <Link
+            href={`/forms/${group}/preview/${v.version}`}
+            className="text-[12px] font-semibold px-4 py-2 rounded-full border border-black/[0.12]
+                       text-gray-700 hover:border-black hover:text-black transition-colors whitespace-nowrap"
+          >
+            Preview
+          </Link>
+        )}
         {!v.published && v.status === 'READY' && (
           <button
             onClick={() => onPublish(v.version)}
@@ -79,7 +141,7 @@ function VersionRow({ v, onPublish, publishing }: {
             className="text-[12px] font-semibold px-4 py-2 rounded-full bg-black text-white
                        hover:bg-gray-800 transition-colors disabled:opacity-50 whitespace-nowrap"
           >
-            {publishing === v.version ? 'Publishing…' : 'Publish this version'}
+            {publishing === v.version ? 'Publishing…' : 'Publish this draft'}
           </button>
         )}
       </div>
@@ -96,16 +158,25 @@ export default function VersionHistoryPage({ params }: { params: { group: string
   const [publishing, setPublishing] = useState<number | null>(null)
   const [error, setError]           = useState<string | null>(null)
 
-  const load = useCallback(() => {
-    setLoading(true)
-    fetch(`/api/forms/${group}/versions`)
+  const load = useCallback((showLoading = true) => {
+    if (showLoading) setLoading(true)
+    return fetch(`/api/forms/${group}/versions`)
       .then(r => r.ok ? r.json() : null)
-      .then(d => d && setVersions(d.versions))
-      .catch(() => {})
-      .finally(() => setLoading(false))
+      .then(d => { if (d) setVersions(d.versions); return d as { versions: VersionRow[] } | null })
+      .catch(() => null)
+      .finally(() => { if (showLoading) setLoading(false) })
   }, [group])
 
   useEffect(() => { load() }, [load])
+
+  // Poll silently (no skeleton flash) while any version is still analysing —
+  // this is what actually shows the pipeline stages progressing, matching
+  // the equivalent live-polling pattern on the Decode status page.
+  useEffect(() => {
+    if (!versions.some(v => v.status === 'ANALYZING')) return
+    const t = setInterval(() => { load(false) }, 5000)
+    return () => clearInterval(t)
+  }, [versions, load])
 
   async function handlePublish(version: number) {
     setError(null)
@@ -149,7 +220,7 @@ export default function VersionHistoryPage({ params }: { params: { group: string
         </Link>
         <h1 className="font-display text-[2.1rem] leading-tight text-black mt-2">{groupLabel} — history</h1>
         <p className="text-[13px] text-gray-400 mt-1">
-          Every forge of this form is kept. Choose which version is live on Channel.
+          Every forge attempt is kept as a draft. Preview one, then publish it to make it live on Channel.
         </p>
       </div>
 
@@ -161,13 +232,13 @@ export default function VersionHistoryPage({ params }: { params: { group: string
 
       {versions.length === 0 ? (
         <div className="rounded-2xl border border-black/[0.06] py-20 text-center">
-          <p className="text-[15px] font-semibold text-black mb-1">No versions yet</p>
-          <p className="text-[13px] text-gray-400">Upload a template on the Templates page to forge the first version.</p>
+          <p className="text-[15px] font-semibold text-black mb-1">No history yet</p>
+          <p className="text-[13px] text-gray-400">Upload a template on the Templates page to forge the first draft.</p>
         </div>
       ) : (
         <div className="space-y-3">
           {versions.map(v => (
-            <VersionRow key={v.version} v={v} onPublish={handlePublish} publishing={publishing}/>
+            <VersionRow key={v.version} v={v} group={group} onPublish={handlePublish} publishing={publishing}/>
           ))}
         </div>
       )}
