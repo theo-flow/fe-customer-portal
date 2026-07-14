@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { validateField } from '@/lib/validators'
 import FieldInput, { type Field } from '@/components/FieldInput'
+import PositionedFormCanvas from '@/components/PositionedFormCanvas'
 
 interface SubmitResult {
   success: boolean
@@ -94,15 +95,32 @@ export default function FillForm({ orgId, group, groupLabel, fields, brandColor,
 
   return (
     <form onSubmit={handleSubmit} noValidate className="space-y-5">
-      {fields.map(field => (
-        <FieldInput
-          key={field.key}
-          field={field}
-          value={values[field.key] ?? ''}
-          error={errors[field.key]}
-          onChange={val => setValue(field.key, val)}
+      {/* Mobile: the original clean stacked list -- absolute positioning
+          from PositionedFormCanvas isn't legible at this width, and a
+          plain list is also just more usable for actual mobile filling. */}
+      <div className="md:hidden space-y-5">
+        {fields.map(field => (
+          <FieldInput
+            key={field.key}
+            field={field}
+            value={values[field.key] ?? ''}
+            error={errors[field.key]}
+            onChange={val => setValue(field.key, val)}
+          />
+        ))}
+      </div>
+
+      {/* Desktop/tablet: fields laid out at their real extracted positions,
+          so the form actually resembles the original document. */}
+      <div className="hidden md:block">
+        <PositionedFormCanvas
+          fields={fields}
+          values={values}
+          errors={errors}
+          onChange={setValue}
+          brandColor={brandColor}
         />
-      ))}
+      </div>
 
       {result?.success === false && (
         <div className="rounded-xl bg-red-50 border border-red-100 px-4 py-3 text-[13px] text-red-700">

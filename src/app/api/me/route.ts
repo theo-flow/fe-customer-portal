@@ -18,23 +18,29 @@ export async function GET() {
   let orgName            = ''
   let subscribedProducts: string[]                         = []
   let formGroups:         { group: string; groupLabel: string }[] = []
+  let orgLogoUrl:         string | null = null
 
   if (orgId) {
     try {
       const result = await ddbDocClient().send(new GetCommand({
         TableName: TABLE,
         Key: { PK: `ORG#${orgId}`, SK: 'PROFILE' },
-        ProjectionExpression: 'orgName, subscribed_products, form_groups',
+        ProjectionExpression: 'orgName, subscribed_products, form_groups, org_logo_group, org_logo_version',
       }))
       if (result.Item) {
         orgName            = result.Item.orgName            ?? ''
         subscribedProducts = result.Item.subscribed_products ?? []
         formGroups         = result.Item.form_groups         ?? []
+        // Cached by publish/route.ts whenever a published version has real
+        // extracted branding -- there's no separate "org logo" concept.
+        if (result.Item.org_logo_group && result.Item.org_logo_version) {
+          orgLogoUrl = `/api/public/branding/${orgId}/${result.Item.org_logo_group}/${result.Item.org_logo_version}`
+        }
       }
     } catch {
       // Non-fatal: portal still loads, product tiles will show empty state
     }
   }
 
-  return NextResponse.json({ name, email, orgId, orgName, initials, subscribedProducts, formGroups })
+  return NextResponse.json({ name, email, orgId, orgName, initials, subscribedProducts, formGroups, orgLogoUrl })
 }

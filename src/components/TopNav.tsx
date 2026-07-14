@@ -33,7 +33,7 @@ const NAV_ICONS: Record<string, JSX.Element> = {
 export function TopNav() {
   const path   = usePathname()
   const router = useRouter()
-  const { name, email, initials, orgName, subscribedProducts, loading } = useOrg()
+  const { name, email, initials, orgName, subscribedProducts, orgLogoUrl, loading } = useOrg()
   const navItems = navItemsFor(loading ? [] : subscribedProducts)
 
   const [menuOpen, setMenuOpen] = useState(false)
@@ -111,8 +111,13 @@ export function TopNav() {
                 onClick={() => setMenuOpen(prev => !prev)}
                 title={name}
                 className="w-8 h-8 rounded-full bg-black flex items-center justify-center
-                           cursor-pointer hover:opacity-70 transition-opacity flex-shrink-0">
-                <span className="font-medium text-white text-xs">{initials}</span>
+                           cursor-pointer hover:opacity-70 transition-opacity flex-shrink-0 overflow-hidden">
+                {orgLogoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={orgLogoUrl} alt={orgName} className="w-full h-full object-cover"/>
+                ) : (
+                  <span className="font-medium text-white text-xs">{initials}</span>
+                )}
               </button>
 
               {menuOpen && (

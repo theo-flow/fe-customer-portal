@@ -32,6 +32,13 @@ next-env.d.ts
 # open-next build output
 .open-next/
 
+# sst deploy cache
+.sst/
+
+# playwright
+playwright-report/
+test-results/
+
 # terraform
 terraform/.builds/
 terraform/.terraform/

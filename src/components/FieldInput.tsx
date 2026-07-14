@@ -1,9 +1,22 @@
+export interface FieldPosition {
+  page:   number
+  x:      number
+  y:      number
+  width:  number
+  height: number
+}
+
 export interface Field {
   key:        string
   label:      string
   field_type: string
   required:   boolean
   options:    string[] | null
+  // Normalized (0.0-1.0) Textract bounding box, present on every field
+  // extracted since Module 8 -- used to lay the form out like the
+  // original document instead of a generic linear list. Absent on older/
+  // migrated records, which fall back to the linear list entirely.
+  position?:  FieldPosition
 }
 
 export type FieldFlag = 'ai' | 'missing' | 'low_confidence'
@@ -14,14 +27,18 @@ const FLAG_COPY: Record<FieldFlag, string> = {
   low_confidence:  'Low-confidence match — please confirm',
 }
 
-export default function FieldInput({ field, value, error, onChange, flag }: {
+export default function FieldInput({ field, value, error, onChange, flag, compact }: {
   field:    Field
   value:    string
   error?:   string
   onChange: (val: string) => void
   flag?:    FieldFlag
+  // Tighter label/spacing for use inside a small positioned chip on
+  // PositionedFormCanvas -- same input/validation behavior, less chrome.
+  compact?: boolean
 }) {
-  const base = `w-full px-4 py-3 rounded-xl border text-[14px] bg-white outline-none transition-all
+  const base = `w-full rounded-xl border bg-white outline-none transition-all
+               ${compact ? 'px-2.5 py-1.5 text-[13px]' : 'px-4 py-3 text-[14px]'}
                ${error
                  ? 'border-red-400 focus:border-red-500 focus:ring-2 focus:ring-red-100'
                  : flag
@@ -29,11 +46,11 @@ export default function FieldInput({ field, value, error, onChange, flag }: {
                  : 'border-black/[0.12] focus:border-black/40 focus:ring-2 focus:ring-black/5'}`
 
   const label = (
-    <label className="block text-[13px] font-medium text-black mb-1.5">
+    <label className={`block font-medium text-black ${compact ? 'text-[11px] mb-0.5 truncate' : 'text-[13px] mb-1.5'}`}>
       {field.label}
       {field.required && <span className="text-red-500 ml-1">*</span>}
-      {flag && <span className="ml-2 text-[11px] font-normal text-amber-600">⚠ {FLAG_COPY[flag]}</span>}
-      {!flag && !error && <span className="ml-2 text-[11px] font-normal text-green-600">✓</span>}
+      {!compact && flag && <span className="ml-2 text-[11px] font-normal text-amber-600">⚠ {FLAG_COPY[flag]}</span>}
+      {!compact && !flag && !error && <span className="ml-2 text-[11px] font-normal text-green-600">✓</span>}
     </label>
   )
 
@@ -68,7 +85,7 @@ export default function FieldInput({ field, value, error, onChange, flag }: {
   } else if (field.field_type === 'textarea') {
     input = (
       <textarea
-        className={`${base} min-h-[96px] resize-y`}
+        className={`${base} ${compact ? 'min-h-[48px]' : 'min-h-[96px]'} resize-y`}
         value={value}
         onChange={e => onChange(e.target.value)}
         placeholder={field.label}
@@ -98,10 +115,10 @@ export default function FieldInput({ field, value, error, onChange, flag }: {
   }
 
   return (
-    <div>
+    <div className={compact ? 'w-full' : undefined}>
       {label}
       {input}
-      {error && <p className="mt-1.5 text-[12px] text-red-500">{error}</p>}
+      {error && <p className={`text-red-500 ${compact ? 'mt-0.5 text-[10px]' : 'mt-1.5 text-[12px]'}`}>{error}</p>}
     </div>
   )
 }

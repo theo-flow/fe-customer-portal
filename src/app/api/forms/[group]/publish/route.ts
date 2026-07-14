@@ -85,5 +85,25 @@ export async function POST(
     return NextResponse.json({ error: 'Failed to publish version' }, { status: 500 })
   }
 
+  // Best-effort: if this version has a real extracted logo, cache a pointer
+  // to it on the org's PROFILE record. There's no dedicated "org logo"
+  // concept -- a logo only ever exists as branding extracted from some
+  // published template -- so this is what lets the app avatar and the
+  // Cognito email Lambda do one simple lookup instead of scanning every
+  // group's pointer on every request. Never blocks the publish itself.
+  const branding = target.Item.branding as { source?: string; logo_s3_key?: string } | undefined
+  if (branding?.source === 'extracted' && branding.logo_s3_key) {
+    try {
+      await db.send(new UpdateCommand({
+        TableName: TABLE,
+        Key:       { PK: `ORG#${orgId}`, SK: 'PROFILE' },
+        UpdateExpression: 'SET org_logo_group = :group, org_logo_version = :version, org_logo_updated_at = :now',
+        ExpressionAttributeValues: { ':group': group, ':version': version, ':now': now },
+      }))
+    } catch (err) {
+      console.error('[publish] Failed to cache org logo pointer (non-fatal)', { orgId, group, version, error: err })
+    }
+  }
+
   return NextResponse.json({ ok: true, publishedVersion: version })
 }

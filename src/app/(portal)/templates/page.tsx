@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { useOrg } from '@/lib/org-context'
+import { FORM_GROUPS } from '@/lib/form-groups'
 
 const ACCEPTED  = ['application/pdf', 'image/jpeg', 'image/png', 'image/tiff']
 const MAX_MB    = 50
@@ -221,10 +222,115 @@ function GroupCard({ fg, state, onFileSelect, onUpload, onRetry }: {
   )
 }
 
+// ── Add a form group (post-registration -- previously only possible at signup) ──
+
+function AddGroupCard({ existingGroups, onAdded }: {
+  existingGroups: string[]
+  onAdded:        () => void
+}) {
+  const [open, setOpen]           = useState(false)
+  const [customName, setCustomName] = useState('')
+  const [submitting, setSubmitting] = useState<string | null>(null)
+  const [error, setError]         = useState('')
+
+  const available = FORM_GROUPS.filter(g => !existingGroups.includes(g.key))
+
+  async function addGroup(group: string | undefined, groupLabel: string) {
+    if (!groupLabel.trim()) return
+    setSubmitting(group ?? groupLabel)
+    setError('')
+    try {
+      const res = await fetch('/api/organizations/groups', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ group, groupLabel: groupLabel.trim() }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        setError(body.error ?? 'Failed to add group.')
+        return
+      }
+      setCustomName('')
+      setOpen(false)
+      onAdded()
+    } catch {
+      setError('Something went wrong — please try again.')
+    } finally {
+      setSubmitting(null)
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="w-full rounded-2xl border border-dashed border-black/[0.15] p-5
+                   flex items-center justify-center gap-2 text-[13px] font-medium
+                   text-gray-400 hover:border-black/30 hover:text-black transition-colors"
+      >
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4"/>
+        </svg>
+        Add a form type
+      </button>
+    )
+  }
+
+  return (
+    <div className="rounded-2xl border border-black/[0.08] p-5">
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-[14px] font-semibold text-black">Add a form type</p>
+        <button onClick={() => setOpen(false)} className="text-gray-300 hover:text-gray-600 transition-colors">
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+
+      {error && <p className="text-[12px] text-red-500 font-medium mb-3">{error}</p>}
+
+      {available.length > 0 && (
+        <div className="grid grid-cols-2 gap-2 mb-4">
+          {available.map(g => (
+            <button
+              key={g.key}
+              onClick={() => addGroup(g.key, g.label)}
+              disabled={submitting !== null}
+              className="text-left rounded-xl border border-black/[0.08] px-3.5 py-3
+                         hover:border-black/25 transition-colors disabled:opacity-50"
+            >
+              <p className="text-[12.5px] font-semibold text-black">{g.label}</p>
+              <p className="text-[11px] text-gray-400 mt-0.5 leading-snug">{g.description}</p>
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-center gap-2 pt-3 border-t border-black/[0.06]">
+        <input
+          value={customName}
+          onChange={e => setCustomName(e.target.value)}
+          placeholder="Or type a custom form type…"
+          className="flex-1 px-3 py-2 rounded-lg border border-black/[0.12] text-[13px]
+                     outline-none focus:border-black/40"
+        />
+        <button
+          onClick={() => addGroup(undefined, customName)}
+          disabled={!customName.trim() || submitting !== null}
+          className="text-[12px] font-semibold px-4 py-2 rounded-full bg-black text-white
+                     hover:bg-gray-800 transition-colors disabled:opacity-50 whitespace-nowrap"
+        >
+          {submitting === customName ? 'Adding…' : 'Add'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function TemplatesPage() {
-  const { orgId, orgName, subscribedProducts, formGroups, loading } = useOrg()
+  const { orgId, orgName, subscribedProducts, formGroups, loading, refetch } = useOrg()
 
   const [states, setStates] = useState<Record<string, GroupState>>({})
 
@@ -433,17 +539,17 @@ export default function TemplatesPage() {
         </div>
       )}
 
-      {/* No form groups */}
+      {/* No form groups yet -- can add one directly now, no admin needed */}
       {formGroups.length === 0 && (
-        <div className="rounded-2xl border border-black/[0.06] py-20 text-center">
-          <p className="text-[15px] font-semibold text-black mb-1">No form groups configured</p>
-          <p className="text-[13px] text-gray-400">Contact your administrator.</p>
+        <div className="rounded-2xl border border-black/[0.06] py-16 text-center mb-6">
+          <p className="text-[15px] font-semibold text-black mb-1">No form types yet</p>
+          <p className="text-[13px] text-gray-400">Add one below to start uploading templates.</p>
         </div>
       )}
 
       {/* Group cards */}
       {formGroups.length > 0 && (
-        <div className="space-y-3">
+        <div className="space-y-3 mb-3">
           {formGroups.map(fg => (
             <GroupCard
               key={fg.group}
@@ -456,6 +562,8 @@ export default function TemplatesPage() {
           ))}
         </div>
       )}
+
+      <AddGroupCard existingGroups={formGroups.map(fg => fg.group)} onAdded={refetch}/>
     </div>
   )
 }

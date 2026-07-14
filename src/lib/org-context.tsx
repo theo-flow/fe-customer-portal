@@ -11,23 +11,25 @@ export interface OrgData {
   initials:           string
   subscribedProducts: string[]
   formGroups:         FormGroup[]
+  orgLogoUrl:         string | null
   loading:            boolean
+  refetch:            () => void
 }
 
 const OrgContext = createContext<OrgData>({
   name: '', email: '', orgId: '', orgName: '',
   initials: '··', subscribedProducts: [], formGroups: [],
-  loading: true,
+  orgLogoUrl: null, loading: true, refetch: () => {},
 })
 
 export function OrgProvider({ children }: { children: ReactNode }) {
-  const [data, setData] = useState<OrgData>({
+  const [data, setData] = useState<Omit<OrgData, 'refetch'>>({
     name: '', email: '', orgId: '', orgName: '',
     initials: '··', subscribedProducts: [], formGroups: [],
-    loading: true,
+    orgLogoUrl: null, loading: true,
   })
 
-  useEffect(() => {
+  const load = () => {
     fetch('/api/me')
       .then(r => r.ok ? r.json() : null)
       .then(d => {
@@ -35,9 +37,11 @@ export function OrgProvider({ children }: { children: ReactNode }) {
         else   setData(prev => ({ ...prev, loading: false }))
       })
       .catch(() => setData(prev => ({ ...prev, loading: false })))
-  }, [])
+  }
 
-  return <OrgContext.Provider value={data}>{children}</OrgContext.Provider>
+  useEffect(load, [])
+
+  return <OrgContext.Provider value={{ ...data, refetch: load }}>{children}</OrgContext.Provider>
 }
 
 export function useOrg() { return useContext(OrgContext) }

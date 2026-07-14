@@ -1,14 +1,7 @@
 import { GetCommand } from '@aws-sdk/lib-dynamodb'
 import { ddbDocClient, TABLE } from '@/lib/aws'
 import FillForm from './FillForm'
-
-interface Field {
-  key:        string
-  label:      string
-  field_type: string
-  required:   boolean
-  options:    string[] | null
-}
+import type { Field } from '@/components/FieldInput'
 
 interface Branding {
   source:       string
