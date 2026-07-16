@@ -6,7 +6,7 @@ import type { Field as SchemaField } from '@/components/FieldInput'
 
 const FORMS_TABLE = process.env.DYNAMODB_TABLE_FORMS ?? 'daai-insure-forms'
 
-interface ReviewData {
+interface ExtractionData {
   fields:            Record<string, string>
   schemaFields:       SchemaField[]
   aiResolvedFields:   string[]
@@ -64,7 +64,8 @@ export async function GET(
   let activeStage = portalStatusToActiveStage(portalStatus as string)
   let failed = false
   let validationErrors: string[] = []
-  let review: ReviewData | null = null
+  let extraction: ExtractionData | null = null
+  let pipelineStatus: string | null = null
   try {
     const formsResult = await db.send(new QueryCommand({
       TableName: FORMS_TABLE,
@@ -75,6 +76,7 @@ export async function GET(
     }))
     const pipelineItem = formsResult.Items?.[0]
     if (pipelineItem?.status) {
+      pipelineStatus = pipelineItem.status as string
       const pipelineStage = pipelineStatusToActiveStage(pipelineItem.status as string)
       if (pipelineStage !== null) activeStage = pipelineStage
       // INVALID is a terminal rejection, not "still validating" — surface it
@@ -86,13 +88,16 @@ export async function GET(
           : []
       }
 
-      // PARTIAL means a human must review before this can proceed -- surface
-      // the extracted fields plus the org's schema so the portal can render
-      // a pre-filled, editable review form.
-      if (pipelineItem.status === 'PARTIAL') {
+      // Extracted field data is surfaced at every status once it exists --
+      // matched, flagged, and AI-resolved alike -- not just while PARTIAL
+      // (docs/decode-redesign.md Phase 1: "Return, unconditional"). Whether
+      // the editable accept flow (PartialReviewPanel) also renders is a
+      // frontend decision keyed off pipelineStatus === 'PARTIAL', not a
+      // precondition for the data being present in this response.
+      if (pipelineItem.fields_json) {
         let fields: Record<string, string> = {}
         try {
-          fields = pipelineItem.fields_json ? JSON.parse(pipelineItem.fields_json as string) : {}
+          fields = JSON.parse(pipelineItem.fields_json as string)
         } catch {
           fields = {}
         }
@@ -112,7 +117,7 @@ export async function GET(
           }
         }
 
-        review = {
+        extraction = {
           fields,
           schemaFields,
           aiResolvedFields: Array.isArray(pipelineItem.ai_resolved_fields) ? pipelineItem.ai_resolved_fields : [],
@@ -128,10 +133,11 @@ export async function GET(
   return NextResponse.json({
     docId,
     status: portalStatus,
+    pipelineStatus,
     activeStage,
     failed,
     validationErrors,
-    review,
+    extraction,
     product: product ?? 'decode',
     docType: docType ?? '',
     filename,

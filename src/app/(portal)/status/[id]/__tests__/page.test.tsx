@@ -60,13 +60,14 @@ describe('StatusPage', () => {
     expect(screen.getByText('Missing signature')).toBeInTheDocument()
   })
 
-  it('shows a review panel (not the failed state) when the pipeline reports PARTIAL via review data', async () => {
+  it('shows a review panel (not the failed state) when the pipeline reports PARTIAL via extraction data', async () => {
     vi.mocked(fetch).mockResolvedValue(
       jsonResponse({
         activeStage: 4,
         failed: false,
         validationErrors: [],
-        review: {
+        pipelineStatus: 'PARTIAL',
+        extraction: {
           fields: { id_number: '8001015009087' },
           schemaFields: [
             { key: 'id_number', label: 'ID Number', field_type: 'sa_id', required: true, options: null },
@@ -87,6 +88,37 @@ describe('StatusPage', () => {
     expect(screen.queryByText('We couldn’t validate this document')).not.toBeInTheDocument()
   })
 
+  // docs/decode-redesign.md Phase 1: extracted data is visible at every
+  // status, not just PARTIAL -- and the editable accept flow does NOT
+  // appear once the pipeline has moved past PARTIAL.
+  it('shows extracted data read-only for a VALID status, without the accept panel', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({
+        activeStage: 4,
+        failed: false,
+        validationErrors: [],
+        pipelineStatus: 'VALID',
+        extraction: {
+          fields: { id_number: '8001015009087' },
+          schemaFields: [
+            { key: 'id_number', label: 'ID Number', field_type: 'sa_id', required: true, options: null },
+          ],
+          aiResolvedFields: [],
+          flaggedFields: [],
+          unresolvedFields: [],
+        },
+        ...baseMeta,
+      })
+    )
+
+    render(<StatusPage />)
+
+    expect(await screen.findByText('Extracted data')).toBeInTheDocument()
+    expect(screen.getByText('8001015009087')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /accept and continue/i })).not.toBeInTheDocument()
+    expect(screen.queryByText('A few fields need your input')).not.toBeInTheDocument()
+  })
+
   it('keeps polling while the document is PARTIAL, unlike the terminal rejected state', async () => {
     vi.useFakeTimers()
     const fetchMock = vi.fn().mockResolvedValue(
@@ -94,7 +126,8 @@ describe('StatusPage', () => {
         activeStage: 4,
         failed: false,
         validationErrors: [],
-        review: {
+        pipelineStatus: 'PARTIAL',
+        extraction: {
           fields: {}, schemaFields: [], aiResolvedFields: [], flaggedFields: [], unresolvedFields: [],
         },
         ...baseMeta,

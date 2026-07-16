@@ -93,7 +93,7 @@ describe('GET /api/status/[docId]', () => {
     expect(body.failed).toBe(false)
   })
 
-  it('surfaces a review payload when the pipeline reports PARTIAL', async () => {
+  it('surfaces extraction data and pipelineStatus when the pipeline reports PARTIAL', async () => {
     mockSend
       .mockResolvedValueOnce({ Item: docStatusItem })
       .mockResolvedValueOnce({
@@ -116,7 +116,8 @@ describe('GET /api/status/[docId]', () => {
     const body = await res.json()
 
     expect(body.failed).toBe(false)
-    expect(body.review).toEqual({
+    expect(body.pipelineStatus).toBe('PARTIAL')
+    expect(body.extraction).toEqual({
       fields:            { id_number: '8001015009087' },
       schemaFields:      [{ key: 'id_number', label: 'ID Number', field_type: 'sa_id', required: true, options: null }],
       aiResolvedFields:  ['phone'],
@@ -125,15 +126,46 @@ describe('GET /api/status/[docId]', () => {
     })
   })
 
-  it('does not surface a review payload for non-PARTIAL statuses', async () => {
+  // docs/decode-redesign.md Phase 1: extracted data is returned unconditionally,
+  // at every status, once it exists -- not gated to PARTIAL. Only the editable
+  // accept flow (a frontend concern keyed off pipelineStatus) is PARTIAL-only.
+  it('surfaces extraction data for a VALID (non-PARTIAL) status too, when fields_json is present', async () => {
     mockSend
       .mockResolvedValueOnce({ Item: docStatusItem })
-      .mockResolvedValueOnce({ Items: [{ status: 'VALID' }] })
+      .mockResolvedValueOnce({
+        Items: [{
+          status:      'VALID',
+          org_id:      'org-abc123',
+          group:       'claim',
+          fields_json: JSON.stringify({ id_number: '8001015009087' }),
+        }],
+      })
+      .mockResolvedValueOnce({
+        Item: { fields: [{ key: 'id_number', label: 'ID Number', field_type: 'sa_id', required: true, options: null }] },
+      })
 
     const res = await GET(makeRequest(), { params: { docId: 'doc-1' } })
     const body = await res.json()
 
-    expect(body.review).toBeNull()
+    expect(body.pipelineStatus).toBe('VALID')
+    expect(body.extraction).toEqual({
+      fields:            { id_number: '8001015009087' },
+      schemaFields:      [{ key: 'id_number', label: 'ID Number', field_type: 'sa_id', required: true, options: null }],
+      aiResolvedFields:  [],
+      flaggedFields:     [],
+      unresolvedFields:  [],
+    })
+  })
+
+  it('returns extraction: null when there is no fields_json yet', async () => {
+    mockSend
+      .mockResolvedValueOnce({ Item: docStatusItem })
+      .mockResolvedValueOnce({ Items: [{ status: 'CLASSIFIED' }] })
+
+    const res = await GET(makeRequest(), { params: { docId: 'doc-1' } })
+    const body = await res.json()
+
+    expect(body.extraction).toBeNull()
   })
 
   it('falls back to portal status when the pipeline GSI has no record yet', async () => {

@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import PartialReviewPanel, { type ReviewData } from '@/components/PartialReviewPanel'
+import ExtractedDataView from '@/components/ExtractedDataView'
 
 type Status = 'done' | 'active' | 'pending' | 'failed'
 
@@ -98,7 +99,8 @@ export default function StatusPage() {
   const [meta,       setMeta]       = useState<DocMeta | null>(null)
   const [failed,     setFailed]     = useState(false)
   const [validationErrors, setValidationErrors] = useState<string[]>([])
-  const [review,     setReview]     = useState<ReviewData | null>(null)
+  const [extraction, setExtraction] = useState<ReviewData | null>(null)
+  const [pipelineStatus, setPipelineStatus] = useState<string | null>(null)
 
   // TheoFlow Sign / Print actions (Module 9)
   const [showSignForm,    setShowSignForm]    = useState(false)
@@ -125,12 +127,14 @@ export default function StatusPage() {
           return
         }
         const data = await res.json() as {
-          activeStage: number; failed?: boolean; validationErrors?: string[]; review?: ReviewData | null
+          activeStage: number; failed?: boolean; validationErrors?: string[]
+          extraction?: ReviewData | null; pipelineStatus?: string | null
         } & DocMeta
         setStages(buildStages(data.activeStage, !!data.failed))
         setFailed(!!data.failed)
         setValidationErrors(data.validationErrors ?? [])
-        setReview(data.review ?? null)
+        setExtraction(data.extraction ?? null)
+        setPipelineStatus(data.pipelineStatus ?? null)
         setMeta({ filename: data.filename, fileSize: data.fileSize, product: data.product, docType: data.docType, createdAt: data.createdAt })
         setError('')
         // Terminal states (filed/complete or rejected) never change again — stop polling.
@@ -152,12 +156,14 @@ export default function StatusPage() {
   const doneCount   = stages.filter(s => s.status === 'done').length
   const allDone     = doneCount === stages.length
   const pct         = Math.round((doneCount / stages.length) * 100)
-  const needsReview = !!review
+  const needsReview = pipelineStatus === 'PARTIAL'
 
   function handleAccepted() {
-    // Optimistic: hide the panel immediately, the next poll (≤5s) confirms
-    // the transition to VALIDATED and updates the pipeline stages.
-    setReview(null)
+    // Optimistic: hide the editable panel immediately, the next poll (≤5s)
+    // confirms the transition to VALIDATED and updates the pipeline stages.
+    // Extracted data itself (`extraction`) stays visible -- accepting only
+    // ends the review action, it doesn't hide what was extracted.
+    setPipelineStatus(null)
   }
 
   function updateSignerRow(i: number, field: keyof SignerRow, value: string) {
@@ -320,9 +326,15 @@ export default function StatusPage() {
         ))}
       </div>
 
-      {/* Human review panel — surfaces when the pipeline reports PARTIAL */}
-      {review && (
-        <PartialReviewPanel docId={id} review={review} onAccepted={handleAccepted} />
+      {/* Extracted data — always visible once it exists, independent of
+          status. Verification (below) is a separate, additive layer. */}
+      {extraction && <ExtractedDataView data={extraction} />}
+
+      {/* Human review/correction panel — surfaces only while the pipeline
+          reports PARTIAL. This edits on top of the view above; it is never
+          a precondition for seeing the extracted data itself. */}
+      {needsReview && extraction && (
+        <PartialReviewPanel docId={id} review={extraction} onAccepted={handleAccepted} />
       )}
 
       {/* Document ref card */}
