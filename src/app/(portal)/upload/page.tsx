@@ -13,7 +13,12 @@ type Step = 'group' | 'file' | 'uploading' | 'done'
 function presignErrorMessage(status: number): string {
   switch (status) {
     case 400: return "We couldn't read this document. Please check the file and try again."
-    case 401: return 'Your session has expired. Please sign in again.'
+    // /api/uploads/presign returns 401 whenever no tf_token cookie was sent
+    // at all (see route.ts) -- it has no separate "expired" check, so this
+    // never actually means "your session expired," only "you're not signed
+    // in right now." Asserting expiry here is misleading for someone who
+    // was never authenticated in the first place.
+    case 401: return 'Please sign in to continue.'
     case 403: return "You don't have permission to upload documents. Please contact your administrator."
     case 409: return 'This document has already been submitted.'
     case 413: return `This file is too large. Please upload a document smaller than ${MAX_MB} MB.`
