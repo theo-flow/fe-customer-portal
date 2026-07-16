@@ -26,6 +26,7 @@ vi.mock('@aws-sdk/lib-dynamodb', () => ({
   GetCommand:    vi.fn(function (this: unknown, input: unknown) { return { __type: 'Get', input } }),
   QueryCommand:  vi.fn(function (this: unknown, input: unknown) { return { __type: 'Query', input } }),
   UpdateCommand: vi.fn(function (this: unknown, input: unknown) { return { __type: 'Update', input } }),
+  PutCommand:    vi.fn(function (this: unknown, input: unknown) { return { __type: 'Put', input } }),
 }))
 
 vi.mock('@aws-sdk/client-sqs', () => ({
@@ -151,6 +152,78 @@ describe('POST /api/status/[docId]/accept', () => {
     const msgBody = JSON.parse(sendMsgCall.input.MessageBody)
     expect(msgBody.document_id).toBe('DOC-001')
     expect(msgBody.status).toBe('VALID')
+  })
+
+  it('writes a correction record per resolution and still completes a normal accept', async () => {
+    mockDbSend.mockResolvedValue({}) // fallback for the PutCommand write(s) below
+    mockDbSend
+      .mockResolvedValueOnce({
+        Items: [{
+          org_id: ORG_ID, group: GROUP, status: 'PARTIAL', document_id: 'DOC-001',
+          submission_id: 'sub-001', form_type: 'ApplicationForm',
+          fields_json: JSON.stringify({ id_number: '8001015009087' }),
+        }],
+      })
+      .mockResolvedValueOnce({
+        Item: { fields: [{ key: 'id_number', label: 'ID Number', field_type: 'sa_id', required: true, options: null }] },
+      })
+
+    mockSqsSend.mockResolvedValueOnce({})
+
+    const res = await POST(
+      makeRequest({
+        fields: { id_number: '8001015009087' },
+        resolutions: [{ fieldKey: 'id_number', resolutionType: 'confirmed' }],
+      }),
+      { params: { docId: 'doc-1' } },
+    )
+    const body = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(body.ok).toBe(true)
+
+    const putCall = mockDbSend.mock.calls.find(c => c[0].__type === 'Put')
+    expect(putCall).toBeDefined()
+    expect(putCall![0].input.Item.resolution_type).toBe('confirmed')
+    expect(putCall![0].input.Item.field_key).toBe('id_number')
+    expect(putCall![0].input.Item.extracted_value).toBe('8001015009087')
+
+    expect(mockSqsSend).toHaveBeenCalledTimes(1) // normal accept still proceeds -- nothing flagged for clarification
+  })
+
+  it('keeps the submission PARTIAL and skips the generate queue when a field is flagged for clarification', async () => {
+    mockDbSend.mockResolvedValue({})
+    mockDbSend
+      .mockResolvedValueOnce({
+        Items: [{
+          org_id: ORG_ID, group: GROUP, status: 'PARTIAL', document_id: 'DOC-001',
+          submission_id: 'sub-001', form_type: 'ApplicationForm',
+          fields_json: JSON.stringify({}),
+        }],
+      })
+      .mockResolvedValueOnce({
+        Item: { fields: [{ key: 'id_number', label: 'ID Number', field_type: 'sa_id', required: true, options: null }] },
+      })
+
+    const res = await POST(
+      makeRequest({
+        fields: {}, // id_number left blank -- would normally fail required validation
+        resolutions: [{ fieldKey: 'id_number', resolutionType: 'clarify' }],
+      }),
+      { params: { docId: 'doc-1' } },
+    )
+    const body = await res.json()
+
+    expect(res.status).toBe(200) // not blocked by the missing-required-field check -- it's excluded
+    expect(body.pendingClarification).toEqual(['id_number'])
+    expect(mockSqsSend).not.toHaveBeenCalled() // never reaches VALID/generate while something's pending
+
+    const updateCall = mockDbSend.mock.calls.find(c => c[0].__type === 'Update')
+    expect(updateCall![0].input.ExpressionAttributeValues[':status']).toBe('PARTIAL')
+    expect(updateCall![0].input.ExpressionAttributeValues[':uf']).toEqual(['id_number'])
+
+    const putCall = mockDbSend.mock.calls.find(c => c[0].__type === 'Put')
+    expect(putCall![0].input.Item.resolution_type).toBe('clarify')
   })
 
   it('returns 500 when SQS_GENERATE_URL is not configured', async () => {

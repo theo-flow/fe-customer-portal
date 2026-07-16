@@ -73,4 +73,51 @@ describe('PartialReviewPanel', () => {
     expect(await screen.findByText(/checksum failed/i)).toBeInTheDocument()
     expect(onAccepted).not.toHaveBeenCalled()
   })
+
+  it('sends confirmed/corrected resolutions matching whether the value changed', async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse({ ok: true }))
+    const user = userEvent.setup()
+
+    render(<PartialReviewPanel docId="doc-1" review={baseReview} onAccepted={vi.fn()} />)
+    const phoneInput = screen.getByDisplayValue('0821234567')
+    await user.clear(phoneInput)
+    await user.type(phoneInput, '0829999999')
+    await user.click(screen.getByRole('button', { name: /accept and continue/i }))
+
+    await screen.findByRole('button', { name: /accept and continue/i })
+    const call = vi.mocked(fetch).mock.calls[0]
+    const sentBody = JSON.parse(call[1]!.body as string)
+    expect(sentBody.resolutions).toEqual(
+      expect.arrayContaining([
+        { fieldKey: 'id_number', resolutionType: 'confirmed' },
+        { fieldKey: 'phone', resolutionType: 'corrected', correctedValue: '0829999999' },
+      ])
+    )
+  })
+
+  it('excludes a clarify-flagged field from client-side required validation', async () => {
+    const user = userEvent.setup()
+    render(<PartialReviewPanel docId="doc-1" review={baseReview} onAccepted={vi.fn()} />)
+
+    const idInput = screen.getByDisplayValue('8001015009087')
+    await user.clear(idInput)
+    await user.click(screen.getAllByRole('button', { name: /can't verify this/i })[0])
+    await user.click(screen.getByRole('button', { name: /flag 1 field for clarification/i }))
+
+    expect(screen.queryByText(/ID Number is required/i)).not.toBeInTheDocument()
+    expect(fetch).toHaveBeenCalled()
+  })
+
+  it('shows a saved message instead of calling onAccepted when the response has pending clarifications', async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse({ ok: true, pendingClarification: ['id_number'] }))
+    const onAccepted = vi.fn()
+    const user = userEvent.setup()
+
+    render(<PartialReviewPanel docId="doc-1" review={baseReview} onAccepted={onAccepted} />)
+    await user.click(screen.getAllByRole('button', { name: /can't verify this/i })[0])
+    await user.click(screen.getByRole('button', { name: /flag 1 field for clarification/i }))
+
+    expect(await screen.findByText(/waiting on the client for 1 field/i)).toBeInTheDocument()
+    expect(onAccepted).not.toHaveBeenCalled()
+  })
 })

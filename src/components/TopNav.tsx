@@ -15,7 +15,10 @@ function navItemsFor(products: string[]): NavItem[] {
   if (products.includes('forge'))   items.push({ href: '/templates',   label: 'Templates',   built: true })
   if (products.includes('channel')) items.push({ href: '/forms',       label: 'Forms',       built: true })
   if (products.includes('harvest')) items.push({ href: '/submissions', label: 'Submissions', built: true })
-  if (products.includes('decode'))  items.push({ href: '/upload',      label: 'Upload',      built: true  })
+  if (products.includes('decode')) {
+    items.push({ href: '/upload',         label: 'Upload',           built: true })
+    items.push({ href: '/clarifications', label: 'Waiting on client', built: true })
+  }
   if (products.includes('sign'))    items.push({ href: '/sign',        label: 'Sign',        built: true  })
   return items
 }
@@ -27,6 +30,7 @@ const NAV_ICONS: Record<string, JSX.Element> = {
   '/forms':      <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/>,
   '/submissions':<path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>,
   '/upload':     <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/>,
+  '/clarifications': <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z"/>,
   '/sign':       <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M3 20.25h16.5"/>,
 }
 
