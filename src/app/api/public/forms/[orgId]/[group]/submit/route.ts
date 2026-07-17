@@ -2,6 +2,7 @@ import { GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb'
 import { NextRequest, NextResponse } from 'next/server'
 import { ddbDocClient, TABLE } from '@/lib/aws'
 import { validateField } from '@/lib/validators'
+import { notifyHarvestSubmission } from '@/lib/notifications'
 import { randomUUID } from 'crypto'
 
 interface Field {
@@ -59,6 +60,8 @@ export async function POST(
   const submissionId = randomUUID()
   const now = new Date().toISOString()
 
+  const groupLabel = schemaResult.Item.group_label as string
+
   await ddbDocClient().send(new PutCommand({
     TableName: TABLE,
     Item: {
@@ -67,12 +70,17 @@ export async function POST(
       submissionId,
       orgId,
       group,
-      group_label: schemaResult.Item.group_label,
+      group_label: groupLabel,
       values,
       submittedAt: now,
       status:      'RECEIVED',
     },
   }))
+
+  // Best-effort -- never throws, so it can't turn a successful submission
+  // into a failed response. Awaited anyway so it actually runs before the
+  // Lambda execution environment can be frozen post-response.
+  await notifyHarvestSubmission(orgId, { submissionId, group, groupLabel })
 
   return NextResponse.json({ referenceId: submissionId }, { status: 201 })
 }

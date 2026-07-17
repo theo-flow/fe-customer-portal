@@ -1,6 +1,9 @@
 'use client'
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useOrg } from '@/lib/org-context'
+import { fmtDate, fmtTime } from '@/lib/format'
 
 interface Submission {
   submissionId: string
@@ -10,19 +13,8 @@ interface Submission {
   status:       string
 }
 
-function fmtDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-ZA', {
-    day: 'numeric', month: 'short', year: 'numeric',
-  })
-}
-
-function fmtTime(iso: string) {
-  return new Date(iso).toLocaleTimeString('en-ZA', {
-    hour: '2-digit', minute: '2-digit',
-  })
-}
-
 export default function SubmissionsPage() {
+  const router = useRouter()
   const { orgName, loading: orgLoading } = useOrg()
   const [submissions, setSubmissions]    = useState<Submission[]>([])
   const [loading, setLoading]            = useState(true)
@@ -94,7 +86,8 @@ export default function SubmissionsPage() {
             <tbody className="divide-y divide-black/[0.04]">
               {submissions.map(sub => (
                 <tr key={sub.submissionId}
-                    className="hover:bg-gray-50/60 transition-colors">
+                    onClick={() => router.push(`/submissions/${sub.submissionId}`)}
+                    className="hover:bg-gray-50/60 transition-colors cursor-pointer">
                   <td className="px-5 py-3.5">
                     <p className="text-[13px] font-medium text-black">{sub.groupLabel}</p>
                     <p className="text-[11px] text-gray-400 uppercase tracking-wide mt-0.5">
@@ -118,7 +111,8 @@ export default function SubmissionsPage() {
           {/* Mobile list */}
           <div className="sm:hidden divide-y divide-black/[0.04]">
             {submissions.map(sub => (
-              <div key={sub.submissionId} className="px-4 py-4">
+              <Link key={sub.submissionId} href={`/submissions/${sub.submissionId}`}
+                    className="block px-4 py-4 active:bg-gray-50/60 transition-colors">
                 <p className="text-[14px] font-semibold text-black">{sub.groupLabel}</p>
                 <p className="text-[12px] text-gray-400 mt-0.5">
                   {fmtDate(sub.submittedAt)} at {fmtTime(sub.submittedAt)}
@@ -126,7 +120,7 @@ export default function SubmissionsPage() {
                 <p className="font-mono text-[11px] text-gray-300 mt-1">
                   {sub.submissionId.slice(0, 8)}…
                 </p>
-              </div>
+              </Link>
             ))}
           </div>
         </div>

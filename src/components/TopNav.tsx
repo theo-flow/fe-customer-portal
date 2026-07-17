@@ -5,6 +5,7 @@ import { useState, useRef, useEffect } from 'react'
 import { LogoMark } from '@/components/LogoMark'
 import { useOrg } from '@/lib/org-context'
 import { signOut } from '@/lib/auth'
+import NotificationBell from '@/components/NotificationBell'
 
 interface NavItem { href: string; label: string; built: boolean }
 
@@ -109,6 +110,8 @@ export function TopNav() {
                 {name}
               </span>
             )}
+
+            {!loading && subscribedProducts.includes('harvest') && <NotificationBell />}
 
             <div className="relative" ref={menuRef}>
               <button
