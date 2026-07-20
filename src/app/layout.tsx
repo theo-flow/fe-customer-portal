@@ -38,7 +38,7 @@ export const metadata: Metadata = {
   title: 'theoflow | Digital Forms Intelligence Platform',
   description: 'Upload any document — theoflow classifies, extracts, validates and files it, without a single manual step.',
   verification: {
-    google: 'Ff4AnN3yRj7bhCloWaHzLsyE_hPCDpOiKkMunwlCKGc',
+    google: 'EV2SfQwTeTGjwd_xITbZDRfPjmPASWDQ0t9oMAm3yIs',
   },
 }
 
