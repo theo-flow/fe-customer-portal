@@ -37,6 +37,9 @@ export const metadata: Metadata = {
   metadataBase: new URL('https://theoflow.bytheodore.co.za'),
   title: 'theoflow | Digital Forms Intelligence Platform',
   description: 'Upload any document — theoflow classifies, extracts, validates and files it, without a single manual step.',
+  verification: {
+    google: 'Ff4AnN3yRj7bhCloWaHzLsyE_hPCDpOiKkMunwlCKGc',
+  },
 }
 
 export const viewport: Viewport = {
