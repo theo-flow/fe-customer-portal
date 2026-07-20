@@ -12,7 +12,7 @@ export async function POST(
 ) {
   const { sessionId, signerId, token } = params
 
-  let body: { signatureType?: 'DRAWN' | 'TYPED'; signatureData?: string }
+  let body: { signatureType?: 'DRAWN' | 'TYPED'; signatureData?: string; placeData?: string }
   try {
     body = await req.json()
   } catch (err) {
@@ -20,7 +20,7 @@ export async function POST(
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
   }
 
-  const { signatureType, signatureData } = body
+  const { signatureType, signatureData, placeData } = body
   if (!signatureType || !signatureData) {
     return NextResponse.json({ error: 'Missing signature' }, { status: 400 })
   }
@@ -74,11 +74,17 @@ export async function POST(
     user_agent:       userAgent,
     signature_type:   signatureType,
     signature_data:   signatureData,
+    place_data:       placeData?.trim() || signer.place_data,
     token_used:       true,
   }
 
+  // Every submit advances the session to IN_PROGRESS, including the last
+  // signer's -- only fn-13's post-seal write ever sets SIGNED. Previously
+  // this left status unchanged when allSigned was already true, so a
+  // single-signer session never left PENDING until the async seal Lambda
+  // caught up.
   const allSigned = session.signers.every(s => s.status === 'SIGNED')
-  session.status = allSigned ? session.status : 'IN_PROGRESS'
+  session.status = 'IN_PROGRESS'
   session.updated_at = now
 
   try {

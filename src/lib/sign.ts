@@ -29,12 +29,36 @@ export interface Signer {
   user_agent:        string | null
   signature_type:    SignatureType | null
   signature_data:    string | null
+  place_data:        string | null
+  email_sent:        boolean
+}
+
+// Populated by fn-13's document_locator.py (locate_and_notify) -- absent/
+// empty until that async stage completes. Mirrors the shape documented in
+// shared/models/sign_session.py's module docstring.
+export type DetectedFieldType   = 'signature' | 'date' | 'place'
+export type DetectedFieldSource = 'textract_llm_confirmed' | 'llm_vision_only' | 'fallback_auto_layout'
+
+export interface DetectedField {
+  field_type:   DetectedFieldType
+  signer_order: number
+  page:         number
+  x:            number
+  y:            number
+  width:        number
+  height:       number
+  source:       DetectedFieldSource
+  confidence:   number
+}
+
+export interface WorkingDocument {
+  detected_fields?: DetectedField[]
 }
 
 export interface SignSession {
   session_id:         string
   source_document:    { s3_key: string; sha256: string; uploaded_at: string }
-  working_document:   Record<string, never>
+  working_document:   WorkingDocument
   signers:             Signer[]
   status:              SessionStatus
   created_at:          string

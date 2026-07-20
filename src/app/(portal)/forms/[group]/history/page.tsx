@@ -157,6 +157,9 @@ export default function VersionHistoryPage({ params }: { params: { group: string
   const [loading, setLoading]       = useState(true)
   const [publishing, setPublishing] = useState<number | null>(null)
   const [error, setError]           = useState<string | null>(null)
+  // Failed forge attempts are noise once a group has a working draft --
+  // keep them out of the way by default, but never make them unreachable.
+  const [showErrors, setShowErrors] = useState(false)
 
   const load = useCallback((showLoading = true) => {
     if (showLoading) setLoading(true)
@@ -200,7 +203,9 @@ export default function VersionHistoryPage({ params }: { params: { group: string
     }
   }
 
-  const groupLabel = formGroups.find(fg => fg.group === group)?.groupLabel ?? group
+  const groupLabel  = formGroups.find(fg => fg.group === group)?.groupLabel ?? group
+  const errorCount  = versions.filter(v => v.status === 'ERROR').length
+  const visibleVersions = showErrors ? versions : versions.filter(v => v.status !== 'ERROR')
 
   if (orgLoading || loading) {
     return (
@@ -236,11 +241,31 @@ export default function VersionHistoryPage({ params }: { params: { group: string
           <p className="text-[13px] text-gray-400">Upload a template on the Templates page to forge the first draft.</p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {versions.map(v => (
-            <VersionRow key={v.version} v={v} group={group} onPublish={handlePublish} publishing={publishing}/>
-          ))}
-        </div>
+        <>
+          {errorCount > 0 && (
+            <button
+              onClick={() => setShowErrors(s => !s)}
+              className="text-[12px] font-medium text-gray-400 hover:text-black transition-colors mb-3"
+            >
+              {showErrors
+                ? 'Hide failed attempts'
+                : `${errorCount} failed attempt${errorCount !== 1 ? 's' : ''} hidden — show`}
+            </button>
+          )}
+
+          {visibleVersions.length === 0 ? (
+            <div className="rounded-2xl border border-black/[0.06] py-20 text-center">
+              <p className="text-[15px] font-semibold text-black mb-1">Every attempt so far has failed</p>
+              <p className="text-[13px] text-gray-400">Upload a different file, or show the failed attempts above for details.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {visibleVersions.map(v => (
+                <VersionRow key={v.version} v={v} group={group} onPublish={handlePublish} publishing={publishing}/>
+              ))}
+            </div>
+          )}
+        </>
       )}
     </div>
   )

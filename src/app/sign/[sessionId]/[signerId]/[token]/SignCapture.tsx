@@ -1,6 +1,13 @@
 'use client'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import dynamic from 'next/dynamic'
 import SignatureCanvas from 'react-signature-canvas'
+import type { DetectedField } from '@/lib/sign'
+
+// ssr:false is only permitted inside a Client Component in the App Router
+// (this file is one) -- react-pdf needs real browser globals (DOMMatrix
+// etc.) that don't exist during Next's server render pass.
+const DocumentPreview = dynamic(() => import('./DocumentPreview'), { ssr: false })
 
 type Mode = 'draw' | 'type'
 
@@ -13,10 +20,24 @@ export default function SignCapture({
 }) {
   const [mode, setMode]           = useState<Mode>('draw')
   const [typedName, setTypedName] = useState('')
+  const [placeText, setPlaceText] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError]         = useState<string | null>(null)
   const [done, setDone]           = useState(false)
   const sigRef = useRef<SignatureCanvas>(null)
+
+  const [docUrl, setDocUrl]       = useState<string | null>(null)
+  const [fields, setFields]       = useState<DetectedField[]>([])
+  const [previewFailed, setPreviewFailed] = useState(false)
+
+  useEffect(() => {
+    fetch(`/api/public/sign/${sessionId}/${signerId}/${token}/document`)
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(d => { setDocUrl(d.url); setFields(d.detectedFields ?? []) })
+      .catch(() => setPreviewFailed(true))
+  }, [sessionId, signerId, token])
+
+  const placeField = fields.find(f => f.field_type === 'place')
 
   async function handleSubmit() {
     setError(null)
@@ -40,12 +61,20 @@ export default function SignCapture({
       signatureData = typedName.trim()
     }
 
+    if (placeField && !placeText.trim()) {
+      setError('Please enter the place before submitting.')
+      return
+    }
+
     setSubmitting(true)
     try {
       const res = await fetch(`/api/public/sign/${sessionId}/${signerId}/${token}/submit`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ signatureType, signatureData }),
+        body:    JSON.stringify({
+          signatureType, signatureData,
+          ...(placeField ? { placeData: placeText.trim() } : {}),
+        }),
       })
       if (res.ok) {
         setDone(true)
@@ -77,6 +106,10 @@ export default function SignCapture({
 
   return (
     <div className="space-y-5">
+      {docUrl && !previewFailed && (
+        <DocumentPreview url={docUrl} fields={fields} onError={() => setPreviewFailed(true)} />
+      )}
+
       <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
         <button
           type="button"
@@ -119,6 +152,20 @@ export default function SignCapture({
             onChange={e => setTypedName(e.target.value)}
             placeholder="Your full name"
             className="w-full px-4 py-3 rounded-xl border border-black/[0.12] text-[22px] italic
+                       bg-white outline-none focus:border-black/40 focus:ring-2 focus:ring-black/5 transition-all"
+          />
+        </div>
+      )}
+
+      {placeField && (
+        <div>
+          <label className="block text-[13px] font-medium text-black mb-1.5">Place signed</label>
+          <input
+            type="text"
+            value={placeText}
+            onChange={e => setPlaceText(e.target.value)}
+            placeholder="e.g. Cape Town"
+            className="w-full px-4 py-2.5 rounded-xl border border-black/[0.12] text-[14px]
                        bg-white outline-none focus:border-black/40 focus:ring-2 focus:ring-black/5 transition-all"
           />
         </div>

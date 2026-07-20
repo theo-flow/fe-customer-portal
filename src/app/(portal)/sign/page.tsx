@@ -39,6 +39,22 @@ function StatusPill({ status }: { status: SessionSummary['status'] }) {
 
 function SessionRow({ session }: { session: SessionSummary }) {
   const signedCount = session.signers.filter(s => s.status === 'SIGNED').length
+  const [opening, setOpening] = useState(false)
+
+  async function viewDocument() {
+    setOpening(true)
+    try {
+      const res = await fetch(`/api/sign/sessions/${session.sessionId}/document`)
+      const data = await res.json()
+      if (res.ok && data.url) {
+        window.open(data.url, '_blank', 'noopener,noreferrer')
+      }
+    } catch {
+      // Silent -- this is a "nice to have" action, not worth an error banner
+    } finally {
+      setOpening(false)
+    }
+  }
 
   return (
     <div className="rounded-2xl border border-black/[0.08] px-5 py-4">
@@ -59,14 +75,23 @@ function SessionRow({ session }: { session: SessionSummary }) {
         </div>
         <StatusPill status={session.status}/>
       </div>
-      <div className="mt-3 pt-3 border-t border-black/[0.06] flex flex-wrap gap-x-4 gap-y-1">
-        {session.signers.map(s => (
-          <span key={s.signerId} className="text-[12px] text-gray-500">
-            {s.name} <span className={s.status === 'SIGNED' ? 'text-green-600' : 'text-gray-300'}>
-              {s.status === 'SIGNED' ? '✓' : '·'}
+      <div className="mt-3 pt-3 border-t border-black/[0.06] flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <div className="flex flex-wrap gap-x-4 gap-y-1">
+          {session.signers.map(s => (
+            <span key={s.signerId} className="text-[12px] text-gray-500">
+              {s.name} <span className={s.status === 'SIGNED' ? 'text-green-600' : 'text-gray-300'}>
+                {s.status === 'SIGNED' ? '✓' : '·'}
+              </span>
             </span>
-          </span>
-        ))}
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={viewDocument}
+          disabled={opening}
+          className="text-[12px] font-medium text-indigo-500 hover:text-indigo-700 transition-colors disabled:opacity-50 whitespace-nowrap">
+          {opening ? 'Opening…' : session.completedKey ? 'View signed document' : 'View document'}
+        </button>
       </div>
     </div>
   )
@@ -78,11 +103,20 @@ export default function SignSessionsPage() {
   const [loading, setLoading]   = useState(true)
 
   useEffect(() => {
-    fetch('/api/sign/sessions')
-      .then(r => r.ok ? r.json() : null)
-      .then(d => d && setSessions(d.sessions))
-      .catch(() => {})
-      .finally(() => setLoading(false))
+    function poll() {
+      return fetch('/api/sign/sessions')
+        .then(r => r.ok ? r.json() : null)
+        .then(d => d && setSessions(d.sessions))
+        .catch(() => {})
+        .finally(() => setLoading(false))
+    }
+
+    poll()
+    // Sessions list has no single terminal state to stop on (many sessions,
+    // many statuses) -- keep polling every 5s, same cadence as the Decode
+    // /status page, for as long as the dashboard is mounted.
+    const t = setInterval(poll, 5000)
+    return () => clearInterval(t)
   }, [])
 
   if (orgLoading || loading) {

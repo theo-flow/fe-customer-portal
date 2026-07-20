@@ -28,6 +28,7 @@ function LoginForm() {
 
   const verified = searchParams.get('verified') === '1'
   const resetDone = searchParams.get('reset') === '1'
+  const sessionExpired = searchParams.get('reason') === 'expired'
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -82,6 +83,13 @@ function LoginForm() {
                    className="mb-5 px-4 py-3 rounded-xl text-green-400 text-[13px]"
                    style={{ background: 'rgba(34,197,94,0.10)', border: '1px solid rgba(34,197,94,0.25)' }}>
                 Password reset successfully — sign in with your new password.
+              </div>
+            )}
+            {sessionExpired && (
+              <div role="status"
+                   className="mb-5 px-4 py-3 rounded-xl text-amber-400 text-[13px]"
+                   style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.25)' }}>
+                Your session has expired. Please sign in again.
               </div>
             )}
             {error && (

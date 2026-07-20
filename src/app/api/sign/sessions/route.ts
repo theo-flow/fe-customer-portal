@@ -1,12 +1,15 @@
 import { GetCommand, PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb'
 import { GetObjectCommand, HeadObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3'
+import { SendMessageCommand } from '@aws-sdk/client-sqs'
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { randomUUID, createHash } from 'crypto'
-import { ddbDocClient, s3Client, TABLE, BUCKET } from '@/lib/aws'
+import { ddbDocClient, s3Client, sqsClient, TABLE, BUCKET } from '@/lib/aws'
 import { decodeJwtClaims } from '@/lib/token'
 import { validateEmail } from '@/lib/validators'
 import { generateToken, hashToken, tokenExpiryIso, type SignSession, type Signer } from '@/lib/sign'
+
+const SQS_SIGN_URL = process.env.SQS_SIGN_URL
 
 interface SignerInput {
   name?:  string
@@ -171,6 +174,8 @@ export async function POST(req: NextRequest) {
       user_agent:       null,
       signature_type:   null,
       signature_data:   null,
+      place_data:       null,
+      email_sent:       false,
     }
   })
 
@@ -222,5 +227,49 @@ export async function POST(req: NextRequest) {
     signUrl:   `${origin}/sign/${sessionId}/${s.signer_id}/${rawTokens.get(s.signer_id)}`,
   }))
 
-  return NextResponse.json({ sessionId, signers: signerLinks }, { status: 201 })
+  // Kick off async detection + emailing in fn-13 (see document_locator.py /
+  // handler.py's locate_and_notify flow). The raw signing tokens above are
+  // never persisted anywhere (Signer.token_hash is one-way) -- this message
+  // is the only place fn-13 can ever see a signer's actual sign_url, so it
+  // has to travel in the message body itself, not be looked up later.
+  let locateQueued = false
+  if (SQS_SIGN_URL) {
+    try {
+      const requestedBy = await _lookupOrgName(db, orgId)
+      await sqsClient().send(new SendMessageCommand({
+        QueueUrl: SQS_SIGN_URL,
+        MessageBody: JSON.stringify({
+          session_id: sessionId,
+          action: 'locate_and_notify',
+          signer_links: signerLinks.map(l => ({ signer_id: l.signerId, sign_url: l.signUrl })),
+          requested_by: requestedBy,
+        }),
+      }))
+      locateQueued = true
+    } catch (err) {
+      // Never fail session creation over this -- the org user still has the
+      // manual copy-link fallback below. But this does mean automatic
+      // detection/emailing won't happen for this session, so it's surfaced
+      // in the response rather than silently swallowed.
+      console.error('[sign/sessions] Failed to enqueue locate_and_notify', { orgId, sessionId, error: err })
+    }
+  } else {
+    console.error('[sign/sessions] SQS_SIGN_URL not configured -- locate_and_notify not queued', { sessionId })
+  }
+
+  return NextResponse.json({ sessionId, signers: signerLinks, locateQueued }, { status: 201 })
+}
+
+async function _lookupOrgName(db: ReturnType<typeof ddbDocClient>, orgId: string): Promise<string | null> {
+  try {
+    const result = await db.send(new GetCommand({
+      TableName: TABLE,
+      Key: { PK: `ORG#${orgId}`, SK: 'PROFILE' },
+      ProjectionExpression: 'orgName',
+    }))
+    return (result.Item?.orgName as string | undefined) || null
+  } catch (err) {
+    console.error('[sign/sessions] Org name lookup failed', { orgId, error: err })
+    return null
+  }
 }

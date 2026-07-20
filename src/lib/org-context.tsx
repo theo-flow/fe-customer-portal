@@ -11,7 +11,6 @@ export interface OrgData {
   initials:           string
   subscribedProducts: string[]
   formGroups:         FormGroup[]
-  orgLogoUrl:         string | null
   loading:            boolean
   refetch:            () => void
 }
@@ -19,14 +18,14 @@ export interface OrgData {
 const OrgContext = createContext<OrgData>({
   name: '', email: '', orgId: '', orgName: '',
   initials: '··', subscribedProducts: [], formGroups: [],
-  orgLogoUrl: null, loading: true, refetch: () => {},
+  loading: true, refetch: () => {},
 })
 
 export function OrgProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<Omit<OrgData, 'refetch'>>({
     name: '', email: '', orgId: '', orgName: '',
     initials: '··', subscribedProducts: [], formGroups: [],
-    orgLogoUrl: null, loading: true,
+    loading: true,
   })
 
   const load = () => {

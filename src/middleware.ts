@@ -40,7 +40,17 @@ export function middleware(req: NextRequest) {
     if (!authenticated) {
       const loginUrl = new URL('/login', req.url)
       loginUrl.searchParams.set('next', pathname)
-      return NextResponse.redirect(loginUrl)
+      // A token that exists but is expired is a distinct case from never
+      // having logged in -- surface it so /login can tell the user why
+      // they're there instead of just silently showing the form again.
+      if (token) {
+        loginUrl.searchParams.set('reason', 'expired')
+      }
+      const response = NextResponse.redirect(loginUrl)
+      if (token) {
+        response.cookies.delete('tf_token')
+      }
+      return response
     }
   }
 

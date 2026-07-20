@@ -34,6 +34,7 @@ export default function NewSignSessionPage() {
   const [error, setError]       = useState<string | null>(null)
   const [signLinks, setSignLinks] = useState<SignerLink[] | null>(null)
   const [copiedLink, setCopiedLink] = useState<string | null>(null)
+  const [locateQueued, setLocateQueued] = useState(true)
 
   function pickFile(f: File) {
     if (f.type !== 'application/pdf') { setFileError('Only PDF documents can be signed.'); return }
@@ -96,6 +97,7 @@ export default function NewSignSessionPage() {
       if (!sessionRes.ok) { setError(sessionData.error ?? 'Failed to create signing session.'); return }
 
       setSignLinks(sessionData.signers)
+      setLocateQueued(!!sessionData.locateQueued)
     } catch {
       setError('Something went wrong. Please try again.')
     } finally {
@@ -109,7 +111,11 @@ export default function NewSignSessionPage() {
     return (
       <div className="max-w-xl">
         <h1 className="font-display text-[2.1rem] leading-tight text-black mb-2">Signing session created</h1>
-        <p className="text-[13px] text-gray-400 mb-6">Share these links with each signer:</p>
+        <p className="text-[13px] text-gray-400 mb-6">
+          {locateQueued
+            ? "We're analyzing the document now — each signer will get a branded email shortly with a link straight to where they need to sign. You can also share these links directly:"
+            : "We couldn't queue automatic emails for this session — share these links with each signer directly:"}
+        </p>
         <div className="space-y-2">
           {signLinks.map(link => (
             <div key={link.signerId} className="flex items-center justify-between gap-3 bg-gray-50 rounded-xl px-4 py-3">
