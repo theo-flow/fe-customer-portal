@@ -3,6 +3,8 @@ import { useRef } from 'react'
 import { useAnimationFrame } from 'framer-motion'
 import Link from 'next/link'
 import { LogoMark } from '@/components/LogoMark'
+import { MarketingNav } from '@/components/MarketingNav'
+import { MarketingFooter } from '@/components/MarketingFooter'
 
 /* ── Document Intake card ─────────────────────────────────────── */
 function DocIntakeCard() {
@@ -183,7 +185,7 @@ function NotificationCard() {
 export default function LandingPage() {
   return (
     <div className="bg-white overflow-x-hidden w-full">
-      <Nav />
+      <MarketingNav />
 
       {/* ── Above-the-fold: locked to exactly one viewport ── */}
       <div
@@ -220,33 +222,8 @@ export default function LandingPage() {
         card={<NotificationCard/>}/>
       <Steps />
       <CTA />
-      <Footer />
+      <MarketingFooter />
     </div>
-  )
-}
-
-/* ── Nav ──────────────────────────────────────────────────────── */
-function Nav() {
-  return (
-    <nav className="fixed inset-x-0 top-0 z-50 bg-white/80 backdrop-blur-lg border-b border-black/[0.06]">
-      <div className="max-w-[1200px] mx-auto px-8 h-[56px] flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-3">
-          <Mark size={36}/>
-          <span className="font-display text-[22px] tracking-tight text-black">theoflow</span>
-        </Link>
-        <div className="flex items-center gap-1">
-          <Link href="/login"
-            className="text-[13px] text-gray-500 hover:text-black transition-colors px-4 py-2 rounded-full">
-            Sign in
-          </Link>
-          <Link href="/register"
-            className="text-[13px] font-medium bg-black text-white px-5 py-2.5 rounded-full
-                       hover:bg-gray-900 transition-colors">
-            Get started
-          </Link>
-        </div>
-      </div>
-    </nav>
   )
 }
 
@@ -542,28 +519,3 @@ function CTA() {
   )
 }
 
-/* ── Footer ───────────────────────────────────────────────────── */
-function Footer() {
-  return (
-    <footer className="border-t border-black/[0.06] py-7 px-8">
-      <div className="max-w-[1200px] mx-auto
-                      flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-2.5">
-          <Mark size={28}/>
-          <span className="font-display text-[16px] text-black">theoflow</span>
-          <span className="text-[11px] text-gray-300 ml-1">© 2026</span>
-        </div>
-        <div className="flex items-center gap-8 text-[12px] text-gray-400">
-          <Link href="/login" className="hover:text-black transition-colors">Sign in</Link>
-          <Link href="/register" className="hover:text-black transition-colors">Register</Link>
-          <span>POPIA compliant</span>
-        </div>
-      </div>
-    </footer>
-  )
-}
-
-/* ── Shared: logo mark ────────────────────────────────────────── */
-function Mark({ size = 36 }: { size?: number }) {
-  return <LogoMark size={size} className="text-black"/>
-}

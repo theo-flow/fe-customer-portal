@@ -34,8 +34,9 @@ const jetbrains = localFont({
 })
 
 export const metadata: Metadata = {
-  title: 'theoflow | Document Intelligence',
-  description: 'Upload and track your insurance documents — fast, secure, paperless.',
+  metadataBase: new URL('https://theoflow.bytheodore.co.za'),
+  title: 'theoflow | Digital Forms Intelligence Platform',
+  description: 'Upload any document — theoflow classifies, extracts, validates and files it, without a single manual step.',
 }
 
 export const viewport: Viewport = {
@@ -44,10 +45,43 @@ export const viewport: Viewport = {
   themeColor: '#ffffff',
 }
 
+const JSON_LD = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'Organization',
+      name: 'theoflow',
+      url: 'https://theoflow.bytheodore.co.za',
+      logo: 'https://theoflow.bytheodore.co.za/icon.svg',
+    },
+    {
+      '@type': 'WebSite',
+      name: 'theoflow',
+      url: 'https://theoflow.bytheodore.co.za',
+    },
+    {
+      '@type': 'SiteNavigationElement',
+      name: ['About', 'Product', 'Features', 'Contact'],
+      url: [
+        'https://theoflow.bytheodore.co.za/about',
+        'https://theoflow.bytheodore.co.za/product',
+        'https://theoflow.bytheodore.co.za/features',
+        'https://theoflow.bytheodore.co.za/contact',
+      ],
+    },
+  ],
+}
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${playfairDisplay.variable} ${inter.variable} ${jetbrains.variable}`}>
-      <body>{children}</body>
+      <body>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }}
+        />
+        {children}
+      </body>
     </html>
   )
 }
