@@ -1,10 +1,62 @@
 'use client'
-import { useState, Suspense } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import Link from 'next/link'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { signIn, friendlyError } from '@/lib/auth'
 import { LogoMark } from '@/components/LogoMark'
+
+// TEMPORARY — diagnosing a production "session expired immediately after
+// login" bug that can't be reproduced with DevTools (blocked in the
+// tester's environment). Gated behind an unguessable query param so it
+// never shows for real traffic. Remove once the root cause is confirmed
+// fixed. Deliberately does not render the raw token -- only derived,
+// non-sensitive diagnostic values.
+const DEBUG_ACTIVE_KEY  = 'tf_debug_active'
+const DEBUG_PRESEND_KEY = 'tf_debug_presend'
+
+function snapshotCookieLines(label: string): string {
+  const match = document.cookie.match(/(?:^|;\s*)tf_token=([^;]*)/)
+  if (!match) return `[${label}] tf_token cookie: NOT PRESENT`
+  const token = match[1]
+  const lines = [`[${label}] tf_token cookie: PRESENT (length ${token.length})`]
+  const parts = token.split('.')
+  lines.push(`[${label}] JWT segments: ${parts.length}`)
+  try {
+    const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')))
+    const nowSec = Date.now() / 1000
+    lines.push(`[${label}] exp: ${payload.exp} (${new Date(payload.exp * 1000).toISOString()})`)
+    lines.push(`[${label}] iat: ${payload.iat} (${new Date(payload.iat * 1000).toISOString()})`)
+    lines.push(`[${label}] browser now: ${nowSec.toFixed(0)} (${new Date().toISOString()})`)
+    lines.push(`[${label}] isExpired would return: ${nowSec > payload.exp}`)
+    lines.push(`[${label}] token_use: ${payload.token_use ?? 'n/a'}`)
+    lines.push(`[${label}] aud/client_id: ${payload.aud ?? payload.client_id ?? 'n/a'}`)
+  } catch (e) {
+    lines.push(`[${label}] DECODE FAILED: ${e instanceof Error ? e.message : String(e)}`)
+  }
+  return lines.join('\n')
+}
+
+function CookieDebugPanel() {
+  const [info, setInfo] = useState<string | null>(null)
+
+  useEffect(() => {
+    const presend = sessionStorage.getItem(DEBUG_PRESEND_KEY)
+    const current = snapshotCookieLines('CURRENT — after landing on this page')
+    setInfo([
+      presend ? presend : '[PRE-SEND] no snapshot captured yet — submit the login form with this debug session active first',
+      '',
+      current,
+    ].join('\n'))
+  }, [])
+
+  return (
+    <pre role="status" className="mb-5 px-4 py-3 rounded-xl text-[11px] whitespace-pre-wrap"
+         style={{ background: 'rgba(59,130,246,0.10)', border: '1px solid rgba(59,130,246,0.3)', color: '#93c5fd' }}>
+      {info ?? 'loading cookie diagnostics…'}
+    </pre>
+  )
+}
 
 export default function LoginPage() {
   return (
@@ -15,7 +67,6 @@ export default function LoginPage() {
 }
 
 function LoginForm() {
-  const router      = useRouter()
   const searchParams = useSearchParams()
   // Validate the redirect target is a relative path to prevent open redirect
   const rawNext = searchParams.get('next') ?? ''
@@ -29,6 +80,13 @@ function LoginForm() {
   const verified = searchParams.get('verified') === '1'
   const resetDone = searchParams.get('reset') === '1'
   const sessionExpired = searchParams.get('reason') === 'expired'
+  const debugParam = searchParams.get('debug') === 'sm2026diag'
+  useEffect(() => {
+    // Debug mode survives the middleware bounce (which strips unknown query
+    // params) by persisting a flag across the navigation in sessionStorage.
+    if (debugParam) sessionStorage.setItem(DEBUG_ACTIVE_KEY, '1')
+  }, [debugParam])
+  const showDebug = debugParam || (typeof window !== 'undefined' && sessionStorage.getItem(DEBUG_ACTIVE_KEY) === '1')
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -38,7 +96,16 @@ function LoginForm() {
     setLoading(true)
     try {
       await signIn(email.trim(), password)
-      router.push(next)
+      if (showDebug) {
+        sessionStorage.setItem(DEBUG_PRESEND_KEY, snapshotCookieLines('PRE-SEND — right after signIn(), before navigating'))
+      }
+      // Hard navigation, not router.push: middleware's auth check must see
+      // the cookie we just set via a fresh top-level request. A soft
+      // client-side push can be served from Next's client route cache
+      // (or otherwise diverge from a real page load), which was
+      // reproducing as an immediate false "session expired" bounce
+      // straight after a successful sign-in.
+      window.location.href = next
     } catch (err: unknown) {
       setError(friendlyError(err as { code?: string; message?: string }))
     } finally {
@@ -71,6 +138,7 @@ function LoginForm() {
               Welcome back — enter your credentials below.
             </p>
 
+            {showDebug && <CookieDebugPanel />}
             {verified && (
               <div role="status"
                    className="mb-5 px-4 py-3 rounded-xl text-green-400 text-[13px]"

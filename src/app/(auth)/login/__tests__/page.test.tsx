@@ -4,14 +4,12 @@ import userEvent from '@testing-library/user-event'
 import React from 'react'
 
 /* ── Hoist mock references ── */
-const { mockPush, mockSignIn, mockSearchParamsGet } = vi.hoisted(() => ({
-  mockPush:            vi.fn(),
+const { mockSignIn, mockSearchParamsGet } = vi.hoisted(() => ({
   mockSignIn:          vi.fn(),
   mockSearchParamsGet: vi.fn().mockReturnValue(null),
 }))
 
 vi.mock('next/navigation', () => ({
-  useRouter:       () => ({ push: mockPush }),
   useSearchParams: () => ({ get: mockSearchParamsGet }),
 }))
 
@@ -45,6 +43,14 @@ describe('LoginPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockSearchParamsGet.mockReturnValue(null)
+    // Post sign-in uses a hard navigation (window.location.href), not
+    // router.push, so the middleware's auth check always sees a fresh
+    // top-level request -- jsdom doesn't implement real navigation, so
+    // stub location with a writable href to assert against.
+    Object.defineProperty(window, 'location', {
+      writable: true,
+      value: { href: '' },
+    })
   })
 
   /* ── Rendering ── */
@@ -122,7 +128,7 @@ describe('LoginPage', () => {
     await user.type(passwordInput(), 'Password123!')
     await user.click(submitBtn())
 
-    await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/dashboard'))
+    await waitFor(() => expect(window.location.href).toBe('/dashboard'))
   })
 
   /* ── Open redirect prevention ── */
@@ -135,7 +141,7 @@ describe('LoginPage', () => {
     await user.type(passwordInput(), 'Password123!')
     await user.click(submitBtn())
 
-    await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/upload'))
+    await waitFor(() => expect(window.location.href).toBe('/upload'))
   })
 
   it('falls back to /dashboard instead of a protocol-relative ?next (//evil.com)', async () => {
@@ -147,7 +153,7 @@ describe('LoginPage', () => {
     await user.type(passwordInput(), 'Password123!')
     await user.click(submitBtn())
 
-    await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/dashboard'))
+    await waitFor(() => expect(window.location.href).toBe('/dashboard'))
   })
 
   it('falls back to /dashboard instead of an absolute-URL ?next (https://evil.com)', async () => {
@@ -159,7 +165,7 @@ describe('LoginPage', () => {
     await user.type(passwordInput(), 'Password123!')
     await user.click(submitBtn())
 
-    await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/dashboard'))
+    await waitFor(() => expect(window.location.href).toBe('/dashboard'))
   })
 
   /* ── Errors ── */
@@ -183,7 +189,7 @@ describe('LoginPage', () => {
     await user.click(submitBtn())
 
     await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
-    expect(mockPush).not.toHaveBeenCalled()
+    expect(window.location.href).toBe('')
   })
 
   /* ── Loading state ── */
