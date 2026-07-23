@@ -88,6 +88,18 @@ function LoginForm() {
   }, [debugParam])
   const showDebug = debugParam || (typeof window !== 'undefined' && sessionStorage.getItem(DEBUG_ACTIVE_KEY) === '1')
 
+  useEffect(() => {
+    // reason=expired is a one-time signal from middleware's redirect, not a
+    // durable fact about this URL -- without stripping it, hitting back,
+    // reloading, or revisiting a stale/shared link keeps re-showing "session
+    // expired" to someone who may never have had a session on this visit.
+    if (!sessionExpired) return
+    const params = new URLSearchParams(window.location.search)
+    params.delete('reason')
+    const qs = params.toString()
+    window.history.replaceState(null, '', qs ? `${window.location.pathname}?${qs}` : window.location.pathname)
+  }, [sessionExpired])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')

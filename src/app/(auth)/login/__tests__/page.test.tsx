@@ -89,6 +89,22 @@ describe('LoginPage', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
+  it('shows session-expired banner for ?reason=expired, then strips it from the URL so a reload or back-nav does not re-show it', async () => {
+    mockSearchParamsGet.mockImplementation((key: string) => key === 'reason' ? 'expired' : null)
+    Object.defineProperty(window, 'location', {
+      writable: true,
+      value: { href: '', pathname: '/login', search: '?reason=expired' },
+    })
+    const replaceStateSpy = vi.spyOn(window.history, 'replaceState')
+
+    setup()
+
+    expect(screen.getByRole('status')).toHaveTextContent(/session has expired/i)
+    await waitFor(() => expect(replaceStateSpy).toHaveBeenCalled())
+    const strippedUrl = String(replaceStateSpy.mock.calls[0][2])
+    expect(strippedUrl).not.toContain('reason=expired')
+  })
+
   /* ── Client-side presence validation ── */
   it('shows error when email is empty on submit', async () => {
     const { user, passwordInput, submitBtn } = setup()
