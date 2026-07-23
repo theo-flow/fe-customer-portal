@@ -17,8 +17,8 @@ function navItemsFor(products: string[]): NavItem[] {
   if (products.includes('channel')) items.push({ href: '/forms',       label: 'Forms',       built: true })
   if (products.includes('harvest')) items.push({ href: '/submissions', label: 'Submissions', built: true })
   if (products.includes('decode')) {
-    items.push({ href: '/upload',         label: 'Upload',           built: true })
-    items.push({ href: '/clarifications', label: 'Waiting on client', built: true })
+    items.push({ href: '/upload',         label: 'Extract',          built: true })
+    items.push({ href: '/clarifications', label: 'Pending',           built: true })
   }
   if (products.includes('sign'))    items.push({ href: '/sign',        label: 'Sign',        built: true  })
   return items

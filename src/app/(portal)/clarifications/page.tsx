@@ -43,7 +43,7 @@ export default function ClarificationsPage() {
         <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-400 mb-1">
           TheoFlow Decode
         </p>
-        <h1 className="font-display text-[2.1rem] leading-tight text-black">Waiting on client</h1>
+        <h1 className="font-display text-[2.1rem] leading-tight text-black">Pending</h1>
         <p className="text-[13px] text-gray-400 mt-1">
           {items.length} field{items.length !== 1 ? 's' : ''} flagged for clarification — a reviewer couldn&apos;t
           resolve these themselves; the source document is incomplete until the submitter answers.
