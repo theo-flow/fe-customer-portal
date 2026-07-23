@@ -46,8 +46,9 @@ export async function GET() {
     // gates the Preview/share-link affordances on actual publish state.
     const status = publishedVersion != null                ? 'READY'
                   : latest?.status === 'ANALYZING'          ? 'ANALYZING'
-                  : latest?.status === 'ERROR'               ? 'ERROR'
-                  :                                            'DRAFT'
+                  : latest?.status === 'NEEDS_REVIEW'        ? 'NEEDS_REVIEW'
+                  : latest?.status === 'ERROR'                ? 'ERROR'
+                  :                                             'DRAFT'
     return {
       group:            item.group       as string,
       groupLabel:       item.group_label as string,
@@ -56,8 +57,9 @@ export async function GET() {
       updatedAt:        item.updated_at  as string,
       latestVersion:    (item.latest_version as number) ?? 0,
       publishedVersion,
-      errorMessage:     status === 'ERROR'     ? ((latest?.error_message    as string) ?? null) : null,
-      processingStage:  status === 'ANALYZING' ? ((latest?.processing_stage as string) ?? null) : null,
+      errorMessage:     status === 'ERROR'        ? ((latest?.error_message    as string) ?? null) : null,
+      processingStage:  status === 'ANALYZING'    ? ((latest?.processing_stage as string) ?? null) : null,
+      needsReviewCount: status === 'NEEDS_REVIEW' ? ((latest?.review_notes as unknown[])?.length ?? 0) : null,
     }
   })
 

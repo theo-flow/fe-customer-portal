@@ -23,14 +23,16 @@ const STAGE_LABELS: Record<string, string> = {
 }
 
 interface GroupState {
-  phase:             Phase
-  file?:             File
-  progress:          number
-  error:             string
-  serverStatus?:     ForgeStatus
-  serverStage?:      string | null
-  serverError?:      string | null
-  serverFieldCount?: number | null
+  phase:              Phase
+  file?:              File
+  progress:           number
+  error:              string
+  serverStatus?:      ForgeStatus
+  serverStage?:       string | null
+  serverError?:       string | null
+  serverFieldCount?:  number | null
+  serverVersion?:     number | null
+  serverReviewCount?: number | null
 }
 
 function validate(f: File): string {
@@ -58,10 +60,11 @@ function GroupCard({ fg, state, onFileSelect, onUpload, onRetry }: {
     onFileSelect(fg.group, f)
   }
 
-  const { phase, file, progress, error, serverStatus, serverStage, serverError, serverFieldCount } = state
-  const analysed = phase === 'done' && serverStatus === 'READY'
-  const failed    = phase === 'done' && serverStatus === 'ERROR'
-  const analysing = phase === 'done' && (!serverStatus || serverStatus === 'ANALYZING')
+  const { phase, file, progress, error, serverStatus, serverStage, serverError, serverFieldCount, serverVersion, serverReviewCount } = state
+  const analysed    = phase === 'done' && serverStatus === 'READY'
+  const failed      = phase === 'done' && serverStatus === 'ERROR'
+  const needsReview = phase === 'done' && serverStatus === 'NEEDS_REVIEW'
+  const analysing   = phase === 'done' && (!serverStatus || serverStatus === 'ANALYZING')
 
   return (
     <div className="rounded-2xl border border-black/[0.08] p-5">
@@ -69,7 +72,7 @@ function GroupCard({ fg, state, onFileSelect, onUpload, onRetry }: {
       {/* Header row */}
       <div className="flex items-center gap-3 mb-4">
         <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0
-                         ${analysed ? 'bg-green-50' : failed ? 'bg-red-50' : 'bg-gray-50'}`}>
+                         ${analysed ? 'bg-green-50' : failed ? 'bg-red-50' : needsReview ? 'bg-amber-50' : 'bg-gray-50'}`}>
           {analysed ? (
             <svg className="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24"
                  stroke="currentColor" strokeWidth={2.5}>
@@ -79,6 +82,11 @@ function GroupCard({ fg, state, onFileSelect, onUpload, onRetry }: {
             <svg className="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24"
                  stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          ) : needsReview ? (
+            <svg className="w-4 h-4 text-amber-500" fill="none" viewBox="0 0 24 24"
+                 stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m0 3.75h.008v.008H12v-.008zM21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
             </svg>
           ) : (
             <svg className="w-4 h-4 text-gray-300" fill="none" viewBox="0 0 24 24"
@@ -104,6 +112,11 @@ function GroupCard({ fg, state, onFileSelect, onUpload, onRetry }: {
           {failed && (
             <p className="text-[12px] text-red-500 font-medium mt-0.5">
               {serverError || 'Something went wrong while analysing this template.'}
+            </p>
+          )}
+          {needsReview && (
+            <p className="text-[12px] text-amber-700 font-medium mt-0.5">
+              {serverFieldCount ?? 0} field{serverFieldCount === 1 ? '' : 's'} — {serverReviewCount ?? 0} need review
             </p>
           )}
         </div>
@@ -135,6 +148,21 @@ function GroupCard({ fg, state, onFileSelect, onUpload, onRetry }: {
           >
             Try again
           </button>
+        )}
+        {needsReview && (
+          <>
+            <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full
+                             bg-amber-50 text-amber-700">
+              Needs review
+            </span>
+            <Link
+              href={`/forms/${fg.group}/review/${serverVersion}`}
+              className="text-[11px] font-semibold px-3 py-1.5 rounded-full
+                         bg-black text-white hover:bg-gray-800 transition-colors whitespace-nowrap"
+            >
+              Review →
+            </Link>
+          </>
         )}
       </div>
 
@@ -375,11 +403,13 @@ export default function TemplatesPage() {
         const latest = res.value.versions?.[0]
         if (!latest) return // never uploaded -- leave at default 'idle'
         setState(toFetch[i].group, {
-          phase:            'done',
-          serverStatus:     latest.status,
-          serverStage:      latest.processingStage,
-          serverError:      latest.errorMessage,
-          serverFieldCount: latest.fieldCount,
+          phase:             'done',
+          serverStatus:      latest.status,
+          serverStage:       latest.processingStage,
+          serverError:       latest.errorMessage,
+          serverFieldCount:  latest.fieldCount,
+          serverVersion:     latest.version,
+          serverReviewCount: latest.reviewNoteCount,
         })
       })
       setInitialStatusLoading(false)
@@ -396,7 +426,8 @@ export default function TemplatesPage() {
   // "Analysing template…" label forever regardless of what actually happens.
   useEffect(() => {
     const pending = Object.entries(states)
-      .filter(([, s]) => s.phase === 'done' && s.serverStatus !== 'READY' && s.serverStatus !== 'ERROR')
+      .filter(([, s]) => s.phase === 'done'
+        && s.serverStatus !== 'READY' && s.serverStatus !== 'ERROR' && s.serverStatus !== 'NEEDS_REVIEW')
       .map(([group]) => group)
 
     if (pending.length === 0) return
@@ -411,10 +442,12 @@ export default function TemplatesPage() {
           const latest = data.versions[0]
           if (!latest || cancelled) continue
           setState(group, {
-            serverStatus:     latest.status,
-            serverStage:      latest.processingStage,
-            serverError:      latest.errorMessage,
-            serverFieldCount: latest.fieldCount,
+            serverStatus:      latest.status,
+            serverStage:       latest.processingStage,
+            serverError:       latest.errorMessage,
+            serverFieldCount:  latest.fieldCount,
+            serverVersion:     latest.version,
+            serverReviewCount: latest.reviewNoteCount,
           })
         } catch {
           // transient — next 5s tick retries

@@ -77,6 +77,12 @@ function StatusPill({ status }: { status: string }) {
       <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"/>Analysing
     </span>
   )
+  if (status === 'NEEDS_REVIEW') return (
+    <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1
+                     rounded-full bg-amber-50 text-amber-700">
+      <span className="w-1.5 h-1.5 rounded-full bg-amber-500"/>Needs review
+    </span>
+  )
   return (
     <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1
                      rounded-full bg-red-50 text-red-600">
@@ -126,6 +132,15 @@ function VersionRow({ v, group, onPublish, publishing }: {
 
       <div className="flex items-center gap-3 flex-shrink-0 self-start">
         <StatusPill status={v.status}/>
+        {v.status === 'NEEDS_REVIEW' && (
+          <Link
+            href={`/forms/${group}/review/${v.version}`}
+            className="text-[12px] font-semibold px-4 py-2 rounded-full bg-black text-white
+                       hover:bg-gray-800 transition-colors whitespace-nowrap"
+          >
+            Review →
+          </Link>
+        )}
         {v.status === 'READY' && (
           <Link
             href={`/forms/${group}/preview/${v.version}`}

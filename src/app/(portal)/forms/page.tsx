@@ -14,6 +14,7 @@ interface FormSchema {
   publishedVersion:  number | null
   errorMessage:      string | null
   processingStage:   string | null
+  needsReviewCount:  number | null
 }
 
 // ── Status pill ───────────────────────────────────────────────────────────────
@@ -29,6 +30,12 @@ function SchemaStatus({ status }: { status: string }) {
     <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1
                      rounded-full bg-amber-50 text-amber-700">
       <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"/>Analysing
+    </span>
+  )
+  if (status === 'NEEDS_REVIEW') return (
+    <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1
+                     rounded-full bg-amber-50 text-amber-700">
+      <span className="w-1.5 h-1.5 rounded-full bg-amber-500"/>Needs review
     </span>
   )
   if (status === 'DRAFT') return (
@@ -90,9 +97,11 @@ function GroupRow({ group, groupLabel, schema, orgId }: {
               ? `${schema.fieldCount} field${schema.fieldCount !== 1 ? 's' : ''}`
               : schema.status === 'ERROR'
                 ? <span className="text-red-600">{schema.errorMessage || 'Something went wrong while analysing this template.'}</span>
-                : schema.status === 'ANALYZING'
-                  ? 'Analysing…'
-                  : `v${schema.latestVersion} forged — not yet published`}
+                : schema.status === 'NEEDS_REVIEW'
+                  ? <span className="text-amber-700">{schema.needsReviewCount} field{schema.needsReviewCount !== 1 ? 's' : ''} need review</span>
+                  : schema.status === 'ANALYZING'
+                    ? 'Analysing…'
+                    : `v${schema.latestVersion} forged — not yet published`}
           {isReady && (
             <button onClick={copyLink}
                     className="ml-3 text-indigo-500 hover:text-indigo-700 font-medium transition-colors">
@@ -112,6 +121,13 @@ function GroupRow({ group, groupLabel, schema, orgId }: {
                     className="text-[12px] font-semibold px-4 py-2 rounded-full bg-black text-white
                                hover:bg-gray-800 transition-colors whitespace-nowrap">
                 Upload new file →
+              </Link>
+            )}
+            {schema.status === 'NEEDS_REVIEW' && (
+              <Link href={`/forms/${group}/review/${schema.latestVersion}`}
+                    className="text-[12px] font-semibold px-4 py-2 rounded-full bg-black text-white
+                               hover:bg-gray-800 transition-colors whitespace-nowrap">
+                Review →
               </Link>
             )}
             {schema.latestVersion > 0 && (

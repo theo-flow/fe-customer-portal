@@ -47,6 +47,7 @@ export async function GET(
       processingStage: (item.processing_stage as string) ?? null,
       errorMessage:    (item.error_message    as string) ?? null,
       fieldCount:      (item.fields as unknown[])?.length ?? 0,
+      reviewNoteCount: (item.review_notes as unknown[])?.length ?? 0,
       brandingSource:  (item.branding as { source?: string } | undefined)?.source ?? null,
       createdAt:       item.created_at      as string,
       updatedAt:       item.updated_at      as string,

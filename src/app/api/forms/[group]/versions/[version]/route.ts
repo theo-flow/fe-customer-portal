@@ -27,14 +27,16 @@ export async function GET(
   }))
 
   if (!result.Item) return NextResponse.json({ error: 'Version not found' }, { status: 404 })
-  if (result.Item.status !== 'READY') {
+  if (result.Item.status !== 'READY' && result.Item.status !== 'NEEDS_REVIEW') {
     return NextResponse.json({ error: `Version ${version} is not ready to preview (status: ${result.Item.status})` }, { status: 400 })
   }
 
   return NextResponse.json({
     version:      result.Item.version,
     groupLabel:   result.Item.group_label,
+    status:       result.Item.status,
     fields:       result.Item.fields ?? [],
+    reviewNotes:  result.Item.review_notes ?? [],
     branding:     result.Item.branding ?? null,
     sourceS3Key:  result.Item.source_s3_key ?? null,
   })
