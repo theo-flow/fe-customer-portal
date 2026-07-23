@@ -27,5 +27,7 @@ export function sqsClient() {
   return new SQSClient({ region: REGION, credentials: credentials() })
 }
 
-export const TABLE  = process.env.DYNAMODB_TABLE_ORGS ?? 'daai-insure-orgs'
-export const BUCKET = process.env.S3_INTAKE_BUCKET    ?? 'daai-insure-intake'
+export const TABLE         = process.env.DYNAMODB_TABLE_ORGS    ?? 'daai-insure-orgs'
+export const BUCKET        = process.env.S3_INTAKE_BUCKET       ?? 'daai-insure-intake'
+export const OUTPUT_BUCKET = process.env.S3_OUTPUT_BUCKET       ?? 'daai-insure-output'
+export const CONTACT_TABLE = process.env.DYNAMODB_TABLE_CONTACT ?? 'daai-insure-contact-messages'

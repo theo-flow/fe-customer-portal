@@ -130,6 +130,11 @@ export function TopNav() {
                     <p className="text-[11px] text-gray-400 truncate">{email}</p>
                   </div>
                   <div className="p-1">
+                    <Link href="/billing" onClick={() => setMenuOpen(false)}
+                      className="flex items-center px-3 py-2 rounded-xl text-[13px] text-gray-700
+                                 hover:bg-gray-50 transition-colors">
+                      Billing
+                    </Link>
                     <Link href="/settings" onClick={() => setMenuOpen(false)}
                       className="flex items-center px-3 py-2 rounded-xl text-[13px] text-gray-700
                                  hover:bg-gray-50 transition-colors">
