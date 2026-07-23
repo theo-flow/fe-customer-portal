@@ -2,10 +2,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { useOrg } from '@/lib/org-context'
+import type { ForgeStatus } from '@/lib/forms-types'
 
 interface VersionRow {
   version:         number
-  status:          'ANALYZING' | 'READY' | 'ERROR'
+  status:          ForgeStatus
   processingStage: string | null
   errorMessage:    string | null
   fieldCount:      number

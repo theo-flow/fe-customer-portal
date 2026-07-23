@@ -2,15 +2,18 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useOrg } from '@/lib/org-context'
+import type { ForgeStatus } from '@/lib/forms-types'
 
 interface FormSchema {
   group:            string
   groupLabel:       string
-  status:           'DRAFT' | 'ANALYZING' | 'READY' | 'ERROR'
+  status:           ForgeStatus | 'DRAFT'
   fieldCount:        number
   updatedAt:         string
   latestVersion:     number
   publishedVersion:  number | null
+  errorMessage:      string | null
+  processingStage:   string | null
 }
 
 // ── Status pill ───────────────────────────────────────────────────────────────
@@ -85,7 +88,11 @@ function GroupRow({ group, groupLabel, schema, orgId }: {
             ? 'No template uploaded yet'
             : isReady
               ? `${schema.fieldCount} field${schema.fieldCount !== 1 ? 's' : ''}`
-              : `v${schema.latestVersion} forged — not yet published`}
+              : schema.status === 'ERROR'
+                ? <span className="text-red-600">{schema.errorMessage || 'Something went wrong while analysing this template.'}</span>
+                : schema.status === 'ANALYZING'
+                  ? 'Analysing…'
+                  : `v${schema.latestVersion} forged — not yet published`}
           {isReady && (
             <button onClick={copyLink}
                     className="ml-3 text-indigo-500 hover:text-indigo-700 font-medium transition-colors">
@@ -100,6 +107,13 @@ function GroupRow({ group, groupLabel, schema, orgId }: {
         {schema ? (
           <>
             <SchemaStatus status={schema.status}/>
+            {schema.status === 'ERROR' && (
+              <Link href="/templates"
+                    className="text-[12px] font-semibold px-4 py-2 rounded-full bg-black text-white
+                               hover:bg-gray-800 transition-colors whitespace-nowrap">
+                Upload new file →
+              </Link>
+            )}
             {schema.latestVersion > 0 && (
               <Link href={`/forms/${group}/history`}
                     className="text-[12px] font-medium text-gray-400 hover:text-black transition-colors whitespace-nowrap">

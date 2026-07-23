@@ -1,4 +1,4 @@
-import { QueryCommand } from '@aws-sdk/lib-dynamodb'
+import { GetCommand, QueryCommand } from '@aws-sdk/lib-dynamodb'
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { ddbDocClient, TABLE } from '@/lib/aws'
@@ -22,22 +22,42 @@ export async function GET() {
   // (SCHEMA#{group}#v{n}) -- only pointers belong in the forms list.
   const pointers = (result.Items ?? []).filter(item => (item.SK as string).split('#').length === 2)
 
-  const forms = pointers.map(item => {
+  // The pointer's own `status` attribute is stale/untrustworthy (pre-Module-7
+  // values could leak through as a false "Error" on a never-republished
+  // pointer), which is why status used to be derived from published_version
+  // alone -- but that made a failed digitization show as "not yet published"
+  // instead of an actual error, and never surfaced ANALYZING at all. Reading
+  // each pointer's *latest version item* (immutable, written once by fn-00)
+  // gives a real status without trusting the mutable pointer attribute.
+  const latestVersions = await Promise.all(pointers.map(item => {
+    const v = (item.latest_version as number) ?? 0
+    return v === 0 ? Promise.resolve(null) : ddbDocClient().send(new GetCommand({
+      TableName: TABLE,
+      Key:       { PK: `ORG#${orgId}`, SK: `SCHEMA#${item.group}#v${v}` },
+    }))
+  }))
+
+  const forms = pointers.map((item, i) => {
     const publishedVersion = (item.published_version as number) ?? null
-    // The pointer only ever legitimately reaches READY via an explicit publish
-    // action (see api/forms/[group]/publish/route.ts), which always sets
-    // published_version together with status. Deriving status from
-    // published_version's presence -- rather than trusting a stored status
-    // string -- means stale pre-Module-7 values (ANALYZING/ERROR) left on
-    // never-republished pointers can never leak through as a false "Error".
+    const latest = latestVersions[i]?.Item
+    // READY still comes only from an explicit publish action (see
+    // api/forms/[group]/publish/route.ts) -- an unpublished-but-successfully-
+    // analysed latest version must not be treated as READY, since isReady
+    // gates the Preview/share-link affordances on actual publish state.
+    const status = publishedVersion != null                ? 'READY'
+                  : latest?.status === 'ANALYZING'          ? 'ANALYZING'
+                  : latest?.status === 'ERROR'               ? 'ERROR'
+                  :                                            'DRAFT'
     return {
       group:            item.group       as string,
       groupLabel:       item.group_label as string,
-      status:           publishedVersion != null ? 'READY' : 'DRAFT',
+      status,
       fieldCount:       (item.fields as unknown[])?.length ?? 0,
       updatedAt:        item.updated_at  as string,
       latestVersion:    (item.latest_version as number) ?? 0,
       publishedVersion,
+      errorMessage:     status === 'ERROR'     ? ((latest?.error_message    as string) ?? null) : null,
+      processingStage:  status === 'ANALYZING' ? ((latest?.processing_stage as string) ?? null) : null,
     }
   })
 

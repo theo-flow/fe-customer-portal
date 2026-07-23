@@ -3,13 +3,13 @@ import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { useOrg } from '@/lib/org-context'
 import { FORM_GROUPS } from '@/lib/form-groups'
+import type { ForgeStatus, FormVersion } from '@/lib/forms-types'
 
 const ACCEPTED  = ['application/pdf', 'image/jpeg', 'image/png', 'image/tiff']
 const MAX_MB    = 50
 const MAX_BYTES = MAX_MB * 1024 * 1024
 
 type Phase = 'idle' | 'ready' | 'uploading' | 'done' | 'error'
-type ServerStatus = 'ANALYZING' | 'READY' | 'ERROR'
 
 // Mirrors fn-00-template-analyser's 6-stage pipeline (Module 8).
 const STAGE_LABELS: Record<string, string> = {
@@ -27,7 +27,7 @@ interface GroupState {
   file?:             File
   progress:          number
   error:             string
-  serverStatus?:     ServerStatus
+  serverStatus?:     ForgeStatus
   serverStage?:      string | null
   serverError?:      string | null
   serverFieldCount?: number | null
@@ -114,10 +114,18 @@ function GroupCard({ fg, state, onFileSelect, onUpload, onRetry }: {
           </span>
         )}
         {analysed && (
-          <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full
-                           bg-green-50 text-green-700">
-            Ready
-          </span>
+          <>
+            <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full
+                             bg-green-50 text-green-700">
+              Ready
+            </span>
+            <button
+              onClick={() => onRetry(fg.group)}
+              className="text-[11px] font-medium text-gray-400 hover:text-black transition-colors"
+            >
+              Replace
+            </button>
+          </>
         )}
         {failed && (
           <button
@@ -345,6 +353,44 @@ export default function TemplatesPage() {
     }))
   }
 
+  // Seed real status on load -- without this, every group starts at 'idle'
+  // regardless of what's actually in DynamoDB, so a page reload (or signing
+  // in fresh) makes already-analysed templates look blank. Per-group guard
+  // (not a one-shot ref) so groups added later via AddGroupCard still get
+  // initialized without re-fetching or disturbing groups already seeded.
+  const [initialStatusLoading, setInitialStatusLoading] = useState(true)
+
+  useEffect(() => {
+    if (loading) return
+    const toFetch = formGroups.filter(fg => !(fg.group in states))
+    if (toFetch.length === 0) { setInitialStatusLoading(false); return }
+
+    let cancelled = false
+    Promise.allSettled(
+      toFetch.map(fg => fetch(`/api/forms/${fg.group}/versions`).then(r => r.ok ? r.json() : null))
+    ).then(results => {
+      if (cancelled) return
+      results.forEach((res, i) => {
+        if (res.status !== 'fulfilled' || !res.value) return
+        const latest = res.value.versions?.[0]
+        if (!latest) return // never uploaded -- leave at default 'idle'
+        setState(toFetch[i].group, {
+          phase:            'done',
+          serverStatus:     latest.status,
+          serverStage:      latest.processingStage,
+          serverError:      latest.errorMessage,
+          serverFieldCount: latest.fieldCount,
+        })
+      })
+      setInitialStatusLoading(false)
+    })
+    return () => { cancelled = true }
+    // states is read via closure (current at each run) but intentionally
+    // excluded from deps -- it's only used to skip already-seeded groups,
+    // not something this effect should re-run in response to.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, formGroups])
+
   // Poll for pipeline status on every group whose upload finished but hasn't
   // resolved server-side yet — without this, "done" just sits on a static
   // "Analysing template…" label forever regardless of what actually happens.
@@ -361,12 +407,7 @@ export default function TemplatesPage() {
         try {
           const res = await fetch(`/api/forms/${group}/versions`)
           if (!res.ok || cancelled) continue
-          const data = await res.json() as { versions: Array<{
-            status: 'ANALYZING' | 'READY' | 'ERROR'
-            processingStage: string | null
-            errorMessage: string | null
-            fieldCount: number
-          }> }
+          const data = await res.json() as { versions: FormVersion[] }
           const latest = data.versions[0]
           if (!latest || cancelled) continue
           setState(group, {
@@ -480,7 +521,7 @@ export default function TemplatesPage() {
     )
   }
 
-  if (loading) {
+  if (loading || initialStatusLoading) {
     return (
       <div className="space-y-3">
         {[1, 2, 3].map(i => (

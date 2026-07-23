@@ -576,7 +576,7 @@ export default function RegisterPage() {
             <p className="text-[12px] mb-7 px-3 py-2 rounded-lg"
                style={{ color:'rgba(255,255,255,0.45)', background:'rgba(255,255,255,0.05)',
                         border:'1px solid rgba(255,255,255,0.08)' }}>
-              Each template must have a file uploaded <em>or</em> &ldquo;Use standard template&rdquo; ticked — you cannot proceed until all are resolved.
+              Each form must either have a file uploaded, or be marked &ldquo;Skip for now&rdquo; — you cannot proceed until all are resolved. Skipped forms won&apos;t work on Channel until someone uploads a real template for them later, from the Templates page.
             </p>
 
             {error && <DarkError msg={error}/>}
@@ -902,7 +902,7 @@ function DarkTemplateCard({ template, onFile, onSkip }: {
               )}
             </div>
             <span className="text-[11px] font-medium" style={{ color:'rgba(255,255,255,0.4)' }}>
-              Standard
+              Skip for now
             </span>
           </label>
         </div>

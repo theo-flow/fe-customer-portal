@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { ddbDocClient, TABLE } from '@/lib/aws'
 import { decodeJwtClaims } from '@/lib/token'
+import type { ForgeStatus } from '@/lib/forms-types'
 
 export async function GET(
   _req: Request,
@@ -42,7 +43,7 @@ export async function GET(
   const versions = (versionItems.Items ?? [])
     .map(item => ({
       version:         item.version         as number,
-      status:          item.status          as string,
+      status:          item.status          as ForgeStatus,
       processingStage: (item.processing_stage as string) ?? null,
       errorMessage:    (item.error_message    as string) ?? null,
       fieldCount:      (item.fields as unknown[])?.length ?? 0,
