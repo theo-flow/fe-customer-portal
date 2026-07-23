@@ -54,14 +54,21 @@ function SchemaStatus({ status }: { status: string }) {
 
 // ── Form group row ────────────────────────────────────────────────────────────
 
-function GroupRow({ group, groupLabel, schema, orgId }: {
-  group:      string
-  groupLabel: string
-  schema?:    FormSchema
-  orgId:      string
+function GroupRow({ group, groupLabel, schema, orgId, onPublished }: {
+  group:       string
+  groupLabel:  string
+  schema?:     FormSchema
+  orgId:       string
+  onPublished: () => void
 }) {
-  const [copied, setCopied] = useState(false)
+  const [copied, setCopied]         = useState(false)
+  const [publishing, setPublishing] = useState(false)
+  const [publishError, setPublishError] = useState<string | null>(null)
   const isReady = schema?.status === 'READY'
+  // Forged and passed review, just sitting unpublished -- the only DRAFT
+  // case that has anything to actually publish (as opposed to no template
+  // uploaded at all, which is the !schema branch below).
+  const canPublish = schema?.status === 'DRAFT' && schema.latestVersion > 0
 
   function copyLink() {
     const url = `${window.location.origin}/fill/${orgId}/${group}`
@@ -69,6 +76,29 @@ function GroupRow({ group, groupLabel, schema, orgId }: {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     })
+  }
+
+  async function handlePublish() {
+    if (!schema) return
+    setPublishing(true)
+    setPublishError(null)
+    try {
+      const res = await fetch(`/api/forms/${group}/publish`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ version: schema.latestVersion }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        setPublishError(body.error ?? 'Failed to publish.')
+        return
+      }
+      onPublished()
+    } catch {
+      setPublishError('Something went wrong — please try again.')
+    } finally {
+      setPublishing(false)
+    }
   }
 
   return (
@@ -109,6 +139,7 @@ function GroupRow({ group, groupLabel, schema, orgId }: {
             </button>
           )}
         </p>
+        {publishError && <p className="text-[12px] text-red-500 mt-1">{publishError}</p>}
       </div>
 
       {/* Right side */}
@@ -129,6 +160,13 @@ function GroupRow({ group, groupLabel, schema, orgId }: {
                                hover:bg-gray-800 transition-colors whitespace-nowrap">
                 Review →
               </Link>
+            )}
+            {canPublish && (
+              <button onClick={handlePublish} disabled={publishing}
+                      className="text-[12px] font-semibold px-4 py-2 rounded-full bg-black text-white
+                                 hover:bg-gray-800 transition-colors disabled:opacity-50 whitespace-nowrap">
+                {publishing ? 'Publishing…' : 'Publish'}
+              </button>
             )}
             {schema.latestVersion > 0 && (
               <Link href={`/forms/${group}/history`}
@@ -168,13 +206,15 @@ export default function FormsPage() {
   const [schemas, setSchemas]         = useState<FormSchema[]>([])
   const [loadingSchemas, setLoading]  = useState(true)
 
-  useEffect(() => {
-    fetch('/api/forms')
+  function loadSchemas() {
+    return fetch('/api/forms')
       .then(r => r.ok ? r.json() : null)
       .then(d => d && setSchemas(d.forms))
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [])
+  }
+
+  useEffect(() => { loadSchemas() }, [])
 
   const schemaMap = Object.fromEntries(schemas.map(s => [s.group, s]))
   // /api/forms returns every SCHEMA# pointer for the org, which can include
@@ -244,6 +284,7 @@ export default function FormsPage() {
               groupLabel={fg.groupLabel}
               schema={schemaMap[fg.group]}
               orgId={orgId}
+              onPublished={loadSchemas}
             />
           ))}
         </div>
