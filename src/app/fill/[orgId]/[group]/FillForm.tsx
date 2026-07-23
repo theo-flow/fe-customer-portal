@@ -10,7 +10,7 @@ interface SubmitResult {
   errors?: Record<string, string>
 }
 
-export default function FillForm({ orgId, group, groupLabel, fields, brandColor, preview }: {
+export default function FillForm({ orgId, group, groupLabel, fields, brandColor, preview, recipientId, recipientToken }: {
   orgId:      string
   group:      string
   groupLabel: string
@@ -20,6 +20,12 @@ export default function FillForm({ orgId, group, groupLabel, fields, brandColor,
   // live form but never calls the public submit API, so it can't create a
   // real Harvest submission for a form that isn't actually live yet.
   preview?:   boolean
+  // When present, this is a recipient-matched link (see fill/[orgId]/[group]/
+  // [recipientId]/[token]/page.tsx) -- submit goes to the recipient-aware
+  // route instead of the anonymous one. Absent (today's default usage),
+  // behavior is unchanged.
+  recipientId?:    string
+  recipientToken?: string
 }) {
   const [values, setValues]     = useState<Record<string, string>>(
     Object.fromEntries(fields.map(f => [f.key, '']))
@@ -53,7 +59,10 @@ export default function FillForm({ orgId, group, groupLabel, fields, brandColor,
     setErrors({})
 
     try {
-      const res = await fetch(`/api/public/forms/${orgId}/${group}/submit`, {
+      const submitUrl = recipientId && recipientToken
+        ? `/api/public/forms/${orgId}/${group}/${recipientId}/${recipientToken}/submit`
+        : `/api/public/forms/${orgId}/${group}/submit`
+      const res = await fetch(submitUrl, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ values }),

@@ -137,6 +137,12 @@ function GroupRow({ group, groupLabel, schema, orgId }: {
               </Link>
             )}
             {isReady && (
+              <Link href={`/forms/${group}/recipients`}
+                    className="text-[12px] font-medium text-gray-400 hover:text-black transition-colors whitespace-nowrap">
+                Recipients →
+              </Link>
+            )}
+            {isReady && (
               <Link href={`/fill/${orgId}/${group}`} target="_blank"
                     className="text-[12px] font-medium text-black hover:text-gray-500 transition-colors whitespace-nowrap">
                 Preview →

@@ -6,11 +6,12 @@ import { useOrg } from '@/lib/org-context'
 import { fmtDate, fmtTime } from '@/lib/format'
 
 interface Submission {
-  submissionId: string
-  group:        string
-  groupLabel:   string
-  submittedAt:  string
-  status:       string
+  submissionId:  string
+  group:         string
+  groupLabel:    string
+  submittedAt:   string
+  status:        string
+  recipientName: string | null
 }
 
 export default function SubmissionsPage() {
@@ -74,7 +75,7 @@ export default function SubmissionsPage() {
             <thead>
               <tr className="border-b border-black/[0.06]"
                   style={{ background: 'rgba(0,0,0,0.02)' }}>
-                {['Form', 'Date', 'Time', 'Reference'].map(h => (
+                {['Form', 'Recipient', 'Date', 'Time', 'Reference'].map(h => (
                   <th key={h}
                       className="text-left px-5 py-3 text-[11px] font-semibold text-gray-400
                                  uppercase tracking-wide">
@@ -93,6 +94,9 @@ export default function SubmissionsPage() {
                     <p className="text-[11px] text-gray-400 uppercase tracking-wide mt-0.5">
                       {sub.group}
                     </p>
+                  </td>
+                  <td className="px-5 py-3.5 text-[13px] text-gray-600">
+                    {sub.recipientName ?? <span className="text-gray-300">Anonymous</span>}
                   </td>
                   <td className="px-5 py-3.5 text-[13px] text-gray-600">
                     {fmtDate(sub.submittedAt)}
@@ -114,6 +118,9 @@ export default function SubmissionsPage() {
               <Link key={sub.submissionId} href={`/submissions/${sub.submissionId}`}
                     className="block px-4 py-4 active:bg-gray-50/60 transition-colors">
                 <p className="text-[14px] font-semibold text-black">{sub.groupLabel}</p>
+                <p className="text-[12px] text-gray-500 mt-0.5">
+                  {sub.recipientName ?? 'Anonymous'}
+                </p>
                 <p className="text-[12px] text-gray-400 mt-0.5">
                   {fmtDate(sub.submittedAt)} at {fmtTime(sub.submittedAt)}
                 </p>

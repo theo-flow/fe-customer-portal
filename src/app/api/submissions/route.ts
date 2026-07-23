@@ -20,11 +20,12 @@ export async function GET() {
   }))
 
   const submissions = (result.Items ?? []).map(item => ({
-    submissionId: item.submissionId as string,
-    group:        item.group        as string,
-    groupLabel:   item.group_label  as string,
-    submittedAt:  item.submittedAt  as string,
-    status:       item.status       as string,
+    submissionId:  item.submissionId    as string,
+    group:         item.group           as string,
+    groupLabel:    item.group_label     as string,
+    submittedAt:   item.submittedAt     as string,
+    status:        item.status          as string,
+    recipientName: (item.recipient_name as string) ?? null,
   }))
 
   return NextResponse.json({ submissions })
