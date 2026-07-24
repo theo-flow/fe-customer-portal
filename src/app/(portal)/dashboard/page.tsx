@@ -276,8 +276,8 @@ export default function DashboardPage() {
         </div>
       ) : (
         <div className="rounded-2xl border border-black/[0.06] py-20 text-center">
-          <p className="text-[15px] font-semibold text-black mb-1">No products subscribed</p>
-          <p className="text-[13px] text-gray-400">Contact your administrator to enable TheoFlow products.</p>
+          <p className="text-[15px] font-semibold text-black mb-1">Nothing switched on yet</p>
+          <p className="text-[13px] text-gray-400">That&rsquo;s expected — we&rsquo;ll set your products up together. Reach out any time to get started.</p>
         </div>
       )}
 

@@ -45,25 +45,22 @@ export async function POST(req: NextRequest) {
     templates,   // only entries where the user chose to upload a file
     formGroups,  // all selected { group, groupLabel } pairs (including "use standard")
   } = await req.json() as {
-    orgName:            string
-    regNumber:          string
-    orgType:            string
-    phone:              string
-    adminName:          string
-    adminEmail:         string
-    subscribedProducts: string[]
-    templates:          TemplateEntry[]
-    formGroups:         { group: string; groupLabel: string }[]
+    orgName:             string
+    regNumber:           string
+    orgType:             string
+    phone:               string
+    adminName:           string
+    adminEmail:          string
+    subscribedProducts?: string[]
+    templates?:          TemplateEntry[]
+    formGroups?:         { group: string; groupLabel: string }[]
   }
 
   const VALID_PRODUCTS = new Set(['forge', 'channel', 'harvest', 'decode', 'sign', 'print'])
   if (!orgName?.trim() || !adminEmail?.trim()) {
     return NextResponse.json({ error: 'orgName and adminEmail are required' }, { status: 400 })
   }
-  if (!subscribedProducts?.length) {
-    return NextResponse.json({ error: 'Select at least one TheoFlow product' }, { status: 400 })
-  }
-  const invalidProduct = subscribedProducts.find(p => !VALID_PRODUCTS.has(p))
+  const invalidProduct = subscribedProducts?.find(p => !VALID_PRODUCTS.has(p))
   if (invalidProduct) {
     return NextResponse.json({ error: `Unknown product: ${invalidProduct}` }, { status: 400 })
   }
@@ -93,7 +90,7 @@ export async function POST(req: NextRequest) {
       phone:               phone?.trim() ?? '',
       adminName:           adminName?.trim() ?? '',
       adminEmail:          adminEmail.trim().toLowerCase(),
-      subscribed_products: subscribedProducts,
+      subscribed_products: subscribedProducts ?? [],
       form_groups:         formGroups ?? [],
       createdAt:           now,
       status:              'pending_verification',

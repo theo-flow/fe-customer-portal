@@ -1,21 +1,12 @@
 'use client'
-import { useState, useRef, useCallback } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { signUp, friendlyError } from '@/lib/auth'
 import Link from 'next/link'
 import { LogoMark } from '@/components/LogoMark'
-import { FORM_GROUPS } from '@/lib/form-groups'
 
 // ── Constants ──────────────────────────────────────────────────────────────
-const THEOFLOW_PRODUCTS = [
-  { key: 'forge',   label: 'TheoFlow Forge',   description: 'Convert physical documents into structured digital forms.' },
-  { key: 'channel', label: 'TheoFlow Channel', description: 'Publish and route forms to users and systems.' },
-  { key: 'harvest', label: 'TheoFlow Harvest', description: 'Capture structured responses from users at scale.' },
-  { key: 'decode',  label: 'TheoFlow Decode',  description: 'Convert unstructured documents into structured intelligence.' },
-  { key: 'sign',    label: 'TheoFlow Sign',    description: 'Request signatures on validated submissions, or sign any document standalone.' },
-]
-
 const ORG_TYPES = [
   'Agriculture, Forestry & Fishing',
   'Construction & Engineering',
@@ -33,9 +24,7 @@ const ORG_TYPES = [
 ]
 
 // ── Types ──────────────────────────────────────────────────────────────────
-type Step = 'org' | 'products' | 'forms' | 'templates' | 'credentials' | 'submitting'
-interface Template    { group: string; groupLabel: string; file: File | null; skip: boolean }
-interface CustomGroup { id: string; name: string }
+type Step = 'org' | 'credentials' | 'submitting'
 
 // Mirrors the Cognito user pool's actual password policy exactly
 // (infrastructure/modules/auth/main.tf: length>=12, upper, lower, number
@@ -76,96 +65,21 @@ export default function RegisterPage() {
   const [otherIndustry, setOtherIndustry] = useState('')
   const [orgPhone, setOrgPhone]     = useState('')
 
-  const [selectedProducts, setSelectedProducts] = useState<string[]>([])
-  const [selectedGroups, setSelectedGroups]     = useState<string[]>([])
-  const [customGroups, setCustomGroups]         = useState<CustomGroup[]>([])
-
-  const [templates, setTemplates] = useState<Template[]>([])
   const [adminName, setAdminName]   = useState('')
   const [adminEmail, setAdminEmail] = useState('')
   const [password, setPassword]     = useState('')
   const [confirm, setConfirm]       = useState('')
   const [error, setError]           = useState('')
 
-  // ── Product toggles ───────────────────────────────────────────────────
-  const toggleProduct = (key: string) =>
-    setSelectedProducts(prev =>
-      prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
-    )
-
-  // ── Form group toggles ────────────────────────────────────────────────
-  const toggleGroup = (key: string) =>
-    setSelectedGroups(prev =>
-      prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
-    )
-
-  // ── Custom group helpers ──────────────────────────────────────────────
-  const addCustomGroup = () =>
-    setCustomGroups(prev => [...prev, { id: `c-${Date.now()}`, name: '' }])
-
-  const removeCustomGroup = (id: string) =>
-    setCustomGroups(prev => prev.filter(c => c.id !== id))
-
-  const updateCustomGroupName = (id: string, name: string) =>
-    setCustomGroups(prev => prev.map(c => c.id === id ? { ...c, name } : c))
-
-  // ── Template helpers ──────────────────────────────────────────────────
-  const updateTemplate = (idx: number, patch: Partial<Template>) =>
-    setTemplates(prev => prev.map((t, i) => i === idx ? { ...t, ...patch } : t))
-
   // ── Step navigation with validation ──────────────────────────────────
 
-  const goProducts = () => {
+  const goCredentials = () => {
     const name = orgName.trim()
     if (!name)            { setError('Organisation name is required.'); return }
     if (name.length < 2)  { setError('Organisation name must be at least 2 characters.'); return }
     if (name.length > 100){ setError('Organisation name must be 100 characters or fewer.'); return }
     if (orgPhone.trim() && !validatePhone(orgPhone.trim())) {
       setError('Enter a valid phone number (e.g. +27821234567 or 0821234567).')
-      return
-    }
-    setError('')
-    setStep('products')
-  }
-
-  const goFromProducts = () => {
-    if (!selectedProducts.length) {
-      setError('Select at least one TheoFlow product to continue.')
-      return
-    }
-    setError('')
-    const needsForms = selectedProducts.includes('forge') || selectedProducts.includes('decode')
-    setStep(needsForms ? 'forms' : 'credentials')
-  }
-
-  const goTemplates = () => {
-    const validCustom = customGroups.filter(c => c.name.trim().length > 0)
-
-    const allGroups = [
-      ...selectedGroups.map(key => {
-        const g = FORM_GROUPS.find(g => g.key === key)!
-        return { group: key, groupLabel: g.label }
-      }),
-      ...validCustom.map(c => ({ group: c.id, groupLabel: c.name.trim() })),
-    ]
-
-    if (!allGroups.length) {
-      setError('Select at least one form group, or add a custom group.')
-      return
-    }
-
-    setError('')
-    setTemplates(allGroups.map(g => ({ ...g, file: null, skip: false })))
-    setStep('templates')
-  }
-
-  const goCredentials = () => {
-    const unresolved = templates.filter(t => !t.file && !t.skip)
-    if (unresolved.length > 0) {
-      const n = unresolved.length
-      setError(
-        `${n} template${n > 1 ? 's' : ''} ${n > 1 ? 'need' : 'needs'} either a file upload or "Use standard template" ticked.`
-      )
       return
     }
     setError('')
@@ -188,10 +102,9 @@ export default function RegisterPage() {
     setStep('submitting')
 
     try {
-      const email   = adminEmail.trim().toLowerCase()
-      const toUpload = templates.filter(t => t.file && !t.skip)
+      const email = adminEmail.trim().toLowerCase()
 
-      // 1. Register org + get presigned upload URLs
+      // 1. Register org
       const res = await fetch('/api/organizations/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -202,39 +115,15 @@ export default function RegisterPage() {
           phone:     orgPhone.trim(),
           adminName: adminName.trim(),
           adminEmail: email,
-          subscribedProducts: selectedProducts,
-          formGroups: templates.map(t => ({ group: t.group, groupLabel: t.groupLabel })),
-          templates: toUpload.map(t => ({
-            group:       t.group,
-            groupLabel:  t.groupLabel,
-            filename:    t.file!.name,
-            contentType: t.file!.type || 'application/pdf',
-          })),
         }),
       })
       if (!res.ok) {
         const { error: msg } = await res.json().catch(() => ({ error: 'Server error' }))
         throw new Error(msg ?? `Server error ${res.status}`)
       }
-      const { orgId, uploadUrls } = await res.json() as {
-        orgId: string
-        uploadUrls: { group: string; groupLabel: string; uploadUrl: string }[]
-      }
+      const { orgId } = await res.json() as { orgId: string }
 
-      // 2. Upload template files directly to S3
-      await Promise.all(
-        toUpload.map(t => {
-          const entry = uploadUrls.find(u => u.group === t.group)
-          if (!entry) return Promise.resolve()
-          return fetch(entry.uploadUrl, {
-            method: 'PUT',
-            headers: { 'Content-Type': t.file!.type || 'application/pdf' },
-            body: t.file!,
-          })
-        })
-      )
-
-      // 3. Create Cognito user — last so a duplicate email fails before any writes
+      // 2. Create Cognito user — last so a duplicate email fails before any writes
       await signUp(email, password, adminName.trim(), orgId)
       sessionStorage.setItem('tf_pending_email', email)
       sessionStorage.setItem('tf_org_id', orgId)
@@ -245,22 +134,9 @@ export default function RegisterPage() {
     }
   }
 
-  // ── Step indicator meta (dynamic based on selected products) ─────────
-  const needsForms     = selectedProducts.includes('forge') || selectedProducts.includes('decode')
-  const needsTemplates = selectedProducts.includes('forge')
-
-  const STEPS: Step[] = [
-    'org', 'products',
-    ...(needsForms     ? ['forms'     as Step] : []),
-    ...(needsTemplates ? ['templates' as Step] : []),
-    'credentials',
-  ]
-  const stepLabels = [
-    'Organisation', 'Products',
-    ...(needsForms     ? ['Form groups'] : []),
-    ...(needsTemplates ? ['Templates']   : []),
-    'Account',
-  ]
+  // ── Step indicator meta ────────────────────────────────────────────────
+  const STEPS: Step[] = ['org', 'credentials']
+  const stepLabels = ['Organisation', 'Account']
   const stepIdx = STEPS.indexOf(step === 'submitting' ? 'credentials' : step)
 
   return (
@@ -361,7 +237,7 @@ export default function RegisterPage() {
             </div>
 
             <div className="mt-8 flex items-center gap-5">
-              <button onClick={goProducts}
+              <button onClick={goCredentials}
                 className="px-8 py-3 rounded-full text-[14px] font-medium text-black bg-white
                            hover:bg-white/90 active:bg-white/80 transition-all flex-shrink-0">
                 Continue
@@ -374,259 +250,13 @@ export default function RegisterPage() {
           </motion.div>
         )}
 
-        {/* ── STEP 2: Products ── */}
-        {step === 'products' && (
-          <motion.div className="w-full max-w-[480px]"
-            initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4 }}>
-
-            <BackButton onClick={() => { setError(''); setStep('org') }}/>
-
-            <h1 className="font-display text-[2.1rem] leading-tight text-white mb-2">
-              Choose your products
-            </h1>
-            <p className="text-[13px] mb-7" style={{ color:'rgba(255,255,255,0.36)' }}>
-              Select the TheoFlow products your organisation will use.
-              You can change this later.
-            </p>
-
-            {error && <DarkError msg={error}/>}
-
-            <div className="space-y-2.5 mb-8">
-              {THEOFLOW_PRODUCTS.map(({ key, label, description }) => {
-                const selected = selectedProducts.includes(key)
-                return (
-                  <button
-                    key={key}
-                    onClick={() => toggleProduct(key)}
-                    className="w-full text-left rounded-xl px-5 py-4 transition-all"
-                    style={{
-                      border:     selected ? '1px solid rgba(255,255,255,0.4)' : '1px solid rgba(255,255,255,0.08)',
-                      background: selected ? 'rgba(255,255,255,0.06)' : 'transparent',
-                    }}>
-                    <div className="flex items-center justify-between gap-4">
-                      <div className="min-w-0">
-                        <p className="text-[14px] font-semibold text-white mb-0.5">{label}</p>
-                        <p className="text-[12px]" style={{ color:'rgba(255,255,255,0.38)' }}>{description}</p>
-                      </div>
-                      <div className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center transition-all"
-                        style={{
-                          background: selected ? 'white' : 'transparent',
-                          border:     selected ? '1px solid white' : '1px solid rgba(255,255,255,0.25)',
-                        }}>
-                        {selected && (
-                          <svg className="w-3 h-3" fill="none" viewBox="0 0 10 10">
-                            <path d="M1.5 5l2.5 2.5 4.5-4" stroke="black" strokeWidth="1.5" strokeLinecap="round"/>
-                          </svg>
-                        )}
-                      </div>
-                    </div>
-                  </button>
-                )
-              })}
-            </div>
-
-            <button onClick={goFromProducts}
-              className="px-8 py-3 rounded-full text-[14px] font-medium text-black bg-white
-                         hover:bg-white/90 transition-all">
-              Continue
-            </button>
-          </motion.div>
-        )}
-
-        {/* ── STEP 3: Form groups ── */}
-        {step === 'forms' && (
-          <motion.div className="w-full max-w-[540px]"
-            initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4 }}>
-
-            <BackButton onClick={() => { setError(''); setStep('products') }}/>
-
-            <h1 className="font-display text-[2.1rem] leading-tight text-white mb-2">
-              Select your form groups
-            </h1>
-            <p className="text-[13px] mb-7" style={{ color:'rgba(255,255,255,0.36)' }}>
-              Choose the categories of forms your organisation works with.
-              You can add custom groups below if yours is not listed.
-            </p>
-
-            {error && <DarkError msg={error}/>}
-
-            {/* Standard form groups — 2-column grid */}
-            <div className="grid grid-cols-2 gap-2 mb-6">
-              {FORM_GROUPS.map(({ key, label, description }) => {
-                const selected = selectedGroups.includes(key)
-                return (
-                  <button
-                    key={key}
-                    onClick={() => toggleGroup(key)}
-                    className="text-left rounded-xl px-4 py-3.5 transition-all"
-                    style={{
-                      border:     selected ? '1px solid rgba(255,255,255,0.35)' : '1px solid rgba(255,255,255,0.08)',
-                      background: selected ? 'rgba(255,255,255,0.06)' : 'transparent',
-                    }}>
-                    <div className="flex items-start justify-between gap-2 mb-1">
-                      <p className="text-[13px] font-semibold text-white leading-snug">{label}</p>
-                      <div className="w-4 h-4 rounded flex-shrink-0 mt-0.5 flex items-center justify-center transition-all"
-                        style={{
-                          background: selected ? 'white' : 'transparent',
-                          border:     selected ? '1px solid white' : '1px solid rgba(255,255,255,0.25)',
-                        }}>
-                        {selected && (
-                          <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 10 10">
-                            <path d="M1.5 5l2.5 2.5 4.5-4" stroke="black" strokeWidth="1.5" strokeLinecap="round"/>
-                          </svg>
-                        )}
-                      </div>
-                    </div>
-                    <p className="text-[11px] leading-relaxed" style={{ color:'rgba(255,255,255,0.35)' }}>
-                      {description}
-                    </p>
-                  </button>
-                )
-              })}
-            </div>
-
-            {/* Divider */}
-            <div className="flex items-center gap-3 mb-5">
-              <div className="flex-1 h-px" style={{ background:'rgba(255,255,255,0.10)' }}/>
-              <span className="text-[11px] font-semibold uppercase tracking-wider"
-                    style={{ color:'rgba(255,255,255,0.3)' }}>
-                Other / Custom
-              </span>
-              <div className="flex-1 h-px" style={{ background:'rgba(255,255,255,0.10)' }}/>
-            </div>
-
-            {/* Custom group rows */}
-            {customGroups.length > 0 && (
-              <div className="space-y-2 mb-4">
-                {customGroups.map((cg, idx) => (
-                  <div key={cg.id}
-                    className="rounded-xl px-4 py-3 flex items-center gap-2 transition-all"
-                    style={{
-                      border:     cg.name.trim() ? '1px solid rgba(255,255,255,0.28)' : '1px solid rgba(255,255,255,0.12)',
-                      background: cg.name.trim() ? 'rgba(255,255,255,0.04)' : 'transparent',
-                    }}>
-                    <input
-                      value={cg.name}
-                      onChange={e => updateCustomGroupName(cg.id, e.target.value)}
-                      placeholder={`Custom group ${idx + 1} name…`}
-                      className="flex-1 bg-transparent text-[13px] font-semibold text-white
-                                 placeholder:text-white/25 outline-none"
-                    />
-                    <button
-                      aria-label="Remove custom group"
-                      onClick={() => removeCustomGroup(cg.id)}
-                      className="flex-shrink-0 transition-colors"
-                      style={{ color:'rgba(255,255,255,0.25)' }}
-                      onMouseEnter={e => (e.currentTarget.style.color='rgba(239,68,68,0.8)')}
-                      onMouseLeave={e => (e.currentTarget.style.color='rgba(255,255,255,0.25)')}>
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
-                      </svg>
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Add custom group button */}
-            <button onClick={addCustomGroup}
-              className="flex items-center gap-2 text-[12px] font-medium mb-8 transition-colors"
-              style={{ color:'rgba(255,255,255,0.4)' }}
-              onMouseEnter={e => (e.currentTarget.style.color='white')}
-              onMouseLeave={e => (e.currentTarget.style.color='rgba(255,255,255,0.4)')}>
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4"/>
-              </svg>
-              Add custom group
-            </button>
-
-            {/* Selection count */}
-            {(selectedGroups.length + customGroups.filter(c => c.name.trim()).length > 0) && (
-              <p className="text-[12px] mb-6" style={{ color:'rgba(255,255,255,0.35)' }}>
-                {selectedGroups.length + customGroups.filter(c => c.name.trim()).length} group{
-                  (selectedGroups.length + customGroups.filter(c => c.name.trim()).length) !== 1 ? 's' : ''
-                } selected
-              </p>
-            )}
-
-            <button onClick={goTemplates}
-              className="px-8 py-3 rounded-full text-[14px] font-medium text-black bg-white
-                         hover:bg-white/90 transition-all">
-              Continue
-            </button>
-          </motion.div>
-        )}
-
-        {/* ── STEP 3: Templates ── */}
-        {step === 'templates' && (
-          <motion.div className="w-full max-w-[500px]"
-            initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4 }}>
-
-            <BackButton onClick={() => { setError(''); setStep('forms') }}/>
-
-            <h1 className="font-display text-[2.1rem] leading-tight text-white mb-2">
-              Upload your blank templates
-            </h1>
-            <p className="text-[13px] mb-2" style={{ color:'rgba(255,255,255,0.36)' }}>
-              Upload the blank version of each form so the system can learn to digitize it.
-            </p>
-            <p className="text-[12px] mb-7 px-3 py-2 rounded-lg"
-               style={{ color:'rgba(255,255,255,0.45)', background:'rgba(255,255,255,0.05)',
-                        border:'1px solid rgba(255,255,255,0.08)' }}>
-              Each form must either have a file uploaded, or be marked &ldquo;Skip for now&rdquo; — you cannot proceed until all are resolved. Skipped forms won&apos;t work on Channel until someone uploads a real template for them later, from the Templates page.
-            </p>
-
-            {error && <DarkError msg={error}/>}
-
-            <div className="space-y-3 mb-8">
-              {templates.map((t, idx) => (
-                <DarkTemplateCard
-                  key={t.group}
-                  template={t}
-                  onFile={f  => updateTemplate(idx, { file: f, skip: false })}
-                  onSkip={()  => updateTemplate(idx, { skip: !t.skip, file: null })}
-                />
-              ))}
-            </div>
-
-            {/* Completion indicator */}
-            <div className="flex items-center gap-3 mb-6">
-              <div className="flex-1 h-[3px] rounded-full overflow-hidden"
-                   style={{ background:'rgba(255,255,255,0.08)' }}>
-                <div className="h-full rounded-full transition-all duration-500"
-                     style={{
-                       background: 'white',
-                       width: `${Math.round((templates.filter(t => t.file || t.skip).length / (templates.length || 1)) * 100)}%`,
-                     }}/>
-              </div>
-              <span className="text-[11px] flex-shrink-0" style={{ color:'rgba(255,255,255,0.35)' }}>
-                {templates.filter(t => t.file || t.skip).length} / {templates.length} resolved
-              </span>
-            </div>
-
-            <button onClick={goCredentials}
-              className="px-8 py-3 rounded-full text-[14px] font-medium text-black bg-white
-                         hover:bg-white/90 transition-all">
-              Continue
-            </button>
-          </motion.div>
-        )}
-
-        {/* ── STEP 4: Credentials ── */}
+        {/* ── STEP 2: Credentials ── */}
         {step === 'credentials' && (
           <motion.div className="w-full max-w-[420px]"
             initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4 }}>
 
-            <BackButton onClick={() => {
-              setError('')
-              if (needsTemplates)     setStep('templates')
-              else if (needsForms)    setStep('forms')
-              else                    setStep('products')
-            }}/>
+            <BackButton onClick={() => { setError(''); setStep('org') }}/>
 
             <h1 className="font-display text-[2.4rem] leading-tight text-white mb-2">
               Create your account
@@ -718,7 +348,7 @@ export default function RegisterPage() {
               Setting up your organisation…
             </h2>
             <p className="text-[13px]" style={{ color:'rgba(255,255,255,0.36)' }}>
-              Creating your profile, uploading templates and registering your account.
+              Creating your profile and registering your account.
             </p>
           </div>
         )}
@@ -816,146 +446,11 @@ function DarkSelect({ value, onChange, options, placeholder }: {
   )
 }
 
-function DarkCheckbox({ checked, label, onChange }: {
-  checked: boolean; label: string; onChange: () => void
-}) {
-  return (
-    <label className="flex items-center gap-2 cursor-pointer select-none" onClick={onChange}>
-      <div className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0 transition-all"
-        style={{
-          background: checked ? 'white' : 'transparent',
-          border:     checked ? '1px solid white' : '1px solid rgba(255,255,255,0.25)',
-        }}>
-        {checked && (
-          <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 10 10">
-            <path d="M1.5 5l2.5 2.5 4.5-4" stroke="black" strokeWidth="1.5" strokeLinecap="round"/>
-          </svg>
-        )}
-      </div>
-      <span className="text-[12px] font-medium"
-            style={{ color: checked ? 'white' : 'rgba(255,255,255,0.4)' }}>
-        {label}
-      </span>
-    </label>
-  )
-}
-
 function DarkError({ msg }: { msg: string }) {
   return (
     <div role="alert" className="mb-6 px-4 py-3 rounded-xl text-red-400 text-[13px]"
          style={{ background:'rgba(239,68,68,0.12)', border:'1px solid rgba(239,68,68,0.25)' }}>
       {msg}
-    </div>
-  )
-}
-
-function DarkTemplateCard({ template, onFile, onSkip }: {
-  template: Template; onFile: (f: File | null) => void; onSkip: () => void
-}) {
-  const inputRef = useRef<HTMLInputElement>(null)
-  const [drag, setDrag] = useState(false)
-
-  const onDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault(); setDrag(false)
-    const f = e.dataTransfer.files[0]
-    if (f) onFile(f)
-  }, [onFile])
-
-  const resolved = template.file || template.skip
-
-  return (
-    <div className="rounded-xl p-4 transition-all"
-      style={{
-        border: template.skip
-          ? '1px solid rgba(255,255,255,0.06)'
-          : template.file
-          ? '1px solid rgba(255,255,255,0.28)'
-          : '1px solid rgba(255,255,255,0.12)',
-        background: resolved ? 'transparent' : 'rgba(239,68,68,0.03)',
-        opacity:    template.skip ? 0.55 : 1,
-      }}>
-
-      <div className="flex items-start justify-between gap-3 mb-3">
-        <div className="min-w-0">
-          <p className="text-[13px] font-semibold text-white truncate">{template.groupLabel}</p>
-        </div>
-        <div className="flex items-center gap-3 flex-shrink-0">
-          {/* Resolved indicator */}
-          {resolved && (
-            <div className="w-4 h-4 rounded-full bg-white flex items-center justify-center">
-              <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 10 10">
-                <path d="M1.5 5l2.5 2.5 4.5-4" stroke="black" strokeWidth="1.5" strokeLinecap="round"/>
-              </svg>
-            </div>
-          )}
-          {/* Skip checkbox */}
-          <label className="flex items-center gap-1.5 cursor-pointer select-none" onClick={onSkip}>
-            <div className="w-4 h-4 rounded flex items-center justify-center transition-all"
-              style={{
-                background: template.skip ? 'white' : 'transparent',
-                border:     template.skip ? '1px solid white' : '1px solid rgba(255,255,255,0.25)',
-              }}>
-              {template.skip && (
-                <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 10 10">
-                  <path d="M1.5 5l2.5 2.5 4.5-4" stroke="black" strokeWidth="1.5" strokeLinecap="round"/>
-                </svg>
-              )}
-            </div>
-            <span className="text-[11px] font-medium" style={{ color:'rgba(255,255,255,0.4)' }}>
-              Skip for now
-            </span>
-          </label>
-        </div>
-      </div>
-
-      {!template.skip && (
-        template.file ? (
-          <div className="flex items-center gap-2 px-3 py-2 rounded-lg"
-               style={{ background:'rgba(255,255,255,0.06)', border:'1px solid rgba(255,255,255,0.1)' }}>
-            <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24"
-                 stroke="rgba(255,255,255,0.4)" strokeWidth={1.5}>
-              <path strokeLinecap="round" strokeLinejoin="round"
-                d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0
-                   0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25
-                   0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125
-                   1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/>
-            </svg>
-            <span className="text-[12px] text-white truncate flex-1">{template.file.name}</span>
-            <button onClick={() => onFile(null)}
-              className="flex-shrink-0 transition-colors"
-              style={{ color:'rgba(255,255,255,0.3)' }}
-              onMouseEnter={e => (e.currentTarget.style.color='white')}
-              onMouseLeave={e => (e.currentTarget.style.color='rgba(255,255,255,0.3)')}>
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
-              </svg>
-            </button>
-          </div>
-        ) : (
-          <div onDrop={onDrop}
-            onDragOver={e => { e.preventDefault(); setDrag(true) }}
-            onDragLeave={() => setDrag(false)}
-            onClick={() => inputRef.current?.click()}
-            className="cursor-pointer rounded-lg flex items-center justify-center gap-2 py-3 transition-all text-[12px]"
-            style={{
-              border:     `2px dashed ${drag ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.18)'}`,
-              background: drag ? 'rgba(255,255,255,0.04)' : 'transparent',
-            }}>
-            <input ref={inputRef} type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden"
-              onChange={e => { const f = e.target.files?.[0]; if (f) onFile(f) }}/>
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24"
-                 stroke="rgba(255,255,255,0.3)" strokeWidth={1.5}>
-              <path strokeLinecap="round" strokeLinejoin="round"
-                d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5
-                   m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/>
-            </svg>
-            <span style={{ color:'rgba(255,255,255,0.4)' }}>
-              Drop file here or{' '}
-              <span className="font-medium text-white">browse</span>
-            </span>
-          </div>
-        )
-      )}
     </div>
   )
 }

@@ -25,28 +25,10 @@ vi.mock('framer-motion', () => ({
 
 import RegisterPage from '../page'
 
-/* ── Step navigation helpers ── */
+/* ── Step navigation helper ── */
 
-async function goToForms(user: ReturnType<typeof userEvent.setup>, orgName = 'Test Org Ltd') {
+async function goToCredentials(user: ReturnType<typeof userEvent.setup>, orgName = 'Test Org Ltd') {
   await user.type(screen.getByPlaceholderText(/abc brokers/i), orgName)
-  await user.click(screen.getByRole('button', { name: /^continue$/i }))
-  await waitFor(() => expect(screen.getByText(/select your form types/i)).toBeInTheDocument())
-}
-
-async function goToTemplates(user: ReturnType<typeof userEvent.setup>) {
-  // Click the first "Application Form" label (each product row has one)
-  const appFormLabels = screen.getAllByText('Application Form')
-  await user.click(appFormLabels[0])
-  await user.click(screen.getByRole('button', { name: /^continue$/i }))
-  await waitFor(() => expect(screen.getByText(/upload your blank templates/i)).toBeInTheDocument())
-}
-
-async function goToCredentials(user: ReturnType<typeof userEvent.setup>) {
-  // Mark all template cards as "Standard" (skip) to resolve them
-  const standardLabels = screen.getAllByText('Standard')
-  for (const label of standardLabels) {
-    await user.click(label)
-  }
   await user.click(screen.getByRole('button', { name: /^continue$/i }))
   await waitFor(() => expect(screen.getByText(/create your account/i)).toBeInTheDocument())
 }
@@ -102,7 +84,7 @@ describe('RegisterPage', () => {
       await user.type(screen.getByPlaceholderText(/abc brokers/i), 'Test Org Ltd')
       await user.type(screen.getByPlaceholderText(/\+27 11 000/i), '+27821234567')
       await user.click(screen.getByRole('button', { name: /continue/i }))
-      await waitFor(() => expect(screen.getByText(/select your form types/i)).toBeInTheDocument())
+      await waitFor(() => expect(screen.getByText(/create your account/i)).toBeInTheDocument())
     })
 
     it('accepts a valid 0XXXXXXXXX phone number and advances', async () => {
@@ -110,13 +92,13 @@ describe('RegisterPage', () => {
       await user.type(screen.getByPlaceholderText(/abc brokers/i), 'Test Org Ltd')
       await user.type(screen.getByPlaceholderText(/\+27 11 000/i), '0821234567')
       await user.click(screen.getByRole('button', { name: /continue/i }))
-      await waitFor(() => expect(screen.getByText(/select your form types/i)).toBeInTheDocument())
+      await waitFor(() => expect(screen.getByText(/create your account/i)).toBeInTheDocument())
     })
 
     it('advances to Step 2 without a phone number (phone is optional)', async () => {
       const { user } = setup()
-      await goToForms(user)
-      expect(screen.getByText(/select your form types/i)).toBeInTheDocument()
+      await goToCredentials(user)
+      expect(screen.getByText(/create your account/i)).toBeInTheDocument()
     })
 
     it('shows free-text field when "Other" industry is selected', async () => {
@@ -135,7 +117,7 @@ describe('RegisterPage', () => {
     it('sends otherIndustry description instead of "Other" in API call', async () => {
       const fetchMock = vi.fn().mockResolvedValue({
         ok:   true,
-        json: async () => ({ orgId: 'org-other-001', uploadUrls: [] }),
+        json: async () => ({ orgId: 'org-other-001' }),
       })
       vi.stubGlobal('fetch', fetchMock)
       mockSignUp.mockResolvedValueOnce(undefined)
@@ -144,16 +126,6 @@ describe('RegisterPage', () => {
       await user.type(screen.getByPlaceholderText(/abc brokers/i), 'Artisan Bakers Co')
       await user.selectOptions(screen.getByRole('combobox'), 'Other')
       await user.type(screen.getByPlaceholderText(/describe your industry/i), 'Artisanal Bakery')
-      await user.click(screen.getByRole('button', { name: /^continue$/i }))
-      await waitFor(() => expect(screen.getByText(/select your form types/i)).toBeInTheDocument())
-
-      const appFormLabels = screen.getAllByText('Application Form')
-      await user.click(appFormLabels[0])
-      await user.click(screen.getByRole('button', { name: /^continue$/i }))
-      await waitFor(() => expect(screen.getByText(/upload your blank templates/i)).toBeInTheDocument())
-
-      const standardLabels = screen.getAllByText('Standard')
-      for (const label of standardLabels) await user.click(label)
       await user.click(screen.getByRole('button', { name: /^continue$/i }))
       await waitFor(() => expect(screen.getByText(/create your account/i)).toBeInTheDocument())
 
@@ -172,50 +144,9 @@ describe('RegisterPage', () => {
   })
 
   /* ════════════════════════════════════════════════════════
-     STEP 2: Form types
+     STEP 2: Credentials
   ════════════════════════════════════════════════════════ */
-  describe('Step 2 — Form types', () => {
-    it('shows error when no form type is selected', async () => {
-      const { user } = setup()
-      await goToForms(user)
-      await user.click(screen.getByRole('button', { name: /continue/i }))
-      expect(screen.getByRole('alert')).toHaveTextContent(/at least one form type/i)
-    })
-
-    it('advances to Step 3 when at least one form type is selected', async () => {
-      const { user } = setup()
-      await goToForms(user)
-      await goToTemplates(user)
-      expect(screen.getByText(/upload your blank templates/i)).toBeInTheDocument()
-    })
-  })
-
-  /* ════════════════════════════════════════════════════════
-     STEP 3: Templates
-  ════════════════════════════════════════════════════════ */
-  describe('Step 3 — Templates', () => {
-    it('shows error when a template is unresolved (no file and no Standard tick)', async () => {
-      const { user } = setup()
-      await goToForms(user)
-      await goToTemplates(user)
-      // Don't resolve templates — click Continue straight away
-      await user.click(screen.getByRole('button', { name: /continue/i }))
-      expect(screen.getByRole('alert')).toHaveTextContent(/needs either a file upload or/i)
-    })
-
-    it('advances to Step 4 when all templates are resolved via Standard tick', async () => {
-      const { user } = setup()
-      await goToForms(user)
-      await goToTemplates(user)
-      await goToCredentials(user)
-      expect(screen.getByText(/create your account/i)).toBeInTheDocument()
-    })
-  })
-
-  /* ════════════════════════════════════════════════════════
-     STEP 4: Credentials
-  ════════════════════════════════════════════════════════ */
-  describe('Step 4 — Credentials', () => {
+  describe('Step 2 — Credentials', () => {
     async function fillCredentials(
       user: ReturnType<typeof userEvent.setup>,
       overrides: { name?: string; email?: string; password?: string; confirm?: string } = {}
@@ -228,7 +159,7 @@ describe('RegisterPage', () => {
 
     it('shows error when full name is empty', async () => {
       const { user } = setup()
-      await goToForms(user); await goToTemplates(user); await goToCredentials(user)
+      await goToCredentials(user)
 
       await user.type(screen.getByPlaceholderText(/you@example\.com/i), 'thabo@example.com')
       await user.type(screen.getByPlaceholderText(/min\. 12/i), 'StrongPass12!')
@@ -240,7 +171,7 @@ describe('RegisterPage', () => {
 
     it('shows error when email format is invalid', async () => {
       const { user } = setup()
-      await goToForms(user); await goToTemplates(user); await goToCredentials(user)
+      await goToCredentials(user)
 
       await fillCredentials(user, { email: 'not-an-email' })
       await user.click(screen.getByRole('button', { name: /register organisation/i }))
@@ -250,7 +181,7 @@ describe('RegisterPage', () => {
 
     it('shows error when passwords do not match', async () => {
       const { user } = setup()
-      await goToForms(user); await goToTemplates(user); await goToCredentials(user)
+      await goToCredentials(user)
 
       await fillCredentials(user, { password: 'StrongPass12!', confirm: 'Different12!' })
       await user.click(screen.getByRole('button', { name: /register organisation/i }))
@@ -260,9 +191,9 @@ describe('RegisterPage', () => {
 
     it('shows error when password has fewer than 12 characters', async () => {
       const { user } = setup()
-      await goToForms(user); await goToTemplates(user); await goToCredentials(user)
+      await goToCredentials(user)
 
-      // 8 chars, uppercase + number but no symbol → strength=2 (< 3 required)
+      // 8 chars, uppercase + number but no symbol → strength=2 (< 4 required)
       await fillCredentials(user, { password: 'Short1Up', confirm: 'Short1Up' })
       await user.click(screen.getByRole('button', { name: /register organisation/i }))
 
@@ -271,24 +202,25 @@ describe('RegisterPage', () => {
 
     it('shows error when password is missing required character classes', async () => {
       const { user } = setup()
-      await goToForms(user); await goToTemplates(user); await goToCredentials(user)
+      await goToCredentials(user)
 
-      // 13 chars, has length + symbol but no uppercase and no number → strength=2 (< 3 required)
+      // 13 chars, has length + symbol but no uppercase and no number → strength=2 (< 4 required)
       await fillCredentials(user, { password: 'weakpassword!', confirm: 'weakpassword!' })
       await user.click(screen.getByRole('button', { name: /register organisation/i }))
 
       expect(screen.getByRole('alert')).toHaveTextContent(/uppercase/i)
     })
 
-    it('calls fetch + signUp on valid credentials and redirects to /verify', async () => {
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+    it('calls fetch + signUp on valid credentials and redirects to /verify, with no product data in the request', async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
         ok:   true,
-        json: async () => ({ orgId: 'org-test-123', uploadUrls: [] }),
-      }))
+        json: async () => ({ orgId: 'org-test-123' }),
+      })
+      vi.stubGlobal('fetch', fetchMock)
       mockSignUp.mockResolvedValueOnce(undefined)
 
       const { user } = setup()
-      await goToForms(user); await goToTemplates(user); await goToCredentials(user)
+      await goToCredentials(user)
       await fillCredentials(user)
       await user.click(screen.getByRole('button', { name: /register organisation/i }))
 
@@ -299,19 +231,24 @@ describe('RegisterPage', () => {
       )
       await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/verify'))
 
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+      expect(body.subscribedProducts).toBeUndefined()
+      expect(body.templates).toBeUndefined()
+      expect(body.formGroups).toBeUndefined()
+
       vi.unstubAllGlobals()
     })
 
     it('stores pending email in sessionStorage after successful registration', async () => {
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
         ok:   true,
-        json: async () => ({ orgId: 'org-test-456', uploadUrls: [] }),
+        json: async () => ({ orgId: 'org-test-456' }),
       }))
       mockSignUp.mockResolvedValueOnce(undefined)
       const setSpy = vi.spyOn(Storage.prototype, 'setItem')
 
       const { user } = setup()
-      await goToForms(user); await goToTemplates(user); await goToCredentials(user)
+      await goToCredentials(user)
       await fillCredentials(user)
       await user.click(screen.getByRole('button', { name: /register organisation/i }))
 
@@ -325,7 +262,7 @@ describe('RegisterPage', () => {
     it('shows API error and stays on credentials step when signUp rejects', async () => {
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
         ok:   true,
-        json: async () => ({ orgId: 'org-test-789', uploadUrls: [] }),
+        json: async () => ({ orgId: 'org-test-789' }),
       }))
       mockSignUp.mockRejectedValueOnce({
         code:    'UsernameExistsException',
@@ -333,7 +270,7 @@ describe('RegisterPage', () => {
       })
 
       const { user } = setup()
-      await goToForms(user); await goToTemplates(user); await goToCredentials(user)
+      await goToCredentials(user)
       await fillCredentials(user)
       await user.click(screen.getByRole('button', { name: /register organisation/i }))
 

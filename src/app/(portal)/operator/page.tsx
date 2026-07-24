@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 
 // Platform-wide, read-only. Gated server-side by the same operator-email
 // allowlist as /admin/leads (see /api/operator/orgs and src/lib/operator.ts).
@@ -75,7 +76,7 @@ export default function OperatorConsolePage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-black/[0.06]" style={{ background: 'rgba(0,0,0,0.02)' }}>
-                {['Org', 'Status', 'Products', 'Subscription', 'Documents'].map(h => (
+                {['Org', 'Status', 'Products', 'Subscription', 'Documents', ''].map(h => (
                   <th key={h} className="text-left px-5 py-3 text-[11px] font-semibold text-gray-400 uppercase tracking-wide">
                     {h}
                   </th>
@@ -99,6 +100,11 @@ export default function OperatorConsolePage() {
                       : 'No subscription'}
                   </td>
                   <td className="px-5 py-3.5 text-[13px] font-medium text-black">{org.totalDocuments}</td>
+                  <td className="px-5 py-3.5 text-right">
+                    <Link href={`/operator/orgs/${org.orgId}`} className="text-[12px] font-medium text-blue-600 hover:text-blue-700">
+                      Manage →
+                    </Link>
+                  </td>
                 </tr>
               ))}
             </tbody>
