@@ -145,8 +145,8 @@ function NotificationCard() {
       <div className="absolute inset-0 flex items-center justify-center p-8 sm:p-12">
         <div className="w-full max-w-[340px] space-y-3">
           {[
-            { role: 'Submitter', initials: 'SM', email: 'sipho@orgname.co.za',   msg: 'Your document TF-2026-00142 has been filed successfully.', time: 'now', color: '#1D4ED8', bg: '#DBEAFE' },
-            { role: 'Reviewer',  initials: 'TN', email: 'thabo@orgname.co.za',  msg: 'New submission ready for review — TF-2026-00142.',         time: '0s',  color: '#16A34A', bg: '#DCFCE7' },
+            { role: 'Reviewer', initials: 'TN', email: 'thabo@orgname.co.za', msg: 'New document ready for review — TF-2026-00142.', time: 'now', color: '#16A34A', bg: '#DCFCE7' },
+            { role: 'Delivered', initials: '→', email: 'synced to your CRM',   msg: 'Structured record delivered — TF-2026-00142.',   time: '0s', color: '#9333EA', bg: '#F3E8FF' },
           ].map(n => (
             <div key={n.role} className="rounded-2xl overflow-hidden shadow-xl bg-white">
               <div className="px-4 py-2.5 flex items-center gap-2 border-b border-gray-100">
@@ -201,24 +201,25 @@ export default function LandingPage() {
           <Logos />
         </div>
       </div>
+      <Explainer />
       <Stats />
-      <Feature tag="Document intake" flip={false}
-        heading="Accept any form, from any sector"
-        bullets={['PDF, JPG and PNG — financial applications, medical records, government forms, legal agreements',
-                  'Auto-detects document type before extraction begins',
-                  'Rejects illegible scans before they enter the pipeline']}
+      <Feature tag="Step 1 · Any document, no setup" flip={false}
+        heading="Drop in any document — no template required"
+        bullets={["A photo, a scan, or a PDF — financial applications, medical records, government forms, legal agreements",
+                  "No template built in advance for every different form — a new form type is read automatically, from the first one",
+                  "If a scan's too blurry to read, we tell you before it goes any further"]}
         card={<DocIntakeCard/>}/>
-      <Feature tag="Extraction engine" flip={true}
-        heading="Extract every field with AI confidence scoring"
-        bullets={['Our extraction engine reads printed and handwritten text across all document types',
-                  'Confidence scores surface fields needing human review',
-                  'Rules engine validates completeness before filing']}
+      <Feature tag="Step 2 · Every detail, captured accurately" flip={true}
+        heading="Every field, read correctly — 99.2% of the time"
+        bullets={["We read printed and handwritten text alike, across every document type",
+                  "Anything we're not fully sure about gets a quick human check, never a guess",
+                  "The result is clean, structured data — not just a digital copy of the page"]}
         card={<ExtractionCard/>}/>
-      <Feature tag="Notification pipeline" flip={false}
-        heading="Everyone notified the moment it is filed"
-        bullets={['Submitter receives instant confirmation with a unique document reference',
-                  'Reviewer notified via email — no chasing, no manual follow-up',
-                  'Full POPIA-compliant audit trail stored in DynamoDB']}
+      <Feature tag="Step 3 · Delivered where you work" flip={false}
+        heading="Straight into the systems you already run"
+        bullets={["Clean, structured data — searchable and usable, not a scanned image sitting in a folder",
+                  "Delivered into the systems your business already runs — no manual re-entry, no exports",
+                  "Your reviewer is notified the moment anything needs a second look, with a full POPIA-compliant audit trail kept throughout"]}
         card={<NotificationCard/>}/>
       <Steps />
       <CTA />
@@ -232,20 +233,21 @@ function Hero() {
   return (
     <section className="flex-1 flex flex-col items-center justify-center
                         text-center px-4 sm:px-8 py-6 min-h-0">
-      <h1 className="font-display text-[clamp(1.9rem,4.5vw,3.8rem)] leading-[1.06]
-                     tracking-[-0.02em] text-black max-w-[700px] mx-auto">
-        Document intelligence for every organisation
+      <h1 className="font-display text-[clamp(1.9rem,4.2vw,3.6rem)] leading-[1.1]
+                     tracking-[-0.02em] text-black max-w-[920px] mx-auto">
+        From documents to data. From data to workflows.
       </h1>
       <p className="mt-3 sm:mt-4 text-[13px] sm:text-[15px] text-gray-500
-                    max-w-[380px] mx-auto leading-relaxed">
-        Any sector. Any form. Upload a document and our pipeline classifies, extracts, validates and files it — without a single manual step.
+                    max-w-[600px] mx-auto leading-relaxed">
+        TheoFlow connects information from documents, digital forms, and business channels — turning
+        it into structured data that powers automated workflows across the systems you already run.
       </p>
       <div className="mt-5 flex items-center justify-center gap-3 flex-wrap">
         <Link href="/register"
           className="flex items-center gap-2 bg-black text-white text-[13px] font-medium
                      px-5 py-2.5 rounded-full hover:bg-gray-800 transition-colors">
           <LogoMark size={15} className="text-white"/>
-          Upload a document
+          Register your organisation
         </Link>
         <Link href="/login"
           className="text-[13px] font-medium text-gray-600 px-5 py-2.5 rounded-full
@@ -253,6 +255,9 @@ function Hero() {
           Sign in
         </Link>
       </div>
+      <p className="mt-4 text-[11px] text-gray-400 tracking-wide">
+        All you need is a device, an internet connection, and your portal login.
+      </p>
     </section>
   )
 }
@@ -343,14 +348,64 @@ function Logos() {
   )
 }
 
+/* ── Explainer video ──────────────────────────────────────────── */
+function Explainer() {
+  return (
+    <section className="max-w-[1200px] mx-auto px-8 py-16 lg:py-20 grid lg:grid-cols-2 gap-10 lg:gap-16 items-center">
+      <div>
+        <h2 className="font-display text-[clamp(1.7rem,2.8vw,2.5rem)] leading-[1.15]
+                       tracking-[-0.015em] text-black mb-5">
+          Paper and scanned documents, turned into clean, structured data — automatically.
+        </h2>
+        <p className="text-[14px] text-gray-500 leading-relaxed max-w-[420px]">
+          Drop in a photo of a form, a scan, or a PDF. There's no template to build in advance for a
+          new type of form — we read it automatically, and the clean data flows straight into
+          whatever systems your business already runs.
+        </p>
+        <p className="mt-3 text-[12px] text-gray-400 leading-relaxed max-w-[420px]">
+          A PDF is a document file. A JPG or PNG is just a photo or scan of your paperwork — snap it
+          on your phone and that's enough.
+        </p>
+        <Link href="#how-it-works"
+          className="mt-6 inline-flex items-center gap-1.5 text-[13px] font-medium text-black
+                     border-b border-black/20 hover:border-black/60 transition-colors pb-0.5 w-fit">
+          See how it works
+          <span aria-hidden>→</span>
+        </Link>
+      </div>
+
+      {/* Video placeholder — swap the poster/play affordance for a real embed when the asset lands */}
+      <button
+        type="button"
+        aria-label="Play: from documents to data, from data to workflows"
+        className="group relative w-full rounded-2xl overflow-hidden shadow-xl aspect-video
+                   flex items-center justify-center"
+        style={{ background: 'linear-gradient(135deg, #1a1a1a 0%, #111 100%)' }}
+      >
+        <div className="absolute inset-0 opacity-40" style={{ background: 'radial-gradient(ellipse at 30% 30%, #4E82CC 0%, transparent 60%)' }}/>
+        <div className="absolute inset-0 opacity-30" style={{ background: 'radial-gradient(ellipse at 70% 75%, #F0B848 0%, transparent 60%)' }}/>
+        <div className="relative w-16 h-16 rounded-full bg-white/95 flex items-center justify-center
+                        group-hover:scale-105 transition-transform">
+          <svg className="w-6 h-6 text-black ml-0.5" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M8 5v14l11-7z"/>
+          </svg>
+        </div>
+        <span className="absolute bottom-4 left-5 text-[12px] font-medium text-white/70">
+          1:12 · How paper becomes data in your systems
+        </span>
+      </button>
+    </section>
+  )
+}
+
 /* ── Stats + testimonial ──────────────────────────────────────── */
 function Stats() {
   return (
     <section className="max-w-[1200px] mx-auto px-8 py-12 grid md:grid-cols-2 gap-12 items-center">
       <div className="flex gap-8 sm:gap-12">
         {[
-          { n: '99.2%', d: 'field extraction accuracy across all form types' },
-          { n: '<5 min', d: 'average time from upload to filing' },
+          { n: '99.2%', d: 'accurate, from the physical document to structured data' },
+          { n: '<5 min', d: 'from paper in hand to data in your systems' },
         ].map(({ n, d }) => (
           <div key={n}>
             <div className="font-display text-[clamp(2rem,3.5vw,3.2rem)] leading-none tracking-tight text-black">
@@ -422,17 +477,17 @@ function Feature({ tag, heading, bullets, flip, card }: {
 /* ── How it works ─────────────────────────────────────────────── */
 function Steps() {
   return (
-    <section className="bg-[#F5F6FA] px-4 sm:px-8 py-16 lg:py-20 border-t border-black/[0.06]">
+    <section id="how-it-works" className="bg-[#F5F6FA] px-4 sm:px-8 py-16 lg:py-20 border-t border-black/[0.06]">
       <div className="max-w-[1200px] mx-auto grid lg:grid-cols-2 gap-10 lg:gap-16 items-start">
         <div>
           <h2 className="font-display text-[clamp(1.8rem,3vw,2.8rem)] leading-tight
                          tracking-[-0.02em] text-black mb-8">
-            Processing in three steps
+            From paper to your systems, in three steps
           </h2>
           {[
-            { n:'1.', t:'Upload any document', b:'Drop a PDF, JPG or PNG — financial applications, medical records, government forms, legal agreements.' },
-            { n:'2.', t:'AI classifies and extracts', b:'Our extraction engine reads every field. Our validator checks completeness and flags exceptions before filing.' },
-            { n:'3.', t:'Filed — everyone notified', b:'The record is updated instantly. Submitter and reviewer both receive confirmation with a full audit trail.' },
+            { n:'(1)', t:'Register your organisation', b:'No integrations, nothing to install. Create your account and you’re ready to go.' },
+            { n:'(2)', t:'Drop in your documents', b:'A photo, a scan, or a PDF — any form, from any sector. No template built in advance — we read a new form type automatically.' },
+            { n:'(3)', t:'It’s delivered where you work', b:'Clean, structured data flows into the systems you already run. Your reviewer is notified; the document’s submitter doesn’t need portal access at all.' },
           ].map(s => (
             <div key={s.n} className="border-t border-gray-200 py-5">
               <div className="font-display text-[1.6rem] text-black">{s.n}</div>
@@ -505,10 +560,10 @@ function CTA() {
     <section className="py-28 px-8 text-center border-t border-black/[0.06]">
       <h2 className="font-display text-[clamp(2.2rem,4vw,4rem)] leading-[1.08]
                      tracking-[-0.02em] text-black max-w-[700px] mx-auto">
-        Your first document processed in minutes
+        Your first document, in your systems, in minutes
       </h2>
       <p className="mt-5 text-[14px] text-gray-400 max-w-[380px] mx-auto leading-relaxed">
-        No integrations required. Register your organisation, upload a document, and watch the full pipeline run from classification to filing.
+        No lengthy setup. Register your organisation, drop in a document, and watch it become clean, structured data — ready to flow into the systems you already run.
       </p>
       <Link href="/register"
         className="mt-9 inline-flex bg-black text-white text-[13px] font-medium
