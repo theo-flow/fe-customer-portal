@@ -2,6 +2,7 @@ import { GetCommand, QueryCommand } from '@aws-sdk/lib-dynamodb'
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { ddbDocClient, TABLE } from '@/lib/aws'
+import { verifyJwtClaims } from '@/lib/token'
 import type { Field as SchemaField } from '@/components/FieldInput'
 
 const FORMS_TABLE = process.env.DYNAMODB_TABLE_FORMS ?? 'daai-insure-forms'
@@ -47,6 +48,10 @@ export async function GET(
 ) {
   const token = cookies().get('tf_token')?.value
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const claims = await verifyJwtClaims(token)
+  if (!claims) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const callerOrgId = claims['custom:org_id']
+  if (!callerOrgId) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const { docId } = params
   const db = ddbDocClient()
@@ -57,6 +62,10 @@ export async function GET(
   }))
 
   if (!result.Item) return NextResponse.json({ error: 'Document not found' }, { status: 404 })
+  if (result.Item.orgId !== callerOrgId) {
+    console.warn('[status] Org mismatch', { docId, docOrgId: result.Item.orgId, callerOrgId })
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
 
   const { status: portalStatus, product, docType, filename, fileSize, createdAt } = result.Item
 

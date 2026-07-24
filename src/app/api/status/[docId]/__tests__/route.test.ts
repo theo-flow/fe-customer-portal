@@ -21,7 +21,14 @@ vi.mock('@aws-sdk/lib-dynamodb', () => ({
   QueryCommand: vi.fn(function (this: unknown, input: unknown) { return { __type: 'Query', input } }),
 }))
 
+vi.mock('@/lib/token', () => ({
+  verifyJwtClaims: vi.fn(),
+}))
+
+import { verifyJwtClaims } from '@/lib/token'
 import { GET } from '../route'
+
+const ORG_ID = 'org-abc123'
 
 function makeRequest(): NextRequest {
   return {} as NextRequest
@@ -34,12 +41,16 @@ const docStatusItem = {
   filename:  'form.pdf',
   fileSize:  12345,
   createdAt: '2026-07-01T00:00:00Z',
+  orgId:     ORG_ID,
 }
 
 describe('GET /api/status/[docId]', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockCookieGet.mockReturnValue({ value: 'valid-token' })
+    vi.mocked(verifyJwtClaims).mockResolvedValue({
+      sub: 'user-1', email: 'a@b.com', exp: 9999999999, 'custom:org_id': ORG_ID,
+    })
   })
 
   it('returns 401 when no auth cookie is present', async () => {
@@ -48,10 +59,29 @@ describe('GET /api/status/[docId]', () => {
     expect(res.status).toBe(401)
   })
 
+  it('returns 401 when the token fails signature verification', async () => {
+    vi.mocked(verifyJwtClaims).mockResolvedValue(null)
+    const res = await GET(makeRequest(), { params: { docId: 'doc-1' } })
+    expect(res.status).toBe(401)
+  })
+
+  it('returns 403 when the token has no org claim', async () => {
+    vi.mocked(verifyJwtClaims).mockResolvedValue({ sub: 'user-1', email: 'a@b.com', exp: 9999999999 })
+    const res = await GET(makeRequest(), { params: { docId: 'doc-1' } })
+    expect(res.status).toBe(403)
+  })
+
   it('returns 404 when the document does not exist', async () => {
     mockSend.mockResolvedValueOnce({ Item: undefined })
     const res = await GET(makeRequest(), { params: { docId: 'missing' } })
     expect(res.status).toBe(404)
+  })
+
+  it('returns 403 when the document belongs to a different org (IDOR guard)', async () => {
+    mockSend.mockResolvedValueOnce({ Item: { ...docStatusItem, orgId: 'other-org' } })
+    const res = await GET(makeRequest(), { params: { docId: 'doc-1' } })
+    expect(res.status).toBe(403)
+    expect(mockSend).toHaveBeenCalledTimes(1) // never reaches the pipeline-status Query
   })
 
   it('marks VALID pipeline status as not failed', async () => {
