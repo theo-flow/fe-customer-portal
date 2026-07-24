@@ -9,6 +9,8 @@ export async function POST(req: NextRequest) {
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const claims = await verifyJwtClaims(token)
   if (!claims) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const callerOrgId = claims['custom:org_id']
+  if (!callerOrgId) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   let body: { docId?: string }
   try {
@@ -24,13 +26,15 @@ export async function POST(req: NextRequest) {
   const db  = ddbDocClient()
   const now = new Date().toISOString()
 
-  let orgId: string | undefined
   try {
     const existing = await db.send(new GetCommand({ TableName: TABLE, Key: { PK: `DOC#${docId}`, SK: 'STATUS' } }))
-    orgId = existing.Item?.orgId as string | undefined
     if (!existing.Item) {
       console.warn('[confirm] Document not found', { docId })
       return NextResponse.json({ error: 'Document not found' }, { status: 404 })
+    }
+    if (existing.Item.orgId !== callerOrgId) {
+      console.warn('[confirm] Org mismatch', { docId, docOrgId: existing.Item.orgId, callerOrgId })
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
   } catch (err) {
     console.error('[confirm] DynamoDB GetCommand failed', { docId, error: err })
@@ -47,14 +51,12 @@ export async function POST(req: NextRequest) {
       UpdateExpression: updateExpr, ExpressionAttributeNames: exprNames, ExpressionAttributeValues: exprValues,
     }))
 
-    if (orgId) {
-      await db.send(new UpdateCommand({
-        TableName: TABLE, Key: { PK: `ORG#${orgId}`, SK: `DOC#${docId}` },
-        UpdateExpression: updateExpr, ExpressionAttributeNames: exprNames, ExpressionAttributeValues: exprValues,
-      }))
-    }
+    await db.send(new UpdateCommand({
+      TableName: TABLE, Key: { PK: `ORG#${callerOrgId}`, SK: `DOC#${docId}` },
+      UpdateExpression: updateExpr, ExpressionAttributeNames: exprNames, ExpressionAttributeValues: exprValues,
+    }))
   } catch (err) {
-    console.error('[confirm] DynamoDB UpdateCommand failed', { docId, orgId, error: err })
+    console.error('[confirm] DynamoDB UpdateCommand failed', { docId, callerOrgId, error: err })
     return NextResponse.json({ error: 'Failed to confirm upload' }, { status: 500 })
   }
 
