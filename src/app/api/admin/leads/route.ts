@@ -2,7 +2,7 @@ import { ScanCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb'
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { ddbDocClient, CONTACT_TABLE } from '@/lib/aws'
-import { decodeJwtClaims } from '@/lib/token'
+import { verifyJwtClaims } from '@/lib/token'
 import { isOperatorEmail } from '@/lib/operator'
 
 const VALID_STATUSES = new Set(['new', 'contacted', 'converted'])
@@ -12,11 +12,12 @@ const VALID_STATUSES = new Set(['new', 'contacted', 'converted'])
 // src/lib/operator.ts), not custom:org_id -- an org-scoped gate here would
 // let any authenticated org admin see every other prospect's contact
 // details, a real cross-tenant leak.
-function requireOperator(): { email: string } | NextResponse {
+async function requireOperator(): Promise<{ email: string } | NextResponse> {
   const token = cookies().get('tf_token')?.value
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const claims = decodeJwtClaims(token)
+  const claims = await verifyJwtClaims(token)
+  if (!claims) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   if (!isOperatorEmail(claims.email)) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
@@ -24,7 +25,7 @@ function requireOperator(): { email: string } | NextResponse {
 }
 
 export async function GET() {
-  const auth = requireOperator()
+  const auth = await requireOperator()
   if (auth instanceof NextResponse) return auth
 
   const result = await ddbDocClient().send(new ScanCommand({
@@ -54,7 +55,7 @@ export async function GET() {
 }
 
 export async function PATCH(req: NextRequest) {
-  const auth = requireOperator()
+  const auth = await requireOperator()
   if (auth instanceof NextResponse) return auth
 
   const { messageId, status } = await req.json() as { messageId?: string; status?: string }

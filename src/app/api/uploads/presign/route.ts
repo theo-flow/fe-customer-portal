@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { randomUUID } from 'crypto'
 import { ddbDocClient, s3Client, TABLE, BUCKET } from '@/lib/aws'
-import { decodeJwtClaims } from '@/lib/token'
+import { verifyJwtClaims } from '@/lib/token'
 
 const ALLOWED_CONTENT_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/tiff']
 const MAX_CONTENT_LENGTH     = 50 * 1024 * 1024  // 50 MB — kept in sync with the frontend constant
@@ -14,7 +14,8 @@ export async function POST(req: NextRequest) {
   const token = cookies().get('tf_token')?.value
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const claims = decodeJwtClaims(token)
+  const claims = await verifyJwtClaims(token)
+  if (!claims) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const orgId  = claims['custom:org_id'] ?? claims.sub
 
   let body: { group?: string; groupLabel?: string; filename?: string; contentType?: string; contentLength?: number }

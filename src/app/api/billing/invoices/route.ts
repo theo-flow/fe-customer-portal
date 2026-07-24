@@ -4,7 +4,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { ddbDocClient, s3Client, TABLE, OUTPUT_BUCKET } from '@/lib/aws'
-import { decodeJwtClaims } from '@/lib/token'
+import { verifyJwtClaims } from '@/lib/token'
 
 const URL_EXPIRY_SECONDS = 300
 
@@ -16,7 +16,8 @@ export async function GET() {
   const token = cookies().get('tf_token')?.value
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const claims = decodeJwtClaims(token)
+  const claims = await verifyJwtClaims(token)
+  if (!claims) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const orgId  = claims['custom:org_id']
   if (!orgId) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 

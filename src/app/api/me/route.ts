@@ -1,14 +1,15 @@
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { GetCommand } from '@aws-sdk/lib-dynamodb'
-import { decodeJwtClaims, initialsFromName } from '@/lib/token'
+import { verifyJwtClaims, initialsFromName } from '@/lib/token'
 import { ddbDocClient, TABLE } from '@/lib/aws'
 
 export async function GET() {
   const token = cookies().get('tf_token')?.value
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const claims   = decodeJwtClaims(token)
+  const claims   = await verifyJwtClaims(token)
+  if (!claims) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const name     = claims.name ?? ''
   const email    = claims.email ?? ''
   const orgId    = claims['custom:org_id'] ?? ''

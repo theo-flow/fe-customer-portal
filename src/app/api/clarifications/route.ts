@@ -2,7 +2,7 @@ import { GetCommand, QueryCommand } from '@aws-sdk/lib-dynamodb'
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { ddbDocClient, TABLE } from '@/lib/aws'
-import { decodeJwtClaims } from '@/lib/token'
+import { verifyJwtClaims } from '@/lib/token'
 
 const FORMS_TABLE = process.env.DYNAMODB_TABLE_FORMS ?? 'daai-insure-forms'
 
@@ -18,7 +18,9 @@ export async function GET(req: NextRequest) {
   const token = cookies().get('tf_token')?.value
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const orgId = decodeJwtClaims(token)['custom:org_id']
+  const claims = await verifyJwtClaims(token)
+  if (!claims) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const orgId = claims['custom:org_id']
   if (!orgId) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const db = ddbDocClient()

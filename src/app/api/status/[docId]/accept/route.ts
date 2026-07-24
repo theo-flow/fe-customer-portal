@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { randomUUID } from 'crypto'
 import { ddbDocClient, sqsClient, TABLE } from '@/lib/aws'
-import { decodeJwtClaims } from '@/lib/token'
+import { verifyJwtClaims } from '@/lib/token'
 import { validateField } from '@/lib/validators'
 import { writeCorrectionRecords, type Resolution } from '@/lib/corrections'
 import type { Field as SchemaField } from '@/components/FieldInput'
@@ -51,7 +51,8 @@ export async function POST(
   const token = cookies().get('tf_token')?.value
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const claims = decodeJwtClaims(token)
+  const claims = await verifyJwtClaims(token)
+  if (!claims) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const orgId  = claims['custom:org_id']
   if (!orgId) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 

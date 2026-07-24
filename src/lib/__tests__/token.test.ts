@@ -1,5 +1,12 @@
-import { describe, it, expect, afterEach } from 'vitest'
-import { decodeJwtClaims, initialsFromName } from '../token'
+import { describe, it, expect, afterEach, vi, beforeEach } from 'vitest'
+
+const { mockVerify } = vi.hoisted(() => ({ mockVerify: vi.fn() }))
+
+vi.mock('aws-jwt-verify', () => ({
+  CognitoJwtVerifier: { create: () => ({ verify: mockVerify }) },
+}))
+
+import { decodeJwtClaims, initialsFromName, verifyJwtClaims } from '../token'
 
 function makeToken(claims: object): string {
   const b64url = (s: string) => {
@@ -40,6 +47,28 @@ describe('decodeJwtClaims', () => {
       const token = makeToken({ sub: 'user-1', email: 'a@b.com', exp: 123 })
       expect(decodeJwtClaims(token)).toMatchObject({ sub: 'user-1', email: 'a@b.com', exp: 123 })
     })
+  })
+})
+
+describe('verifyJwtClaims', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('returns the verified payload when the signature checks out', async () => {
+    mockVerify.mockResolvedValueOnce({ sub: 'user-1', email: 'a@b.com', exp: 123 })
+    const claims = await verifyJwtClaims('a.b.c')
+    expect(claims).toMatchObject({ sub: 'user-1', email: 'a@b.com' })
+  })
+
+  it('returns null (not a throw) when signature verification fails', async () => {
+    mockVerify.mockRejectedValueOnce(new Error('invalid signature'))
+    const claims = await verifyJwtClaims('forged.token.here')
+    expect(claims).toBeNull()
+  })
+
+  it('returns null for a malformed token', async () => {
+    mockVerify.mockRejectedValueOnce(new Error('not a valid JWT'))
+    const claims = await verifyJwtClaims('not-a-jwt')
+    expect(claims).toBeNull()
   })
 })
 

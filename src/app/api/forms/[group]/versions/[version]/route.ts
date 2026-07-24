@@ -2,7 +2,7 @@ import { GetCommand } from '@aws-sdk/lib-dynamodb'
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { ddbDocClient, TABLE } from '@/lib/aws'
-import { decodeJwtClaims } from '@/lib/token'
+import { verifyJwtClaims } from '@/lib/token'
 
 // Authenticated fetch of one specific (possibly unpublished) forged version --
 // distinct from the public /fill route, which only ever serves the
@@ -15,7 +15,8 @@ export async function GET(
   const token = cookies().get('tf_token')?.value
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const claims = decodeJwtClaims(token)
+  const claims = await verifyJwtClaims(token)
+  if (!claims) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const orgId  = claims['custom:org_id']
   if (!orgId) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 

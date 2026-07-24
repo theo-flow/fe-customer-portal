@@ -2,16 +2,17 @@ import { UpdateCommand } from '@aws-sdk/lib-dynamodb'
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { ddbDocClient, TABLE } from '@/lib/aws'
-import { decodeJwtClaims } from '@/lib/token'
+import { verifyJwtClaims } from '@/lib/token'
 import { isOperatorEmail } from '@/lib/operator'
 
 const VALID_PRODUCTS = new Set(['forge', 'channel', 'harvest', 'decode', 'sign', 'print'])
 
-function requireOperator(): { email: string } | NextResponse {
+async function requireOperator(): Promise<{ email: string } | NextResponse> {
   const token = cookies().get('tf_token')?.value
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const claims = decodeJwtClaims(token)
+  const claims = await verifyJwtClaims(token)
+  if (!claims) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   if (!isOperatorEmail(claims.email)) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
@@ -22,7 +23,7 @@ function requireOperator(): { email: string } | NextResponse {
 // console -- lets an operator turn products on for an org after signup,
 // now that registration no longer collects product selection up front.
 export async function PATCH(req: NextRequest, { params }: { params: { orgId: string } }) {
-  const auth = requireOperator()
+  const auth = await requireOperator()
   if (auth instanceof NextResponse) return auth
 
   const { orgId } = params

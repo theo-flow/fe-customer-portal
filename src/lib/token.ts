@@ -1,3 +1,5 @@
+import { CognitoJwtVerifier } from 'aws-jwt-verify'
+
 export interface JwtClaims {
   sub:             string
   email:           string
@@ -12,6 +14,14 @@ export interface JwtClaims {
 // with atob + TextDecoder, which both environments provide. atob() alone
 // (as middleware.ts's separate inline decoder uses) mangles multi-byte
 // UTF-8 in name/email; TextDecoder reassembles it correctly.
+//
+// IMPORTANT: this only decodes the payload -- it does NOT verify the
+// token's signature. Safe for non-security-critical, client-side-only
+// reads (e.g. SessionWatcher showing a name/expiry countdown). Any
+// server-side authorization decision (every API route) MUST use
+// verifyJwtClaims() below instead, or the "email"/"custom:org_id" claims
+// can be forged by anyone who sets their own tf_token cookie to an
+// unsigned, self-crafted value -- nothing before this checked that.
 export function decodeJwtClaims(token: string): JwtClaims {
   try {
     const [, payload] = token.split('.')
@@ -20,6 +30,35 @@ export function decodeJwtClaims(token: string): JwtClaims {
     return JSON.parse(new TextDecoder('utf-8').decode(bytes)) as JwtClaims
   } catch {
     return { sub: '', email: '', exp: 0 }
+  }
+}
+
+// Real, cryptographic verification against the Cognito user pool's JWKS --
+// use this (never decodeJwtClaims) wherever a claim drives an
+// authorization decision. The verifier caches the JWKS after first fetch,
+// so this is cheap on repeated calls within the same Lambda instance.
+// Built lazily (not at module load) -- SessionWatcher.tsx imports this same
+// module client-side for decodeJwtClaims only, and eagerly constructing the
+// verifier would throw there (and in any test importing this file) whenever
+// the Cognito env vars aren't set, even though it's never called.
+let _verifier: ReturnType<typeof CognitoJwtVerifier.create> | null = null
+function getVerifier() {
+  if (!_verifier) {
+    _verifier = CognitoJwtVerifier.create({
+      userPoolId: process.env.NEXT_PUBLIC_COGNITO_USER_POOL_ID!,
+      tokenUse:   'id',
+      clientId:   process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID!,
+    })
+  }
+  return _verifier
+}
+
+export async function verifyJwtClaims(token: string): Promise<JwtClaims | null> {
+  try {
+    const payload = await getVerifier().verify(token)
+    return payload as unknown as JwtClaims
+  } catch {
+    return null
   }
 }
 

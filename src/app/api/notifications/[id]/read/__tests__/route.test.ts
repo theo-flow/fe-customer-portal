@@ -16,7 +16,7 @@ vi.mock('@/lib/aws', () => ({
 }))
 
 vi.mock('@/lib/token', () => ({
-  decodeJwtClaims: vi.fn(),
+  verifyJwtClaims: vi.fn(),
 }))
 
 vi.mock('@aws-sdk/lib-dynamodb', () => ({
@@ -24,7 +24,7 @@ vi.mock('@aws-sdk/lib-dynamodb', () => ({
   UpdateCommand: vi.fn(function (this: unknown, input: unknown) { return { __type: 'Update', input } }),
 }))
 
-import { decodeJwtClaims } from '@/lib/token'
+import { verifyJwtClaims } from '@/lib/token'
 import { POST } from '../route'
 
 const ORG_ID = 'org-abc123'
@@ -37,13 +37,19 @@ describe('POST /api/notifications/[id]/read', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockCookieGet.mockReturnValue({ value: 'valid-token' })
-    vi.mocked(decodeJwtClaims).mockReturnValue({
+    vi.mocked(verifyJwtClaims).mockResolvedValue({
       sub: 'user-1', email: 'a@b.com', exp: 9999999999, 'custom:org_id': ORG_ID,
     })
   })
 
   it('returns 401 when no auth cookie is present', async () => {
     mockCookieGet.mockReturnValue(undefined)
+    const res = await POST(makeRequest(), { params: { id: 'n1' } })
+    expect(res.status).toBe(401)
+  })
+
+  it('returns 401 when the token fails signature verification', async () => {
+    vi.mocked(verifyJwtClaims).mockResolvedValue(null)
     const res = await POST(makeRequest(), { params: { id: 'n1' } })
     expect(res.status).toBe(401)
   })

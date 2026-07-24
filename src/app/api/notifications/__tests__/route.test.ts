@@ -15,14 +15,14 @@ vi.mock('@/lib/aws', () => ({
 }))
 
 vi.mock('@/lib/token', () => ({
-  decodeJwtClaims: vi.fn(),
+  verifyJwtClaims: vi.fn(),
 }))
 
 vi.mock('@aws-sdk/lib-dynamodb', () => ({
   QueryCommand: vi.fn(function (this: unknown, input: unknown) { return { __type: 'Query', input } }),
 }))
 
-import { decodeJwtClaims } from '@/lib/token'
+import { verifyJwtClaims } from '@/lib/token'
 import { GET } from '../route'
 
 const ORG_ID = 'org-abc123'
@@ -31,7 +31,7 @@ describe('GET /api/notifications', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockCookieGet.mockReturnValue({ value: 'valid-token' })
-    vi.mocked(decodeJwtClaims).mockReturnValue({
+    vi.mocked(verifyJwtClaims).mockResolvedValue({
       sub: 'user-1', email: 'a@b.com', exp: 9999999999, 'custom:org_id': ORG_ID,
     })
   })
@@ -42,8 +42,14 @@ describe('GET /api/notifications', () => {
     expect(res.status).toBe(401)
   })
 
+  it('returns 401 when the token fails signature verification', async () => {
+    vi.mocked(verifyJwtClaims).mockResolvedValue(null)
+    const res = await GET()
+    expect(res.status).toBe(401)
+  })
+
   it('returns 403 when the token has no org claim', async () => {
-    vi.mocked(decodeJwtClaims).mockReturnValue({ sub: 'user-1', email: 'a@b.com', exp: 9999999999 })
+    vi.mocked(verifyJwtClaims).mockResolvedValue({ sub: 'user-1', email: 'a@b.com', exp: 9999999999 })
     const res = await GET()
     expect(res.status).toBe(403)
   })
