@@ -448,7 +448,7 @@ function DarkSelect({ value, onChange, options, placeholder }: {
 
 function DarkError({ msg }: { msg: string }) {
   return (
-    <div role="alert" className="mb-6 px-4 py-3 rounded-xl text-red-400 text-[13px]"
+    <div role="alert" data-testid="form-error" className="mb-6 px-4 py-3 rounded-xl text-red-400 text-[13px]"
          style={{ background:'rgba(239,68,68,0.12)', border:'1px solid rgba(239,68,68,0.25)' }}>
       {msg}
     </div>

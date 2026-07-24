@@ -22,8 +22,13 @@ export default defineConfig({
     {
       name: 'chrome',
       use: {
+        // Playwright's own managed Chromium, not the system Chrome install --
+        // the latter is centrally managed on this fleet and redirects new
+        // launches into an already-running session instead of spawning an
+        // independent, automatable instance (`chrome.exe --version` reports
+        // "Opening in existing browser session"), which hangs Playwright at
+        // newPage(). Playwright's bundled browser isn't subject to that.
         launchOptions: {
-          executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
           args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
