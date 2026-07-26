@@ -1,5 +1,5 @@
 'use client'
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { useAnimationFrame } from 'framer-motion'
 import Link from 'next/link'
 import { LogoMark } from '@/components/LogoMark'
@@ -350,6 +350,8 @@ function Logos() {
 
 /* ── Explainer video ──────────────────────────────────────────── */
 function Explainer() {
+  const [playing, setPlaying] = useState(false)
+
   return (
     <section className="max-w-[1200px] mx-auto px-8 py-16 lg:py-20 grid lg:grid-cols-2 gap-10 lg:gap-16 items-center">
       <div>
@@ -374,26 +376,36 @@ function Explainer() {
         </Link>
       </div>
 
-      {/* Video placeholder — swap the poster/play affordance for a real embed when the asset lands */}
-      <button
-        type="button"
-        aria-label="Play: from documents to data, from data to workflows"
-        className="group relative w-full rounded-2xl overflow-hidden shadow-xl aspect-video
-                   flex items-center justify-center"
-        style={{ background: 'linear-gradient(135deg, #1a1a1a 0%, #111 100%)' }}
-      >
-        <div className="absolute inset-0 opacity-40" style={{ background: 'radial-gradient(ellipse at 30% 30%, #4E82CC 0%, transparent 60%)' }}/>
-        <div className="absolute inset-0 opacity-30" style={{ background: 'radial-gradient(ellipse at 70% 75%, #F0B848 0%, transparent 60%)' }}/>
-        <div className="relative w-16 h-16 rounded-full bg-white/95 flex items-center justify-center
-                        group-hover:scale-105 transition-transform">
-          <svg className="w-6 h-6 text-black ml-0.5" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M8 5v14l11-7z"/>
-          </svg>
-        </div>
-        <span className="absolute bottom-4 left-5 text-[12px] font-medium text-white/70">
-          1:12 · How paper becomes data in your systems
-        </span>
-      </button>
+      <div className="relative w-full rounded-2xl overflow-hidden shadow-xl aspect-video">
+        {playing ? (
+          <video
+            className="absolute inset-0 w-full h-full"
+            src="/videos/theoflow-demo.mp4"
+            controls
+            autoPlay
+          />
+        ) : (
+          <button
+            type="button"
+            aria-label="Play: from documents to data, from data to workflows"
+            onClick={() => setPlaying(true)}
+            className="group absolute inset-0 w-full h-full flex items-center justify-center"
+            style={{ background: 'linear-gradient(135deg, #1a1a1a 0%, #111 100%)' }}
+          >
+            <div className="absolute inset-0 opacity-40" style={{ background: 'radial-gradient(ellipse at 30% 30%, #4E82CC 0%, transparent 60%)' }}/>
+            <div className="absolute inset-0 opacity-30" style={{ background: 'radial-gradient(ellipse at 70% 75%, #F0B848 0%, transparent 60%)' }}/>
+            <div className="relative w-16 h-16 rounded-full bg-white/95 flex items-center justify-center
+                            group-hover:scale-105 transition-transform">
+              <svg className="w-6 h-6 text-black ml-0.5" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M8 5v14l11-7z"/>
+              </svg>
+            </div>
+            <span className="absolute bottom-4 left-5 text-[12px] font-medium text-white/70">
+              1:14 · How paper becomes data in your systems
+            </span>
+          </button>
+        )}
+      </div>
     </section>
   )
 }
