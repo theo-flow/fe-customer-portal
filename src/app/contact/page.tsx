@@ -1,7 +1,9 @@
 'use client'
+// No em dashes or double dashes in any text here -- use a single hyphen (-). See CLAUDE.md.
 import { useState } from 'react'
 import { MarketingNav } from '@/components/MarketingNav'
 import { MarketingFooter } from '@/components/MarketingFooter'
+import { INTEREST_OPTIONS, CONTACT_MESSAGE_MAX as MESSAGE_MAX } from '@/lib/contact-form'
 
 type Status = 'idle' | 'submitting' | 'sent' | 'error'
 
@@ -9,6 +11,8 @@ export default function ContactPage() {
   const [name, setName]         = useState('')
   const [email, setEmail]       = useState('')
   const [org, setOrg]           = useState('')
+  const [website, setWebsite]   = useState('')
+  const [interest, setInterest] = useState('')
   const [message, setMessage]   = useState('')
   const [status, setStatus]     = useState<Status>('idle')
   const [error, setError]       = useState('')
@@ -16,8 +20,8 @@ export default function ContactPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
-    if (!name.trim() || !email.trim() || !message.trim()) {
-      setError('Name, email and message are required.')
+    if (!name.trim() || !email.trim() || !org.trim() || !interest) {
+      setError('Name, email, organisation and what you need help with are required.')
       return
     }
     setStatus('submitting')
@@ -25,7 +29,7 @@ export default function ContactPage() {
       const res = await fetch('/api/contact', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, org, message }),
+        body: JSON.stringify({ name, email, org, website, interest, message }),
       })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
@@ -43,18 +47,14 @@ export default function ContactPage() {
       <MarketingNav />
       <div className="h-[56px]" />
 
-      <section className="max-w-[560px] mx-auto px-8 pt-20 pb-24">
-        <div className="text-center mb-10">
+      <section className="max-w-[560px] mx-auto px-8 pt-8 pb-12">
+        <div className="text-center mb-5">
           <span className="inline-flex text-[11px] font-semibold text-gray-400 uppercase
-                           tracking-[0.10em] border border-gray-200 rounded-full px-3 py-[5px] mb-7">
+                           tracking-[0.10em] border border-gray-200 rounded-full px-3 py-[5px]">
             Contact
           </span>
-          <h1 className="font-display text-[clamp(1.9rem,4vw,2.6rem)] leading-[1.12]
-                         tracking-[-0.02em] text-black">
-            Talk to us about theoflow
-          </h1>
-          <p className="mt-4 text-[13.5px] text-gray-500 leading-relaxed">
-            Questions about the product suite, pricing, or onboarding your organisation —
+          <p className="mt-3 text-[13px] text-gray-500 leading-relaxed">
+            Questions about the product suite, pricing, or onboarding your organisation -
             send a message and we&apos;ll get back to you.
           </p>
         </div>
@@ -65,27 +65,46 @@ export default function ContactPage() {
             <p className="mt-1.5 text-[13px] text-gray-500">We&apos;ll be in touch shortly.</p>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} noValidate className="space-y-4">
+          <form onSubmit={handleSubmit} noValidate className="space-y-3">
             {error && (
               <div role="alert" className="px-4 py-3 rounded-xl text-[13px] text-red-600 bg-red-50 border border-red-100">
                 {error}
               </div>
             )}
-            <Field label="Name">
-              <LightInput value={name} onChange={e => setName(e.target.value)}
-                autoComplete="name" placeholder="Your name" required />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Field label="Name">
+                <LightInput value={name} onChange={e => setName(e.target.value)}
+                  autoComplete="name" placeholder="Your name" required maxLength={200} />
+              </Field>
+              <Field label="Email address">
+                <LightInput type="email" value={email} onChange={e => setEmail(e.target.value)}
+                  autoComplete="email" placeholder="you@example.com" required maxLength={200} />
+              </Field>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Field label="Organisation">
+                <LightInput value={org} onChange={e => setOrg(e.target.value)}
+                  autoComplete="organization" placeholder="Your organisation" required maxLength={200} />
+              </Field>
+              <Field label="Website (optional)">
+                <LightInput type="url" value={website} onChange={e => setWebsite(e.target.value)}
+                  placeholder="yourcompany.com" maxLength={255} />
+              </Field>
+            </div>
+            <Field label="What do you need help with?">
+              <select value={interest} onChange={e => setInterest(e.target.value)} required
+                className="w-full px-4 py-3 rounded-xl text-[14px] text-black border border-gray-200
+                           outline-none focus:border-gray-400 transition-colors bg-white appearance-none">
+                <option value="" disabled>Select one…</option>
+                {INTEREST_OPTIONS.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
             </Field>
-            <Field label="Email address">
-              <LightInput type="email" value={email} onChange={e => setEmail(e.target.value)}
-                autoComplete="email" placeholder="you@example.com" required />
-            </Field>
-            <Field label="Organisation (optional)">
-              <LightInput value={org} onChange={e => setOrg(e.target.value)}
-                placeholder="Your organisation" />
-            </Field>
-            <Field label="Message">
-              <textarea value={message} onChange={e => setMessage(e.target.value)}
-                required rows={5} placeholder="How can we help?"
+            <Field label={`Additional details (optional) - ${message.length}/${MESSAGE_MAX}`}>
+              <textarea value={message}
+                onChange={e => setMessage(e.target.value.slice(0, MESSAGE_MAX))}
+                rows={3} maxLength={MESSAGE_MAX} placeholder="Anything else we should know?"
                 className="w-full px-4 py-3 rounded-xl text-[14px] text-black border border-gray-200
                            outline-none focus:border-gray-400 transition-colors resize-none" />
             </Field>
