@@ -22,6 +22,25 @@ export default function SubmissionDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState('')
 
+  // Integration Hub sub-phase 4 -- identity-only export, see
+  // docs/integration-hub-status-and-next-steps.md for the current scope cut.
+  const [exportSubmitting, setExportSubmitting] = useState(false)
+  const [exportMessage,    setExportMessage]    = useState<string | null>(null)
+
+  async function triggerExport() {
+    setExportMessage(null)
+    setExportSubmitting(true)
+    try {
+      const res = await fetch(`/api/submissions/${id}/export`, { method: 'POST' })
+      const body = await res.json()
+      setExportMessage(res.ok ? 'Export requested.' : (body.error ?? 'Failed to start export.'))
+    } catch {
+      setExportMessage('Something went wrong. Please try again.')
+    } finally {
+      setExportSubmitting(false)
+    }
+  }
+
   useEffect(() => {
     fetch(`/api/submissions/${id}`)
       .then(async r => {
@@ -77,6 +96,23 @@ export default function SubmissionDetailPage() {
           {' · '}
           <span className="font-mono">{data.submissionId}</span>
         </p>
+      </div>
+
+      <div className="border border-black/[0.08] rounded-2xl p-5 mb-8 space-y-4">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-400">
+          Next steps
+        </p>
+        <div className="flex gap-3 flex-wrap">
+          <button
+            type="button"
+            onClick={triggerExport}
+            disabled={exportSubmitting}
+            className="px-5 py-2.5 rounded-full border border-black/[0.12] text-[13px] font-medium
+                       text-gray-700 hover:border-black hover:text-black transition-colors disabled:opacity-50">
+            {exportSubmitting ? 'Exporting…' : 'Export'}
+          </button>
+        </div>
+        {exportMessage && <p className="text-[12px] text-gray-500">{exportMessage}</p>}
       </div>
 
       <ExtractedDataView data={data.extraction} />

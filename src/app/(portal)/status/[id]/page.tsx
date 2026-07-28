@@ -112,6 +112,11 @@ export default function StatusPage() {
   const [printMessage,    setPrintMessage]    = useState<string | null>(null)
   const [copiedLink,      setCopiedLink]      = useState<string | null>(null)
 
+  // Integration Hub sub-phase 4 -- identity-only export, see
+  // docs/integration-hub-status-and-next-steps.md for the current scope cut.
+  const [exportSubmitting, setExportSubmitting] = useState(false)
+  const [exportMessage,    setExportMessage]    = useState<string | null>(null)
+
   useEffect(() => {
     let stopped = false
 
@@ -231,6 +236,20 @@ export default function StatusPage() {
       setPrintMessage('Something went wrong. Please try again.')
     } finally {
       setPrintSubmitting(false)
+    }
+  }
+
+  async function triggerExport() {
+    setExportMessage(null)
+    setExportSubmitting(true)
+    try {
+      const res = await fetch(`/api/status/${id}/export`, { method: 'POST' })
+      const data = await res.json()
+      setExportMessage(res.ok ? 'Export requested.' : (data.error ?? 'Failed to start export.'))
+    } catch {
+      setExportMessage('Something went wrong. Please try again.')
+    } finally {
+      setExportSubmitting(false)
     }
   }
 
@@ -395,9 +414,18 @@ export default function StatusPage() {
                          text-gray-700 hover:border-black hover:text-black transition-colors disabled:opacity-50">
               {printSubmitting ? 'Starting…' : 'Generate PDF'}
             </button>
+            <button
+              type="button"
+              onClick={triggerExport}
+              disabled={exportSubmitting}
+              className="px-5 py-2.5 rounded-full border border-black/[0.12] text-[13px] font-medium
+                         text-gray-700 hover:border-black hover:text-black transition-colors disabled:opacity-50">
+              {exportSubmitting ? 'Exporting…' : 'Export'}
+            </button>
           </div>
 
           {printMessage && <p className="text-[12px] text-gray-500">{printMessage}</p>}
+          {exportMessage && <p className="text-[12px] text-gray-500">{exportMessage}</p>}
 
           {showSignForm && !signLinks && (
             <div className="space-y-3 pt-2 border-t border-black/[0.06]">
