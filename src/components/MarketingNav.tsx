@@ -1,3 +1,4 @@
+// No em dashes or double dashes in any text here -- use a single hyphen (-). See CLAUDE.md.
 import Link from 'next/link'
 import { LogoMark } from '@/components/LogoMark'
 

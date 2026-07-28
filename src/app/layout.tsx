@@ -36,7 +36,7 @@ const jetbrains = localFont({
 export const metadata: Metadata = {
   metadataBase: new URL('https://theoflow.bytheodore.co.za'),
   title: 'theoflow | Digital Forms Intelligence Platform',
-  description: 'Upload any document — theoflow classifies, extracts, validates and files it, without a single manual step.',
+  description: 'Upload any document - theoflow classifies, extracts, validates and files it, without a single manual step.',
   verification: {
     google: 'EV2SfQwTeTGjwd_xITbZDRfPjmPASWDQ0t9oMAm3yIs',
   },

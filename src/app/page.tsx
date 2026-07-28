@@ -1,4 +1,5 @@
 'use client'
+// No em dashes or double dashes in any text here -- use a single hyphen (-). See CLAUDE.md.
 import { useRef, useState } from 'react'
 import { useAnimationFrame } from 'framer-motion'
 import Link from 'next/link'
@@ -15,7 +16,7 @@ function DocIntakeCard() {
     { name: 'legal_agreement.pdf',   label: 'Legal Agreement',      color: '#B45309', bg: '#FEF3C7' },
   ]
   return (
-    /* contain:paint is the cross-browser fix — it creates a hard paint boundary
+    /* contain:paint is the cross-browser fix - it creates a hard paint boundary
        that clips filter:blur() even where overflow:hidden fails */
     <div className="absolute inset-0" style={{ contain: 'paint' }}>
       <div className="absolute inset-0" style={{ background: '#F5EDD8' }}/>
@@ -145,8 +146,8 @@ function NotificationCard() {
       <div className="absolute inset-0 flex items-center justify-center p-8 sm:p-12">
         <div className="w-full max-w-[340px] space-y-3">
           {[
-            { role: 'Reviewer', initials: 'TN', email: 'thabo@orgname.co.za', msg: 'New document ready for review — TF-2026-00142.', time: 'now', color: '#16A34A', bg: '#DCFCE7' },
-            { role: 'Delivered', initials: '→', email: 'synced to your CRM',   msg: 'Structured record delivered — TF-2026-00142.',   time: '0s', color: '#9333EA', bg: '#F3E8FF' },
+            { role: 'Reviewer', initials: 'TN', email: 'thabo@orgname.co.za', msg: 'New document ready for review - TF-2026-00142.', time: 'now', color: '#16A34A', bg: '#DCFCE7' },
+            { role: 'Delivered', initials: '→', email: 'synced to your CRM',   msg: 'Structured record delivered - TF-2026-00142.',   time: '0s', color: '#9333EA', bg: '#F3E8FF' },
           ].map(n => (
             <div key={n.role} className="rounded-2xl overflow-hidden shadow-xl bg-white">
               <div className="px-4 py-2.5 flex items-center gap-2 border-b border-gray-100">
@@ -180,7 +181,7 @@ function NotificationCard() {
 }
 
 /* ═══════════════════════════════════════════════════════
-   theoflow — Landing Page
+   theoflow - Landing Page
 ═══════════════════════════════════════════════════════ */
 export default function LandingPage() {
   return (
@@ -192,7 +193,7 @@ export default function LandingPage() {
         className="flex flex-col overflow-hidden"
         style={{ height: '100vh', minHeight: '500px' }}
       >
-        {/* nav spacer — matches fixed nav height */}
+        {/* nav spacer - matches fixed nav height */}
         <div className="flex-none h-[56px]"/>
         {/* hero fills remaining space, centers content */}
         <div className="flex-1 flex flex-col overflow-hidden">
@@ -204,21 +205,21 @@ export default function LandingPage() {
       <Explainer />
       <Stats />
       <Feature tag="Step 1 · Any document, no setup" flip={false}
-        heading="Drop in any document — no template required"
-        bullets={["A photo, a scan, or a PDF — financial applications, medical records, government forms, legal agreements",
-                  "No template built in advance for every different form — a new form type is read automatically, from the first one",
+        heading="Drop in any document - no template required"
+        bullets={["A photo, a scan, or a PDF - financial applications, medical records, government forms, legal agreements",
+                  "No template built in advance for every different form - a new form type is read automatically, from the first one",
                   "If a scan's too blurry to read, we tell you before it goes any further"]}
         card={<DocIntakeCard/>}/>
       <Feature tag="Step 2 · Every detail, captured accurately" flip={true}
-        heading="Every field, read correctly — 99.2% of the time"
+        heading="Every field, read correctly - 99.2% of the time"
         bullets={["We read printed and handwritten text alike, across every document type",
                   "Anything we're not fully sure about gets a quick human check, never a guess",
-                  "The result is clean, structured data — not just a digital copy of the page"]}
+                  "The result is clean, structured data - not just a digital copy of the page"]}
         card={<ExtractionCard/>}/>
       <Feature tag="Step 3 · Delivered where you work" flip={false}
         heading="Straight into the systems you already run"
-        bullets={["Clean, structured data — searchable and usable, not a scanned image sitting in a folder",
-                  "Delivered into the systems your business already runs — no manual re-entry, no exports",
+        bullets={["Clean, structured data - searchable and usable, not a scanned image sitting in a folder",
+                  "Delivered into the systems your business already runs - no manual re-entry, no exports",
                   "Your reviewer is notified the moment anything needs a second look, with a full POPIA-compliant audit trail kept throughout"]}
         card={<NotificationCard/>}/>
       <Steps />
@@ -239,7 +240,7 @@ function Hero() {
       </h1>
       <p className="mt-3 sm:mt-4 text-[13px] sm:text-[15px] text-gray-500
                     max-w-[600px] mx-auto leading-relaxed">
-        TheoFlow connects information from documents, digital forms, and business channels — turning
+        TheoFlow connects information from documents, digital forms, and business channels - turning
         it into structured data that powers automated workflows across the systems you already run.
       </p>
       <div className="mt-5 flex items-center justify-center gap-3 flex-wrap">
@@ -262,7 +263,7 @@ function Hero() {
   )
 }
 
-/* ── Ribbon wave — canvas driven by framer-motion useAnimationFrame ── */
+/* ── Ribbon wave - canvas driven by framer-motion useAnimationFrame ── */
 function Ribbon() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const t = useRef(0)
@@ -309,7 +310,7 @@ function Ribbon() {
     }
 
     band(t.current,                  72,  128, 212, 0.88)  // cobalt blue
-    band(t.current + Math.PI * 0.52, 238, 180,  62, 0.90)  // amber — in front
+    band(t.current + Math.PI * 0.52, 238, 180,  62, 0.90)  // amber - in front
     t.current += 0.020
   })
 
@@ -357,15 +358,15 @@ function Explainer() {
       <div>
         <h2 className="font-display text-[clamp(1.7rem,2.8vw,2.5rem)] leading-[1.15]
                        tracking-[-0.015em] text-black mb-5">
-          Paper and scanned documents, turned into clean, structured data — automatically.
+          Paper and scanned documents, turned into clean, structured data - automatically.
         </h2>
         <p className="text-[14px] text-gray-500 leading-relaxed max-w-[420px]">
           Drop in a photo of a form, a scan, or a PDF. There's no template to build in advance for a
-          new type of form — we read it automatically, and the clean data flows straight into
+          new type of form - we read it automatically, and the clean data flows straight into
           whatever systems your business already runs.
         </p>
         <p className="mt-3 text-[12px] text-gray-400 leading-relaxed max-w-[420px]">
-          A PDF is a document file. A JPG or PNG is just a photo or scan of your paperwork — snap it
+          A PDF is a document file. A JPG or PNG is just a photo or scan of your paperwork - snap it
           on your phone and that's enough.
         </p>
         <Link href="#how-it-works"
@@ -453,7 +454,7 @@ function Feature({ tag, heading, bullets, flip, card }: {
   return (
     <section className={`flex flex-col ${flip ? 'lg:flex-row-reverse' : 'lg:flex-row'}
                          border-t border-black/[0.06] overflow-hidden`} style={{ minHeight: 520 }}>
-      {/* Text — ~40% */}
+      {/* Text - ~40% */}
       <div className="flex flex-col justify-center
                       px-8 sm:px-12 lg:px-16 py-16 lg:py-24
                       lg:w-[40%] flex-shrink-0">
@@ -477,7 +478,7 @@ function Feature({ tag, heading, bullets, flip, card }: {
         </ul>
       </div>
 
-      {/* Art card — fills remaining space, no border, no rounding on outer edges */}
+      {/* Art card - fills remaining space, no border, no rounding on outer edges */}
       <div className="relative flex-1" style={{ minHeight: 360 }}>
         {card}
       </div>
@@ -498,7 +499,7 @@ function Steps() {
           </h2>
           {[
             { n:'(1)', t:'Register your organisation', b:'No integrations, nothing to install. Create your account and you’re ready to go.' },
-            { n:'(2)', t:'Drop in your documents', b:'A photo, a scan, or a PDF — any form, from any sector. No template built in advance — we read a new form type automatically.' },
+            { n:'(2)', t:'Drop in your documents', b:'A photo, a scan, or a PDF - any form, from any sector. No template built in advance - we read a new form type automatically.' },
             { n:'(3)', t:'It’s delivered where you work', b:'Clean, structured data flows into the systems you already run. Your reviewer is notified; the document’s submitter doesn’t need portal access at all.' },
           ].map(s => (
             <div key={s.n} className="border-t border-gray-200 py-5">
@@ -517,7 +518,7 @@ function Steps() {
           </div>
         </div>
 
-        {/* Dark pipeline card — sticky so it stays in view as steps scroll */}
+        {/* Dark pipeline card - sticky so it stays in view as steps scroll */}
         <div className="lg:sticky lg:top-24 rounded-2xl overflow-hidden" style={{ background:'#111' }}>
           <div className="px-6 py-4 border-b border-white/[0.07] flex items-center gap-2">
             {[0,1,2].map(i => <div key={i} className="w-2.5 h-2.5 rounded-full bg-white/20"/>)}
@@ -575,7 +576,7 @@ function CTA() {
         Your first document, in your systems, in minutes
       </h2>
       <p className="mt-5 text-[14px] text-gray-400 max-w-[380px] mx-auto leading-relaxed">
-        No lengthy setup. Register your organisation, drop in a document, and watch it become clean, structured data — ready to flow into the systems you already run.
+        No lengthy setup. Register your organisation, drop in a document, and watch it become clean, structured data - ready to flow into the systems you already run.
       </p>
       <Link href="/register"
         className="mt-9 inline-flex bg-black text-white text-[13px] font-medium
