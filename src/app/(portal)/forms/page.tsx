@@ -162,11 +162,17 @@ function GroupRow({ group, groupLabel, schema, orgId, onPublished }: {
               </Link>
             )}
             {canPublish && (
-              <button onClick={handlePublish} disabled={publishing}
-                      className="text-[12px] font-semibold px-4 py-2 rounded-full bg-black text-white
-                                 hover:bg-gray-800 transition-colors disabled:opacity-50 whitespace-nowrap">
-                {publishing ? 'Publishing…' : 'Publish'}
-              </button>
+              <>
+                <Link href={`/forms/${group}/preview/${schema.latestVersion}`}
+                      className="text-[12px] font-medium text-black hover:text-gray-500 transition-colors whitespace-nowrap">
+                  Preview →
+                </Link>
+                <button onClick={handlePublish} disabled={publishing}
+                        className="text-[12px] font-semibold px-4 py-2 rounded-full bg-black text-white
+                                   hover:bg-gray-800 transition-colors disabled:opacity-50 whitespace-nowrap">
+                  {publishing ? 'Publishing…' : 'Publish'}
+                </button>
+              </>
             )}
             {schema.latestVersion > 0 && (
               <Link href={`/forms/${group}/history`}

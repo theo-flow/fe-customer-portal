@@ -25,7 +25,7 @@ export default function RecipientsPage() {
   const [email, setEmail]       = useState('')
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
-  const [newLink, setNewLink]   = useState<{ name: string; fillUrl: string } | null>(null)
+  const [newLink, setNewLink]   = useState<{ name: string; fillUrl: string; emailQueued: boolean } | null>(null)
   const [copied, setCopied]     = useState(false)
 
   const groupLabel = formGroups.find(fg => fg.group === group)?.groupLabel ?? group
@@ -57,7 +57,7 @@ export default function RecipientsPage() {
         setCreateError(data.error ?? 'Failed to generate link.')
         return
       }
-      setNewLink({ name: data.name, fillUrl: data.fillUrl })
+      setNewLink({ name: data.name, fillUrl: data.fillUrl, emailQueued: Boolean(data.emailQueued) })
       setCopied(false)
       setName('')
       setEmail('')
@@ -119,7 +119,9 @@ export default function RecipientsPage() {
         {newLink && (
           <div className="mt-2 rounded-xl bg-amber-50 border border-amber-100 px-4 py-3">
             <p className="text-[12px] font-semibold text-amber-800 mb-1">
-              Link for {newLink.name} — copy it now, it won&apos;t be shown again
+              {newLink.emailQueued
+                ? `Emailed to ${newLink.name} — you can also copy the link below`
+                : `Link for ${newLink.name} — copy it now, it won't be shown again`}
             </p>
             <div className="flex items-center gap-2">
               <code className="flex-1 text-[11px] text-amber-900 bg-white/60 px-2 py-1.5 rounded-lg truncate">

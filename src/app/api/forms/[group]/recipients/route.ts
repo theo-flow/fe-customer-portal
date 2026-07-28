@@ -6,6 +6,7 @@ import { ddbDocClient, TABLE } from '@/lib/aws'
 import { verifyJwtClaims } from '@/lib/token'
 import { generateToken, hashToken } from '@/lib/sign'
 import { tokenExpiryIso, type RecipientLink } from '@/lib/recipients'
+import { enqueueRecipientInviteEmail } from '@/lib/notify-queue'
 
 export async function GET(
   _req: NextRequest,
@@ -103,10 +104,57 @@ export async function POST(
   // req.nextUrl.origin is unreliable inside the OpenNext/Lambda runtime
   // (resolves to localhost:3000) -- same fix already applied for Sign links.
   const origin = process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin
+  const fillUrl = `${origin}/fill/${orgId}/${group}/${recipientId}/${rawToken}`
+
+  // Best-effort -- a failed enqueue must not fail recipient creation; the
+  // portal falls back to a manual "copy link" action either way (see
+  // src/app/api/sign/sessions/route.ts's identical locateQueued pattern).
+  let emailQueued = false
+  if (email) {
+    const { orgName, logoUrl } = await _lookupOrgBranding(db, orgId)
+    emailQueued = await enqueueRecipientInviteEmail({
+      correlationId: recipientId,
+      toEmail: email,
+      recipientName: name,
+      orgName,
+      logoUrl,
+      groupLabel,
+      fillUrl,
+    })
+  }
 
   return NextResponse.json({
     recipientId,
     name,
-    fillUrl: `${origin}/fill/${orgId}/${group}/${recipientId}/${rawToken}`,
+    fillUrl,
+    emailQueued,
   })
+}
+
+const DEFAULT_LOGO_URL = 'https://theoflow.bytheodore.co.za/email-logo.png'
+
+// Mirrors fn-15-cognito-custom-message's _org_logo_url exactly (same field
+// names, same public branding URL shape, same "always fall back, never
+// throw" contract) so every branded email on the platform -- Cognito's and
+// this one -- resolves an org's logo the same way.
+async function _lookupOrgBranding(
+  db: ReturnType<typeof ddbDocClient>, orgId: string,
+): Promise<{ orgName: string | null; logoUrl: string }> {
+  try {
+    const result = await db.send(new GetCommand({
+      TableName: TABLE,
+      Key: { PK: `ORG#${orgId}`, SK: 'PROFILE' },
+      ProjectionExpression: 'orgName, org_logo_group, org_logo_version',
+    }))
+    const orgName = (result.Item?.orgName as string | undefined) || null
+    const group   = result.Item?.org_logo_group as string | undefined
+    const version = result.Item?.org_logo_version as string | undefined
+    const logoUrl = group && version
+      ? `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://theoflow.bytheodore.co.za'}/api/public/branding/${orgId}/${group}/${version}`
+      : DEFAULT_LOGO_URL
+    return { orgName, logoUrl }
+  } catch (err) {
+    console.error('[recipients] Org branding lookup failed', { orgId, error: err })
+    return { orgName: null, logoUrl: DEFAULT_LOGO_URL }
+  }
 }
