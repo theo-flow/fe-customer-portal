@@ -96,7 +96,11 @@ export default function FieldInput({ field, value, error, onChange, flag, compac
       date:     'date',
       email:    'email',
       phone:    'tel',
-      number:   'number',
+      // "number" fields are identifiers (account numbers, reference
+      // numbers), not quantities -- type="number" puts a native +/-
+      // spinner on them, which reads as a counter rather than an ID. Use
+      // a numeric-keyboard text input instead, same treatment as sa_id.
+      number:   'text',
       currency: 'number',
       sa_id:    'text',
       text:     'text',
@@ -104,12 +108,13 @@ export default function FieldInput({ field, value, error, onChange, flag, compac
     input = (
       <input
         type={typeMap[field.field_type] ?? 'text'}
+        inputMode={field.field_type === 'number' ? 'numeric' : undefined}
         className={base}
         value={value}
         onChange={e => onChange(e.target.value)}
         placeholder={field.label}
-        maxLength={field.field_type === 'sa_id' ? 13 : undefined}
-        pattern={field.field_type === 'sa_id' ? '\\d{13}' : undefined}
+        maxLength={field.field_type === 'sa_id' ? 13 : field.field_type === 'number' ? 13 : undefined}
+        pattern={field.field_type === 'sa_id' ? '\\d{13}' : field.field_type === 'number' ? '\\d*' : undefined}
       />
     )
   }
