@@ -50,12 +50,14 @@ describe('resolveIdentity', () => {
 
   // ── Tier 2: schema field typed "email" ──────────────────────────────────
 
-  it('resolves via the schema field typed email', () => {
+  it('resolves via the schema field typed email, and picks up the name field too', () => {
+    // schemaFields includes a text field labeled "name" -- name resolution
+    // now runs independently of the email tier, so this fills in too.
     const result = resolveIdentity(
       { applicant_email: 'sipho@example.co.za', name: 'Sipho' },
       [textField('name'), emailField('applicant_email')],
     )
-    expect(result).toEqual({ email: 'sipho@example.co.za', name: null, source: 'schema_field' })
+    expect(result).toEqual({ email: 'sipho@example.co.za', name: 'Sipho', source: 'schema_field' })
   })
 
   it('falls through to regex when the email-typed field value is not email-shaped', () => {
@@ -89,6 +91,76 @@ describe('resolveIdentity', () => {
   it('skips non-string field values', () => {
     const result = resolveIdentity({ age: 42, active: true, notes: null, email_text: 'x@y.com' })
     expect(result?.email).toBe('x@y.com')
+  })
+
+  // ── Name enrichment: independent of which email tier fired ───────────────
+  // ── (the direct-share/non-tokenized-link bug found via live E2E testing) ─
+
+  function nameField(key = 'full_name', label = 'Full name'): SchemaField {
+    return { key, label, field_type: 'text', required: false, options: null }
+  }
+
+  it('direct-share regex fallback still picks up a schema name field', () => {
+    // This is the exact bug: an org-direct-share Harvest submission has no
+    // RecipientLink, no schema field typed "email" -- only a regex-matched
+    // email and a plain text "Full name" field. Name must not be discarded.
+    const result = resolveIdentity(
+      { full_name: 'Thabo Nkosi', comments: 'reach me at thabo@example.com' },
+      [nameField()],
+    )
+    expect(result).toEqual({ email: 'thabo@example.com', name: 'Thabo Nkosi', source: 'regex_fallback' })
+  })
+
+  it('schema_field tier also gets name enrichment', () => {
+    const result = resolveIdentity(
+      { applicant_email: 'jane@example.com', full_name: 'Jane Dlamini' },
+      [emailField('applicant_email'), nameField()],
+    )
+    expect(result?.name).toBe('Jane Dlamini')
+  })
+
+  it('recipient link name is not overwritten by the schema name field', () => {
+    const result = resolveIdentity(
+      { full_name: 'Wrong Name' },
+      [nameField()],
+      'Jane Dlamini',
+      'jane@example.com',
+    )
+    expect(result?.name).toBe('Jane Dlamini')
+  })
+
+  it('recipient link with a missing name still gets schema enrichment', () => {
+    const result = resolveIdentity(
+      { full_name: 'Jane Dlamini' },
+      [nameField()],
+      undefined,
+      'jane@example.com',
+    )
+    expect(result?.name).toBe('Jane Dlamini')
+  })
+
+  it('excludes a company/organisation name field from the name heuristic', () => {
+    const result = resolveIdentity(
+      { company_name: 'Acme Corp', comments: 'contact us at info@acme.co.za' },
+      [nameField('company_name', 'Company Name')],
+    )
+    expect(result?.name).toBeNull()
+  })
+
+  it('matches a textarea-typed name field too', () => {
+    const result = resolveIdentity(
+      { bio: 'Sipho Dlamini', comments: 'email me at sipho@example.com' },
+      [{ key: 'bio', label: 'Your name', field_type: 'textarea', required: false, options: null }],
+    )
+    expect(result?.name).toBe('Sipho Dlamini')
+  })
+
+  it('leaves name null when the matched name field value is blank', () => {
+    const result = resolveIdentity(
+      { full_name: '   ', comments: 'reach me at thabo@example.com' },
+      [nameField()],
+    )
+    expect(result?.name).toBeNull()
   })
 
   // ── Tier 4: nothing resolves ─────────────────────────────────────────────

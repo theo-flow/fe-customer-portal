@@ -1,13 +1,22 @@
 // TypeScript counterpart to shared/identity/resolve.py in daai-insure-platform
-// -- same 3-tier priority logic, kept in sync deliberately rather than
-// shared, since the portal and the backend Lambdas are separate codebases
-// that can't literally import each other's modules (same reasoning as
+// -- same priority logic, kept in sync deliberately rather than shared,
+// since the portal and the backend Lambdas are separate codebases that
+// can't literally import each other's modules (same reasoning as
 // src/lib/hub-events.ts mirroring shared/events/publisher.py).
 //
 // Resolves a submission's email/name from, in priority order: a tracked
 // RecipientLink's captured identity, a schema field typed "email", a regex
 // fallback over field values, or null -- "can't identify this submitter" is
 // a valid outcome, not an error.
+//
+// Name resolution is independent of which email tier fired (confirmed
+// necessary by a live end-to-end test, 2026-07-28: an org-direct-share
+// Harvest submission -- no RecipientLink at all -- had a real "Full name"
+// field that was silently discarded because name resolution used to only
+// ever come from the recipient-link tier). There is no dedicated name/
+// surname field type anywhere in the schema system, so this is a label-
+// keyword heuristic -- v1, confirm against real forms before relying on it
+// further.
 import type { Field as SchemaField } from '@/components/FieldInput'
 
 // Deliberately permissive -- this is a "does this look like an email" check
@@ -15,6 +24,13 @@ import type { Field as SchemaField } from '@/components/FieldInput'
 const EMAIL_PATTERN = String.raw`[\w.+-]+@[\w-]+\.[\w.-]+`
 const EMAIL_RE = new RegExp(EMAIL_PATTERN)
 const EMAIL_FULLMATCH_RE = new RegExp(`^${EMAIL_PATTERN}$`)
+
+// A text field whose label mentions "name" is a name candidate, unless
+// it's clearly a company/organisation name rather than a person's --
+// "Company Name"/"Business Name"/"Organisation Name" must not be mistaken
+// for who submitted the form.
+const NAME_LABEL_RE = /\bname\b/i
+const NAME_EXCLUDE_RE = /\b(company|business|organisation|organization|org)\b/i
 
 export interface ResolvedIdentity {
   email: string
@@ -26,8 +42,8 @@ export interface ResolvedIdentity {
  * fields: the submission's field-value bag -- Harvest's `values` or
  *   Decode's extracted `fields`, keyed by the schema field's `key`.
  * schemaFields: the FormSchema's fields, used to find which key (if any)
- *   is typed "email". Omit if unavailable -- falls straight through to
- *   the regex tier.
+ *   is typed "email", and (independently) which text field looks like a
+ *   name field. Omit if unavailable.
  * recipientName / recipientEmail: already-resolved RecipientLink identity,
  *   if the caller has one. Harvest submissions carry this denormalized on
  *   the item already (recipient_name/recipient_email) when the submitter
@@ -41,13 +57,17 @@ export function resolveIdentity(
   recipientName?: string | null,
   recipientEmail?: string | null,
 ): ResolvedIdentity | null {
-  const recipient = fromRecipientLink(recipientName, recipientEmail)
-  if (recipient) return recipient
+  const identity =
+    fromRecipientLink(recipientName, recipientEmail) ??
+    fromSchemaEmailField(fields, schemaFields) ??
+    fromRegexFallback(fields)
 
-  const schemaField = fromSchemaEmailField(fields, schemaFields)
-  if (schemaField) return schemaField
+  if (!identity) return null
 
-  return fromRegexFallback(fields)
+  if (identity.name === null) {
+    identity.name = fromSchemaNameField(fields, schemaFields)
+  }
+  return identity
 }
 
 function fromRecipientLink(name?: string | null, email?: string | null): ResolvedIdentity | null {
@@ -81,6 +101,20 @@ function fromRegexFallback(fields: Record<string, unknown>): ResolvedIdentity | 
     if (typeof value !== 'string') continue
     const match = value.match(EMAIL_RE)
     if (match) return { email: match[0], name: null, source: 'regex_fallback' }
+  }
+  return null
+}
+
+function fromSchemaNameField(
+  fields: Record<string, unknown>,
+  schemaFields?: SchemaField[] | null,
+): string | null {
+  if (!schemaFields || schemaFields.length === 0) return null
+  for (const field of schemaFields) {
+    if (field.field_type !== 'text' && field.field_type !== 'textarea') continue
+    if (!NAME_LABEL_RE.test(field.label) || NAME_EXCLUDE_RE.test(field.label)) continue
+    const value = fields[field.key]
+    if (typeof value === 'string' && value.trim()) return value.trim()
   }
   return null
 }
