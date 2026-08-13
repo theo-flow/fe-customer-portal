@@ -12,6 +12,21 @@ export const metadata: Metadata = {
   title: 'Features | theoflow',
   description: 'Multi-format document intake, field extraction with confidence scoring, real-time SA validators, digital signing, and a POPIA-compliant audit trail - theoflow capabilities in detail.',
   alternates: { canonical: '/features' },
+  openGraph: {
+    title: 'Features | theoflow',
+    description: 'Multi-format document intake, field extraction with confidence scoring, real-time SA validators, digital signing, and a POPIA-compliant audit trail - theoflow capabilities in detail.',
+    url: '/features',
+    siteName: 'theoflow',
+    images: [{ url: '/og-image.png', width: 1200, height: 630, alt: 'theoflow - Document Intelligence' }],
+    locale: 'en_ZA',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Features | theoflow',
+    description: 'Multi-format document intake, field extraction with confidence scoring, real-time SA validators, digital signing, and a POPIA-compliant audit trail - theoflow capabilities in detail.',
+    images: ['/og-image.png'],
+  },
 }
 
 const GROUPS = [

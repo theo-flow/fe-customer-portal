@@ -10,6 +10,21 @@ export const metadata: Metadata = {
   title: 'About | theoflow',
   description: 'theoflow is a digital forms intelligence platform built to eliminate manual document capture for South African organisations, in any sector.',
   alternates: { canonical: '/about' },
+  openGraph: {
+    title: 'About | theoflow',
+    description: 'theoflow is a digital forms intelligence platform built to eliminate manual document capture for South African organisations, in any sector.',
+    url: '/about',
+    siteName: 'theoflow',
+    images: [{ url: '/og-image.png', width: 1200, height: 630, alt: 'theoflow - Document Intelligence' }],
+    locale: 'en_ZA',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'About | theoflow',
+    description: 'theoflow is a digital forms intelligence platform built to eliminate manual document capture for South African organisations, in any sector.',
+    images: ['/og-image.png'],
+  },
 }
 
 export default function AboutPage() {

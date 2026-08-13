@@ -12,6 +12,21 @@ export const metadata: Metadata = {
   title: 'Product | theoflow',
   description: 'The theoflow product suite: Forge, Channel, Harvest, Decode, Sign and Print - modular tools that turn paper forms into structured digital workflows.',
   alternates: { canonical: '/product' },
+  openGraph: {
+    title: 'Product | theoflow',
+    description: 'The theoflow product suite: Forge, Channel, Harvest, Decode, Sign and Print - modular tools that turn paper forms into structured digital workflows.',
+    url: '/product',
+    siteName: 'theoflow',
+    images: [{ url: '/og-image.png', width: 1200, height: 630, alt: 'theoflow - Document Intelligence' }],
+    locale: 'en_ZA',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Product | theoflow',
+    description: 'The theoflow product suite: Forge, Channel, Harvest, Decode, Sign and Print - modular tools that turn paper forms into structured digital workflows.',
+    images: ['/og-image.png'],
+  },
 }
 
 const PRODUCTS = [
