@@ -45,6 +45,14 @@ const PRODUCT_META: ProductMeta[] = [
   },
 ]
 
+// Gate-Keep is a baseline capability every org has — always shown,
+// not filtered by subscribedProducts like the tiles above.
+const GATE_KEEP_META: ProductMeta = {
+  key: 'gate-keep', name: 'Gate-Keep', tagline: 'File storage',
+  description: 'Secure cloud file storage for your organisation.',
+  color: '#10B981', built: true, href: '/gate-keep', actionLabel: 'Manage files',
+}
+
 // ── Decode stats (only fetched when decode is subscribed) ─────────────────────
 
 interface Summary { total: number; processing: number; complete: number; failed: number }
@@ -234,7 +242,7 @@ export default function DashboardPage() {
       .catch(() => {})
   }, [hasDecodeAccess])
 
-  const myProducts = PRODUCT_META.filter(p => subscribedProducts.includes(p.key))
+  const myProducts = [...PRODUCT_META.filter(p => subscribedProducts.includes(p.key)), GATE_KEEP_META]
 
   if (loading) {
     return (

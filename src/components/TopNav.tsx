@@ -12,6 +12,7 @@ interface NavItem { href: string; label: string; built: boolean }
 function navItemsFor(products: string[]): NavItem[] {
   const items: NavItem[] = [
     { href: '/dashboard', label: 'Home', built: true },
+    { href: '/gate-keep', label: 'Gate-Keep', built: true }, // baseline capability — every org has it
   ]
   if (products.includes('forge'))   items.push({ href: '/templates',   label: 'Templates',   built: true })
   if (products.includes('channel')) items.push({ href: '/forms',       label: 'Forms',       built: true })
@@ -33,6 +34,7 @@ const NAV_ICONS: Record<string, JSX.Element> = {
   '/upload':     <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/>,
   '/clarifications': <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z"/>,
   '/sign':       <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M3 20.25h16.5"/>,
+  '/gate-keep':  <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/>,
 }
 
 export function TopNav() {
