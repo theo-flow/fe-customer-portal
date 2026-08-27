@@ -50,7 +50,7 @@ function uploadOne(entry: FileEntry, onProgress: (pct: number) => void): Promise
       const msg = res.status === 403 ? 'Gate-Keep subscription required.'
                 : res.status === 415 ? 'Unsupported file type.'
                 : res.status === 413 ? `File too large. Max ${MAX_MB} MB.`
-                : 'Something went wrong — please try again.'
+                : 'Something went wrong - please try again.'
       throw new Error(msg)
     }
     const { uploadUrl } = await res.json() as { uploadUrl: string; key: string }
@@ -107,7 +107,7 @@ export default function GateKeepPage() {
       } catch (err) {
         setEntry(entry.id, {
           phase: 'error',
-          error: err instanceof Error ? err.message : 'Upload failed — please try again.',
+          error: err instanceof Error ? err.message : 'Upload failed - please try again.',
         })
       }
     }))
