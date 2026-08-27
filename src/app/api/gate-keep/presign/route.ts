@@ -3,8 +3,9 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { randomUUID } from 'crypto'
-import { s3Client, BUCKET } from '@/lib/aws'
+import { BUCKET } from '@/lib/aws'
 import { verifyJwtClaims } from '@/lib/token'
+import { getScopedS3Client } from '@/lib/gate-keep-credentials'
 
 const ALLOWED_CONTENT_TYPES = [
   'application/pdf',
@@ -33,7 +34,8 @@ export async function POST(req: NextRequest) {
 
   const claims = await verifyJwtClaims(token)
   if (!claims) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const orgId = claims['custom:org_id'] ?? claims.sub
+  const orgId  = claims['custom:org_id'] ?? claims.sub
+  const userId = claims.sub
 
   // Gate-Keep is a baseline capability available to every org — no separate
   // subscribed_products entitlement check, unlike Forge/Decode/Sign.
@@ -60,19 +62,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'File too large' }, { status: 413 })
   }
 
-  const key = `gate-keep/${orgId}/${randomUUID()}-${sanitizeFilename(filename)}`
+  const key = `gate-keep/${orgId}/${userId}/${randomUUID()}-${sanitizeFilename(filename)}`
 
   let uploadUrl: string
   try {
+    const scopedS3 = await getScopedS3Client(token)
     uploadUrl = await getSignedUrl(
-      s3Client(),
+      scopedS3,
       new PutObjectCommand({
         Bucket: BUCKET, Key: key, ContentType: contentType,
       }),
       { expiresIn: 600 }
     )
   } catch (err) {
-    console.error('[gate-keep/presign] Failed to generate presigned URL', { orgId, key, error: err })
+    console.error('[gate-keep/presign] Failed to generate presigned URL', { orgId, userId, key, error: err })
     return NextResponse.json({ error: 'Failed to prepare upload' }, { status: 500 })
   }
 

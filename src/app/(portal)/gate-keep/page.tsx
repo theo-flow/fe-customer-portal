@@ -1,5 +1,5 @@
 'use client'
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { useOrg } from '@/lib/org-context'
 
 const ACCEPTED = [
@@ -27,6 +27,13 @@ interface FileEntry {
   phase:    Phase
   progress: number
   error:    string
+}
+
+interface StoredFile {
+  key:          string
+  filename:     string
+  size:         number
+  lastModified: string | null
 }
 
 function validate(f: File): string {
@@ -79,6 +86,41 @@ export default function GateKeepPage() {
   const [drag, setDrag]       = useState(false)
   const inputRef              = useRef<HTMLInputElement>(null)
 
+  const [storedFiles, setStoredFiles]   = useState<StoredFile[]>([])
+  const [filesLoading, setFilesLoading] = useState(true)
+  const [downloadingKey, setDownloadingKey] = useState<string | null>(null)
+
+  const refetchFiles = useCallback(async () => {
+    try {
+      const res = await fetch('/api/gate-keep/files')
+      if (res.ok) {
+        const { files } = await res.json() as { files: StoredFile[] }
+        setStoredFiles(files)
+      }
+    } catch {
+      // transient -- the list just stays as it was
+    } finally {
+      setFilesLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { refetchFiles() }, [refetchFiles])
+
+  async function handleDownload(key: string) {
+    setDownloadingKey(key)
+    try {
+      const res = await fetch(`/api/gate-keep/download?key=${encodeURIComponent(key)}`)
+      if (!res.ok) throw new Error()
+      const { downloadUrl } = await res.json() as { downloadUrl: string }
+      window.location.href = downloadUrl
+    } catch {
+      // no dedicated error UI for this yet -- a failed download is rare and
+      // the user can just retry the click
+    } finally {
+      setDownloadingKey(null)
+    }
+  }
+
   function setEntry(id: string, patch: Partial<FileEntry>) {
     setEntries(prev => prev.map(e => e.id === id ? { ...e, ...patch } : e))
   }
@@ -111,6 +153,7 @@ export default function GateKeepPage() {
         })
       }
     }))
+    refetchFiles()
   }
 
   function handleRemove(id: string) {
@@ -232,6 +275,50 @@ export default function GateKeepPage() {
           {doneCount} file{doneCount === 1 ? '' : 's'} uploaded successfully.
         </p>
       )}
+
+      {/* Stored files */}
+      <div className="mt-10">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-400 mb-3">
+          Your stored files
+        </p>
+
+        {filesLoading ? (
+          <div className="space-y-2">
+            {[1, 2].map(i => (
+              <div key={i} className="h-[52px] rounded-xl border border-black/[0.06] animate-pulse bg-gray-50"/>
+            ))}
+          </div>
+        ) : storedFiles.length === 0 ? (
+          <p className="text-[13px] text-gray-400">No files stored yet.</p>
+        ) : (
+          <div className="space-y-2">
+            {storedFiles.map(f => (
+              <div key={f.key}
+                   className="flex items-center gap-3 px-4 py-3 border border-black/[0.08] rounded-xl">
+                <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24"
+                     stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round"
+                        d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0
+                           0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621
+                           0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0
+                           1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/>
+                </svg>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[13px] font-medium text-black truncate">{f.filename}</p>
+                  <p className="text-[11px] text-gray-400">{(f.size / 1024 / 1024).toFixed(2)} MB</p>
+                </div>
+                <button
+                  onClick={() => handleDownload(f.key)}
+                  disabled={downloadingKey === f.key}
+                  className="text-[11px] font-semibold px-3 py-1.5 rounded-full border border-black/[0.12]
+                             hover:border-black/30 transition-colors disabled:opacity-50 whitespace-nowrap">
+                  {downloadingKey === f.key ? 'Preparing…' : 'Download'}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
