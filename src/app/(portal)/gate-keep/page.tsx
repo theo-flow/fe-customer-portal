@@ -36,6 +36,11 @@ interface StoredFile {
   lastModified: string | null
 }
 
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
 function validate(f: File): string {
   if (f.size === 0)             return 'File appears empty.'
   if (!ACCEPTED.includes(f.type)) return 'Unsupported file type.'
@@ -239,7 +244,7 @@ export default function GateKeepPage() {
                          style={{ width: `${entry.progress}%` }}/>
                   </div>
                 ) : (
-                  <p className="text-[11px] text-gray-400">{(entry.file.size / 1024 / 1024).toFixed(1)} MB</p>
+                  <p className="text-[11px] text-gray-400">{formatFileSize(entry.file.size)}</p>
                 )}
               </div>
               {entry.phase === 'done' && (
@@ -305,7 +310,7 @@ export default function GateKeepPage() {
                 </svg>
                 <div className="flex-1 min-w-0">
                   <p className="text-[13px] font-medium text-black truncate">{f.filename}</p>
-                  <p className="text-[11px] text-gray-400">{(f.size / 1024 / 1024).toFixed(2)} MB</p>
+                  <p className="text-[11px] text-gray-400">{formatFileSize(f.size)}</p>
                 </div>
                 <button
                   onClick={() => handleDownload(f.key)}
