@@ -13,6 +13,8 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
 
 const FIELD_TYPE_LABELS: Record<DetectedField['field_type'], string> = {
   signature: 'Sign here',
+  initials: 'Initials',
+  name: 'Printed name',
   date: 'Date',
   place: 'Place',
 }

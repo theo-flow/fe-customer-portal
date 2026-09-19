@@ -138,11 +138,11 @@ export async function PUT(req: NextRequest, { params }: Params) {
             TableName: TABLE,
             Key: pointerKey(orgId, formId),
             UpdateExpression:
-              'SET current_version = :next, #n = :name, roles = :roles, field_count = :fc, valid = :valid, updated_at = :now, updated_by = :by',
+              'SET current_version = :next, #n = :name, roles = :roles, anchors = :anchors, field_count = :fc, valid = :valid, updated_at = :now, updated_by = :by',
             ConditionExpression: 'current_version = :base',
             ExpressionAttributeNames: { '#n': 'name' },
             ExpressionAttributeValues: {
-              ':next': next, ':base': body.baseVersion, ':name': layout.name, ':roles': layout.roles,
+              ':next': next, ':base': body.baseVersion, ':name': layout.name, ':roles': layout.roles, ':anchors': layout.anchors,
               ':fc': layout.fields.length, ':valid': checked.valid, ':now': now, ':by': auth.claims.email,
             },
           },

@@ -94,7 +94,7 @@ export async function POST(req: NextRequest, { params }: { params: { orgId: stri
               form_id: formId, org_id: orgId, form_status: 'ACTIVE',
               name: layout.name, current_version: 1,
               page_count: layout.page_count, page_width: layout.page_width, page_height: layout.page_height,
-              roles: layout.roles, field_count: 0, valid: false,
+              roles: layout.roles, anchors: [], field_count: 0, valid: false,
               created_at: now, updated_at: now, updated_by: auth.claims.email,
             },
             ConditionExpression: 'attribute_not_exists(PK)',

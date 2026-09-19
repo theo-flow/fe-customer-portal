@@ -37,12 +37,14 @@ export interface Signer {
 // Populated by fn-13's document_locator.py (locate_and_notify) -- absent/
 // empty until that async stage completes. Mirrors the shape documented in
 // shared/models/sign_session.py's module docstring.
-export type DetectedFieldType   = 'signature' | 'date' | 'place'
-export type DetectedFieldSource = 'textract_llm_confirmed' | 'llm_vision_only' | 'fallback_auto_layout'
+export type DetectedFieldType   = 'signature' | 'initials' | 'name' | 'date' | 'place'
+export type DetectedFieldSource = 'textract_llm_confirmed' | 'llm_vision_only' | 'fallback_auto_layout' | 'org_configured' | 'org_added'
 
 export interface DetectedField {
+  field_id?:     string
   field_type:   DetectedFieldType
-  signer_order: number
+  signer_order: number | null
+  signer_role?: string | null
   page:         number
   x:            number
   y:            number
@@ -50,10 +52,18 @@ export interface DetectedField {
   height:       number
   source:       DetectedFieldSource
   confidence:   number
+  instruction?: string
+  required?:    boolean
+  confirmed_by_org?: boolean
+  date_format?: 'iso' | 'long' | 'day_month' | 'year_2' | 'year_4'
 }
 
 export interface WorkingDocument {
-  detected_fields?: DetectedField[]
+  detected_fields?:  DetectedField[]
+  detection_status?: 'DONE'
+  detected_at?:      string
+  // Set when the session was created from a saved Sign form.
+  form?:             { form_id: string; version: number; name: string }
 }
 
 export interface SignSession {

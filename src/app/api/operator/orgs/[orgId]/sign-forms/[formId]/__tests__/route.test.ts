@@ -153,7 +153,7 @@ describe('operator sign-form (one form)', () => {
       expect(put.Put.ConditionExpression).toBe('attribute_not_exists(PK)')
       expect(update.Update.Key).toEqual({ PK: 'ORG#org-abc123', SK: `SIGNFORM#${FORM_ID}` })
       expect(update.Update.ConditionExpression).toBe('current_version = :base')
-      expect(update.Update.ExpressionAttributeValues).toMatchObject({ ':next': 3, ':base': 2, ':fc': 2, ':valid': true })
+      expect(update.Update.ExpressionAttributeValues).toMatchObject({ ':next': 3, ':base': 2, ':fc': 2, ':valid': true, ':anchors': [] })
       // "name" is a DynamoDB reserved word, so it must be aliased
       expect(update.Update.ExpressionAttributeNames).toEqual({ '#n': 'name' })
     })
@@ -177,6 +177,20 @@ describe('operator sign-form (one form)', () => {
     it('returns 409 when the pointer moved between the read and the write', async () => {
       ddb({ txError: Object.assign(new Error('x'), { name: 'TransactionCanceledException' }) })
       expect((await PUT(req({ baseVersion: 2, layout: layout() }), params)).status).toBe(409)
+    })
+
+    it('saves recognition phrases on the version and on the pointer the customer screens read', async () => {
+      const withAnchors = layout({ anchors: [{ page: 1, text: 'AMENDMENT OF AGREEMENT' }, { page: 2, text: 'In presence of the undersigned witnesses' }] })
+      const res = await PUT(req({ baseVersion: 2, layout: withAnchors }), params)
+      expect(res.status).toBe(200)
+      const tx = mockDdbSend.mock.calls.map(([c]) => c).find(c => c.__type === 'Tx')
+      expect(tx.input.TransactItems[0].Put.Item.anchors).toHaveLength(2)
+      expect(tx.input.TransactItems[1].Update.ExpressionAttributeValues[':anchors']).toEqual(withAnchors.anchors)
+    })
+
+    it('rejects a recognition phrase that is too short or on a page that does not exist', async () => {
+      expect((await PUT(req({ baseVersion: 2, layout: layout({ anchors: [{ page: 1, text: 'Hi' }] }) }), params)).status).toBe(400)
+      expect((await PUT(req({ baseVersion: 2, layout: layout({ anchors: [{ page: 9, text: 'AMENDMENT OF AGREEMENT' }] }) }), params)).status).toBe(400)
     })
 
     it('cleans instruction text on the way in', async () => {
