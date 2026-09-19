@@ -31,6 +31,7 @@ export interface Signer {
   signature_data:    string | null
   place_data:        string | null
   email_sent:        boolean
+  expired_at?:       string | null
 }
 
 // Populated by fn-13's document_locator.py (locate_and_notify) -- absent/
@@ -63,7 +64,7 @@ export interface SignSession {
   status:              SessionStatus
   created_at:          string
   updated_at:          string
-  completed_document?: { s3_key: string; sealed_at: string } | null
+  completed_document?: { s3_key: string; sealed_at: string; sha256?: string } | null
   metadata?:           Record<string, unknown> | null
 }
 

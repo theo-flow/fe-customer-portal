@@ -17,6 +17,7 @@ interface SessionSummary {
   updatedAt:    string
   submissionId: string | null
   completedKey: string | null
+  completedSha256: string | null
   signers:      SessionSigner[]
 }
 
@@ -40,6 +41,53 @@ function StatusPill({ status }: { status: SessionSummary['status'] }) {
 function SessionRow({ session }: { session: SessionSummary }) {
   const signedCount = session.signers.filter(s => s.status === 'SIGNED').length
   const [opening, setOpening] = useState(false)
+  const [busy, setBusy]       = useState<string | null>(null)
+  const [notice, setNotice]   = useState<string | null>(null)
+
+  const isOpen = session.status === 'PENDING' || session.status === 'IN_PROGRESS' || session.status === 'EXPIRED'
+
+  async function cancelSession() {
+    if (!window.confirm('Cancel this signing session? Signers will no longer be able to sign.')) return
+    setBusy('cancel')
+    setNotice(null)
+    try {
+      const res = await fetch(`/api/sign/sessions/${session.sessionId}/cancel`, { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      setNotice(res.ok ? 'Session cancelled.' : (data.error ?? 'Could not cancel this session.'))
+    } catch {
+      setNotice('Could not cancel this session. Please try again.')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function resendLink(signer: SessionSigner) {
+    setBusy(signer.signerId)
+    setNotice(null)
+    try {
+      const res = await fetch(`/api/sign/sessions/${session.sessionId}/resend`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ signerId: signer.signerId }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setNotice(data.error ?? 'Could not send a new link.')
+        return
+      }
+      // Copy the new link too, so the org can pass it on by hand if the email is slow.
+      await navigator.clipboard.writeText(data.signUrl).catch(() => {})
+      setNotice(
+        data.emailQueued
+          ? `New link emailed to ${signer.email} and copied to your clipboard.`
+          : `The email could not be queued. The new link is copied to your clipboard, send it to ${signer.email} directly.`,
+      )
+    } catch {
+      setNotice('Could not send a new link. Please try again.')
+    } finally {
+      setBusy(null)
+    }
+  }
 
   async function viewDocument() {
     setOpening(true)
@@ -79,12 +127,31 @@ function SessionRow({ session }: { session: SessionSummary }) {
         <div className="flex flex-wrap gap-x-4 gap-y-1">
           {session.signers.map(s => (
             <span key={s.signerId} className="text-[12px] text-gray-500">
-              {s.name} <span className={s.status === 'SIGNED' ? 'text-green-600' : 'text-gray-300'}>
-                {s.status === 'SIGNED' ? '✓' : '·'}
+              {s.name}{' '}
+              <span className={s.status === 'SIGNED' ? 'text-green-600' : s.status === 'EXPIRED' ? 'text-amber-600' : 'text-gray-300'}>
+                {s.status === 'SIGNED' ? '✓' : s.status === 'EXPIRED' ? 'link expired' : '·'}
               </span>
+              {isOpen && (s.status === 'PENDING' || s.status === 'EXPIRED') && (
+                <button
+                  type="button"
+                  onClick={() => resendLink(s)}
+                  disabled={busy !== null}
+                  className="ml-2 text-[11px] font-medium text-indigo-500 hover:text-indigo-700 transition-colors disabled:opacity-50">
+                  {busy === s.signerId ? 'Sending…' : 'Send new link'}
+                </button>
+              )}
             </span>
           ))}
         </div>
+        {isOpen && (
+          <button
+            type="button"
+            onClick={cancelSession}
+            disabled={busy !== null}
+            className="text-[12px] font-medium text-red-500 hover:text-red-700 transition-colors disabled:opacity-50 whitespace-nowrap">
+            {busy === 'cancel' ? 'Cancelling…' : 'Cancel'}
+          </button>
+        )}
         <button
           type="button"
           onClick={viewDocument}
@@ -93,6 +160,12 @@ function SessionRow({ session }: { session: SessionSummary }) {
           {opening ? 'Opening…' : session.completedKey ? 'View signed document' : 'View document'}
         </button>
       </div>
+      {notice && <p className="mt-2 text-[12px] text-gray-500" role="status">{notice}</p>}
+      {session.completedSha256 && (
+        <p className="mt-2 text-[11px] text-gray-400" title={session.completedSha256}>
+          Signed file fingerprint (SHA-256): {session.completedSha256.slice(0, 16)}…
+        </p>
+      )}
     </div>
   )
 }

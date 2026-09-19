@@ -8,6 +8,7 @@ import { ddbDocClient, s3Client, sqsClient, TABLE, BUCKET } from '@/lib/aws'
 import { verifyJwtClaims } from '@/lib/token'
 import { validateEmail } from '@/lib/validators'
 import { generateToken, hashToken, tokenExpiryIso, type SignSession, type Signer } from '@/lib/sign'
+import { hasPdfHeader, lookupOrgName } from '@/lib/sign-server'
 
 const SQS_SIGN_URL = process.env.SQS_SIGN_URL
 
@@ -56,6 +57,7 @@ export async function GET(req: NextRequest) {
         updatedAt:     session.updated_at,
         submissionId:  (session.metadata as { submission_id?: string } | null)?.submission_id ?? null,
         completedKey:  session.completed_document?.s3_key ?? null,
+        completedSha256: session.completed_document?.sha256 ?? null,
         signers: session.signers.map(s => ({
           signerId: s.signer_id, name: s.name, email: s.email, status: s.status,
         })),
@@ -111,7 +113,7 @@ export async function POST(req: NextRequest) {
   let sessionId: string
   let sourceKey: string
   let sourceSha256: string
-  let metadata: Record<string, unknown> | null = null
+  let metadata: Record<string, unknown> = { created_by_email: claims.email }
 
   try {
     if (sourceDocument) {
@@ -123,6 +125,12 @@ export async function POST(req: NextRequest) {
         .catch(() => null)
       if (!head) {
         return NextResponse.json({ error: 'Uploaded document not found — upload may have failed' }, { status: 400 })
+      }
+      const firstBytes = await s3.send(new GetObjectCommand({
+        Bucket: BUCKET, Key: sourceDocument.s3Key, Range: 'bytes=0-4',
+      })).then(r => r.Body!.transformToByteArray()).catch(() => null)
+      if (!firstBytes || !hasPdfHeader(firstBytes)) {
+        return NextResponse.json({ error: 'Only PDF documents can be sent for signature' }, { status: 400 })
       }
       sessionId    = sourceDocument.sessionId
       sourceKey    = sourceDocument.s3Key
@@ -143,13 +151,16 @@ export async function POST(req: NextRequest) {
 
       const original = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: doc.Item.s3Key as string }))
       const bytes = await original.Body!.transformToByteArray()
+      if (!hasPdfHeader(bytes)) {
+        return NextResponse.json({ error: 'Only PDF documents can be sent for signature. Upload the original as a PDF first.' }, { status: 400 })
+      }
       sourceSha256 = createHash('sha256').update(bytes).digest('hex')
 
       await s3.send(new PutObjectCommand({
         Bucket: BUCKET, Key: sourceKey, Body: bytes, ContentType: 'application/pdf',
       }))
 
-      metadata = { submission_id: submissionId }
+      metadata = { ...metadata, submission_id: submissionId }
     }
   } catch (err) {
     console.error('[sign/sessions] Failed to resolve source document', { orgId, submissionId, error: err })
@@ -189,7 +200,7 @@ export async function POST(req: NextRequest) {
     status:           'PENDING',
     created_at:        now,
     updated_at:        now,
-    ...(metadata ? { metadata } : {}),
+    metadata,
   }
 
   try {
@@ -237,7 +248,7 @@ export async function POST(req: NextRequest) {
   let locateQueued = false
   if (SQS_SIGN_URL) {
     try {
-      const requestedBy = await _lookupOrgName(db, orgId)
+      const requestedBy = await lookupOrgName(orgId)
       await sqsClient().send(new SendMessageCommand({
         QueueUrl: SQS_SIGN_URL,
         MessageBody: JSON.stringify({
@@ -260,18 +271,4 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({ sessionId, signers: signerLinks, locateQueued }, { status: 201 })
-}
-
-async function _lookupOrgName(db: ReturnType<typeof ddbDocClient>, orgId: string): Promise<string | null> {
-  try {
-    const result = await db.send(new GetCommand({
-      TableName: TABLE,
-      Key: { PK: `ORG#${orgId}`, SK: 'PROFILE' },
-      ProjectionExpression: 'orgName',
-    }))
-    return (result.Item?.orgName as string | undefined) || null
-  } catch (err) {
-    console.error('[sign/sessions] Org name lookup failed', { orgId, error: err })
-    return null
-  }
 }
