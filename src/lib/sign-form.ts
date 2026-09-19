@@ -241,6 +241,58 @@ export function fieldsByPage(fields: FormField[], pageCount: number): { page: nu
   })
 }
 
+// ---- suggested boxes -----------------------------------------------------------
+
+// How much two boxes must overlap (as a share of the smaller one) before a
+// suggestion is treated as a duplicate of a box that is already there.
+const DUPLICATE_OVERLAP = 0.3
+
+function overlapShare(a: FormField, b: FormField): number {
+  const w = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)
+  const h = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y)
+  if (w <= 0 || h <= 0) return 0
+  return (w * h) / Math.min(a.width * a.height, b.width * b.height)
+}
+
+// Adds the boxes found by detection to the editor. They are only suggestions,
+// so nothing the operator already placed is touched: a suggestion that sits on
+// an existing box (or on another suggestion) is skipped, one with an unknown
+// role goes to the first role, and one that is not on a real page is dropped.
+// Dates are added written out in full ("19 September 2026"); the operator sets
+// the real format per box, as the form prints it.
+export function mergeSuggestions(
+  existing: FormField[], suggested: unknown, roles: string[], pageCount: number,
+): { fields: FormField[]; added: number; skipped: number } {
+  const list = Array.isArray(suggested) ? suggested : []
+  const out = [...existing]
+  let added = 0
+  let skipped = 0
+  for (const raw of list) {
+    const s = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+    const type = s.field_type as FieldType
+    const usable = (FIELD_TYPES as readonly string[]).includes(type) && !isReadType(type)
+      && Number.isInteger(s.page) && (s.page as number) >= 1 && (s.page as number) <= pageCount
+      && [s.x, s.y, s.width, s.height].every(n => typeof n === 'number' && Number.isFinite(n))
+    if (!usable || roles.length === 0 || out.length >= MAX_FIELDS) { skipped++; continue }
+
+    const role = roles.includes(s.role as string) ? (s.role as string) : roles[0]
+    const box: FormField = {
+      field_id:    newFieldId(),
+      field_type:  type,
+      role,
+      page:        s.page as number,
+      ...clampBox({ x: s.x as number, y: s.y as number, width: s.width as number, height: s.height as number }),
+      instruction: cleanInstruction(s.instruction, type),
+      required:    true,
+      ...(type === 'date' ? { date_format: 'long' as DateFormat } : {}),
+    }
+    if (out.some(f => f.page === box.page && overlapShare(f, box) > DUPLICATE_OVERLAP)) { skipped++; continue }
+    out.push(box)
+    added++
+  }
+  return { fields: out, added, skipped }
+}
+
 // ---- validation -------------------------------------------------------------
 
 export type LayoutResult =

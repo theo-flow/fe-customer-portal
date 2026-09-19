@@ -4,7 +4,7 @@ import { Document, Page, pdfjs } from 'react-pdf'
 import {
   FIELD_TYPES, FIELD_TYPE_LABELS, DATE_FORMATS, DATE_FORMAT_LABELS, DEFAULT_INSTRUCTIONS,
   MAX_INSTRUCTION_CHARS, MAX_ROLES, MAX_ANCHORS, MAX_ANCHOR_CHARS, isReadType,
-  clampBox, newField, repeatOnAllPages, removeRole, renameRole, describeField, fieldsByPage, validateLayout,
+  clampBox, newField, repeatOnAllPages, removeRole, renameRole, describeField, fieldsByPage, validateLayout, mergeSuggestions,
   type FieldType, type DateFormat, type FormField, type FormAnchor, type RoleDefault,
 } from '@/lib/sign-form'
 import { mergeAnchors, suggestAnchors } from '@/lib/pdf-text'
@@ -49,7 +49,14 @@ interface Notice { kind: 'ok' | 'error'; text: string; warnings?: string[] }
 const inputCls = 'w-full rounded-lg border border-black/[0.12] px-3 py-2 text-[13px] focus:outline-none focus:border-black/40'
 const labelCls = 'block text-[11px] font-medium text-gray-500 mb-1'
 
-export default function SignFormEditor({ orgId, formId, initial }: { orgId: string; formId: string; initial: EditorInitial }) {
+// Detection usually takes 20 to 60 seconds; give up waiting a little after the
+// server itself would treat the request as lost.
+const SUGGEST_POLL_MS = 3000
+const SUGGEST_MAX_POLLS = 100
+
+export default function SignFormEditor({ orgId, formId, initial, pollMs = SUGGEST_POLL_MS }: {
+  orgId: string; formId: string; initial: EditorInitial; pollMs?: number
+}) {
   const { page_count: pageCount, page_width: pageWidth, page_height: pageHeight } = initial.layout
 
   const [name, setName]         = useState(initial.layout.name)
@@ -57,6 +64,8 @@ export default function SignFormEditor({ orgId, formId, initial }: { orgId: stri
   const [fields, setFields]     = useState<FormField[]>(initial.layout.fields)
   const [anchors, setAnchors]   = useState<FormAnchor[]>(initial.layout.anchors ?? [])
   const [suggesting, setSuggesting] = useState(false)
+  const [boxSuggesting, setBoxSuggesting] = useState(false)
+  const mounted = useRef(true)
   const [roleDefaults, setRoleDefaults] = useState<RoleDefault[]>(initial.layout.role_defaults ?? [])
   const [version, setVersion]   = useState(initial.version)
   const [valid, setValid]       = useState(initial.valid)
@@ -75,6 +84,8 @@ export default function SignFormEditor({ orgId, formId, initial }: { orgId: stri
   const drag = useRef<Drag | null>(null)
   const selected = fields.find(f => f.field_id === selectedId) ?? null
   const colorOf = (role: string) => ROLE_COLORS[Math.max(0, roles.indexOf(role)) % ROLE_COLORS.length]
+
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
 
   // Keep the "add a box for" role valid as roles change.
   useEffect(() => {
@@ -234,6 +245,52 @@ export default function SignFormEditor({ orgId, formId, initial }: { orgId: stri
       setNotice({ kind: 'error', text: 'The sample could not be read. Add phrases by hand.' })
     } finally {
       setSuggesting(false)
+    }
+  }
+
+  // ---- suggested boxes ----
+  // Detection runs on the server against the sample (a minute at most). The
+  // boxes it finds are added like any others, unsaved, for the operator to
+  // check: nothing is applied to the saved form until they press Save.
+  async function suggestBoxes() {
+    setBoxSuggesting(true)
+    setNotice(null)
+    const url = `/api/operator/orgs/${orgId}/sign-forms/${formId}/suggest`
+    const fail = (text: string) => { if (mounted.current) setNotice({ kind: 'error', text }) }
+    try {
+      const start = await fetch(url, { method: 'POST' })
+      const started = await start.json().catch(() => ({}))
+      if (!start.ok) { fail(started.error ?? 'Could not start the suggestion.'); return }
+
+      for (let i = 0; i < SUGGEST_MAX_POLLS; i++) {
+        await new Promise(resolve => setTimeout(resolve, pollMs))
+        if (!mounted.current) return
+        const res = await fetch(url)
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) { fail(data.error ?? 'Could not read the suggestion.'); return }
+        if (data.requestId !== started.requestId) { fail('Another suggestion was started. Please try again.'); return }
+        if (data.status === 'FAILED') { fail('The suggestion did not finish. Please try again.'); return }
+        if (data.status !== 'DONE') continue
+
+        const merged = mergeSuggestions(fields, data.fields, roles, pageCount)
+        if (merged.added === 0) {
+          setNotice({ kind: 'error', text: data.fields?.length ? 'Every suggested box is already covered by a box you placed.' : 'No boxes could be found on this sample. Place them by hand.' })
+          return
+        }
+        setFields(merged.fields)
+        setDirty(true)
+        setNotice({
+          kind: 'ok',
+          text: `Added ${merged.added} suggested box${merged.added === 1 ? '' : 'es'}. Check each one before saving: move it, change who it is for, set how a date is written, or delete it.`,
+          warnings: merged.skipped > 0 ? [`${merged.skipped} suggestion${merged.skipped === 1 ? ' was' : 's were'} skipped because a box was already there.`] : undefined,
+        })
+        return
+      }
+      fail('The suggestion is taking too long. Please try again in a minute.')
+    } catch {
+      fail('Could not get suggestions. Please try again.')
+    } finally {
+      if (mounted.current) setBoxSuggesting(false)
     }
   }
 
@@ -470,6 +527,13 @@ export default function SignFormEditor({ orgId, formId, initial }: { orgId: stri
                     placing ? 'bg-indigo-600 text-white' : 'border border-black/[0.15] text-black hover:border-black/40'} disabled:opacity-40`}>
             {placing ? 'Click on the page…' : 'Place on the page'}
           </button>
+          <button type="button" onClick={suggestBoxes} disabled={boxSuggesting || roles.length === 0}
+                  className="w-full mt-2 rounded-lg text-[13px] font-semibold py-2.5 border border-black/[0.15] text-black hover:border-black/40 transition-colors disabled:opacity-40">
+            {boxSuggesting ? 'Looking at the sample…' : 'Suggest boxes from the sample'}
+          </button>
+          <p className="mt-2 text-[11px] text-gray-400">
+            Finds signature, initials, date and place boxes for you to check. It can take a minute, and only adds boxes: nothing you placed is changed.
+          </p>
         </section>
 
         {selected && (

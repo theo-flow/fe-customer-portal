@@ -394,4 +394,92 @@ describe('SignFormEditor', () => {
     render(<SignFormEditor orgId="org-1" formId="f1" initial={initial({ roles: [] })} />)
     expect(screen.getByRole('button', { name: 'Place on the page' })).toBeDisabled()
   })
+  describe('suggest boxes from the sample', () => {
+    const URL = '/api/operator/orgs/org-1/sign-forms/f1/suggest'
+    const found = [
+      { field_type: 'signature', role: 'Customer', page: 2, x: 0.13, y: 0.79, width: 0.28, height: 0.03, instruction: 'Sign here' },
+      { field_type: 'initials', role: 'Customer', page: 1, x: 0.85, y: 0.94, width: 0.1, height: 0.04, instruction: '' },
+    ]
+    // POST answers with the request id, then each GET returns the next answer in turn
+    function serve(...answers: Response[]) {
+      const queue = [...answers]
+      const mock = vi.fn(async (_url: string, init?: RequestInit) => {
+        if (init?.method === 'POST') return jsonResponse({ requestId: 'r1' }, true, 202)
+        return queue.length > 1 ? queue.shift()! : queue[0]
+      })
+      vi.stubGlobal('fetch', mock)
+      return mock
+    }
+    const suggestButton = () => screen.getByRole('button', { name: /Suggest boxes from the sample|Looking at the sample/ })
+
+    it('adds what was found as unsaved boxes to check, and says how many', async () => {
+      const fetchMock = serve(jsonResponse({ status: 'DONE', requestId: 'r1', fields: found }))
+      render(<SignFormEditor orgId="org-1" formId="f1" initial={initial()} pollMs={1} />)
+      fireEvent.click(suggestButton())
+      expect(suggestButton()).toBeDisabled()                       // one run at a time
+
+      await screen.findByText(/Added 2 suggested boxes/)
+      expect(within(overlays()[1]).getByRole('button', { name: 'Signature - Customer' })).toBeInTheDocument()
+      expect(within(overlays()[0]).getByRole('button', { name: 'Initials - Customer' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Save version' })).toBeEnabled()   // unsaved until the operator saves
+      expect(screen.getByText('Unsaved changes', { exact: false })).toBeInTheDocument()
+      expect(fetchMock.mock.calls[0]).toEqual([URL, { method: 'POST' }])
+      expect(suggestButton()).toBeEnabled()
+    })
+
+    it('waits while it is still running', async () => {
+      const fetchMock = serve(
+        jsonResponse({ status: 'PENDING', requestId: 'r1' }),
+        jsonResponse({ status: 'PENDING', requestId: 'r1' }),
+        jsonResponse({ status: 'DONE', requestId: 'r1', fields: found }),
+      )
+      render(<SignFormEditor orgId="org-1" formId="f1" initial={initial()} pollMs={1} />)
+      fireEvent.click(suggestButton())
+      await screen.findByText(/Added 2 suggested boxes/)
+      expect(fetchMock.mock.calls.filter(c => c[1]?.method !== 'POST')).toHaveLength(3)
+    })
+
+    it('does not move or change a box that was already placed', async () => {
+      serve(jsonResponse({ status: 'DONE', requestId: 'r1', fields: found }))
+      render(<SignFormEditor orgId="org-1" formId="f1" initial={initial({
+        fields: [{ field_id: 'mine', field_type: 'signature', role: 'Customer', page: 2, x: 0.13, y: 0.79, width: 0.28, height: 0.03, instruction: 'My words', required: true }],
+      })} pollMs={1} />)
+      fireEvent.click(suggestButton())
+      await screen.findByText(/Added 1 suggested box\./)
+      expect(screen.getByText(/1 suggestion was skipped because a box was already there/)).toBeInTheDocument()
+      expect(screen.getByText('My words')).toBeInTheDocument()
+    })
+
+    it('says so when the sample gave nothing', async () => {
+      serve(jsonResponse({ status: 'DONE', requestId: 'r1', fields: [] }))
+      render(<SignFormEditor orgId="org-1" formId="f1" initial={initial()} pollMs={1} />)
+      fireEvent.click(suggestButton())
+      await screen.findByText('No boxes could be found on this sample. Place them by hand.')
+      expect(screen.getByRole('button', { name: 'Save version' })).toBeDisabled()
+    })
+
+    it('shows the server\'s message when it cannot start', async () => {
+      vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ error: 'Could not start the suggestion. Please try again.' }, false, 502)))
+      render(<SignFormEditor orgId="org-1" formId="f1" initial={initial()} pollMs={1} />)
+      fireEvent.click(suggestButton())
+      await screen.findByText('Could not start the suggestion. Please try again.')
+      expect(suggestButton()).toBeEnabled()
+    })
+
+    it('tells the operator when the request was lost, and lets them try again', async () => {
+      serve(jsonResponse({ status: 'FAILED', requestId: 'r1' }))
+      render(<SignFormEditor orgId="org-1" formId="f1" initial={initial()} pollMs={1} />)
+      fireEvent.click(suggestButton())
+      await screen.findByText('The suggestion did not finish. Please try again.')
+      expect(suggestButton()).toBeEnabled()
+    })
+
+    it('ignores an answer that belongs to a different request', async () => {
+      serve(jsonResponse({ status: 'DONE', requestId: 'someone-elses', fields: found }))
+      render(<SignFormEditor orgId="org-1" formId="f1" initial={initial()} pollMs={1} />)
+      fireEvent.click(suggestButton())
+      await screen.findByText('Another suggestion was started. Please try again.')
+      expect(overlays().every(o => within(o).queryAllByRole('button').length === 0)).toBe(true)
+    })
+  })
 })
