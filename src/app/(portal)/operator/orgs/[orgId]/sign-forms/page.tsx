@@ -27,10 +27,6 @@ export default function SignFormsPage() {
   const fileRef = useRef<HTMLInputElement>(null)
 
   const [orgName, setOrgName]     = useState('')
-  const [allOrgs, setAllOrgs]     = useState<{ orgId: string; orgName: string }[]>([])
-  const [copyOrgId, setCopyOrgId]   = useState('')
-  const [copyForms, setCopyForms]   = useState<FormRow[]>([])
-  const [copyFormId, setCopyFormId] = useState('')
   const [forms, setForms]         = useState<FormRow[]>([])
   const [loading, setLoading]     = useState(true)
   const [forbidden, setForbidden] = useState(false)
@@ -46,31 +42,13 @@ export default function SignFormsPage() {
     ])
       .then(async ([orgs, formsRes]) => {
         if (formsRes.status === 401 || formsRes.status === 403) { setForbidden(true); return }
-        const list = (orgs?.orgs as { orgId: string; orgName: string }[] | undefined) ?? []
-        setAllOrgs(list)
-        const match = list.find(o => o.orgId === orgId)
+        const match = (orgs?.orgs as { orgId: string; orgName: string }[] | undefined)?.find(o => o.orgId === orgId)
         if (match) setOrgName(match.orgName)
         if (formsRes.ok) setForms((await formsRes.json()).forms)
       })
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [orgId])
-
-  // Choosing another customer loads the forms that are set up for them.
-  async function pickCopyOrg(id: string) {
-    setCopyOrgId(id)
-    setCopyFormId('')
-    setCopyForms([])
-    if (!id) return
-    const res = await fetch(`/api/operator/orgs/${id}/sign-forms`).catch(() => null)
-    if (res?.ok) setCopyForms((await res.json()).forms)
-  }
-
-  function pickCopyForm(id: string) {
-    setCopyFormId(id)
-    const chosen = copyForms.find(f => f.formId === id)
-    if (chosen && !name.trim()) setName(chosen.name)
-  }
 
   function pickFile(f: File | undefined) {
     setError('')
@@ -106,10 +84,7 @@ export default function SignFormsPage() {
       const created = await fetch(`/api/operator/orgs/${orgId}/sign-forms`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          formId: presigned.formId, name: name.trim(), ...info,
-          ...(copyFormId ? { copyFrom: { orgId: copyOrgId, formId: copyFormId } } : {}),
-        }),
+        body: JSON.stringify({ formId: presigned.formId, name: name.trim(), ...info }),
       })
       const data = await created.json().catch(() => ({}))
       if (!created.ok) { setError(data.error ?? 'Could not create the form.'); return }
@@ -187,29 +162,6 @@ export default function SignFormsPage() {
           <div role="alert" className="mb-4 px-4 py-3 rounded-xl text-red-600 text-[13px] bg-red-50 border border-red-200">{error}</div>
         )}
 
-        <label className="block text-[12px] font-medium text-gray-500 mb-1.5" htmlFor="copy-org">Start from a form set up for a customer (optional)</label>
-        <select id="copy-org" value={copyOrgId} onChange={e => pickCopyOrg(e.target.value)}
-                className="w-full rounded-xl border border-black/[0.12] px-3.5 py-2.5 text-[14px] mb-3 bg-white focus:outline-none focus:border-black/40">
-          <option value="">Set up from scratch</option>
-          {allOrgs.map(o => <option key={o.orgId} value={o.orgId}>{o.orgName}</option>)}
-        </select>
-        {copyOrgId && (
-          <>
-            <label className="block text-[12px] font-medium text-gray-500 mb-1.5" htmlFor="copy-form">Form to copy</label>
-            <select id="copy-form" value={copyFormId} onChange={e => pickCopyForm(e.target.value)}
-                    className="w-full rounded-xl border border-black/[0.12] px-3.5 py-2.5 text-[14px] mb-3 bg-white focus:outline-none focus:border-black/40">
-              <option value="">{copyForms.length ? 'Choose a form' : 'No forms set up for this customer'}</option>
-              {copyForms.map(f => <option key={f.formId} value={f.formId}>{f.name} ({f.pageCount} page{f.pageCount !== 1 ? 's' : ''})</option>)}
-            </select>
-          </>
-        )}
-        {copyFormId && (
-          <p className="text-[12px] text-gray-400 mb-4">
-            Upload a blank copy of this form for this customer. Only the roles, box positions and recognition phrases are copied.
-            The other customer's document and their fixed signers are never copied. The pages must match the form being copied.
-          </p>
-        )}
-
         <label className="block text-[12px] font-medium text-gray-500 mb-1.5" htmlFor="form-name">Form name</label>
         <input id="form-name" value={name} onChange={e => setName(e.target.value)} maxLength={80}
                placeholder="For example: New AOA"
@@ -224,7 +176,7 @@ export default function SignFormsPage() {
 
         <button type="button" onClick={createForm} disabled={busy}
                 className="rounded-full bg-black text-white text-[13px] font-semibold px-6 py-2.5 disabled:opacity-50">
-          {busy ? (copyFormId ? 'Copying…' : 'Setting up…') : (copyFormId ? 'Copy and continue to the editor' : 'Continue to the editor')}
+          {busy ? 'Setting up…' : 'Continue to the editor'}
         </button>
       </div>
     </div>

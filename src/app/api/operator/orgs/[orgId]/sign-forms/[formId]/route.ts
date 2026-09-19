@@ -1,16 +1,38 @@
 import { GetObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
-import { TransactWriteCommand } from '@aws-sdk/lib-dynamodb'
+import { GetCommand, TransactWriteCommand } from '@aws-sdk/lib-dynamodb'
 import { NextRequest, NextResponse } from 'next/server'
 import { ddbDocClient, s3Client, TABLE, BUCKET } from '@/lib/aws'
-import { validateLayout } from '@/lib/sign-form'
+import { isReadType, validateLayout } from '@/lib/sign-form'
+import type { FormField } from '@/lib/sign-form'
 import {
-  requireOperator, orgExists, isSafeId, pointerKey, versionKey, isTransactionConflict, readBoxes, loadCurrentForm,
+  requireOperator, orgExists, isSafeId, pointerKey, versionKey, isTransactionConflict,
 } from '@/lib/sign-forms-server'
+
+// Where on the form the recipient's details are printed, in the shape the send
+// screen needs. Kept on the pointer so listing a customer's forms is one query.
+// (Named read_boxes: "reads" is a DynamoDB reserved word.)
+function readBoxes(fields: FormField[]) {
+  return fields.filter(f => isReadType(f.field_type)).map(f => ({
+    role: f.role, kind: f.field_type === 'read_name' ? 'name' : 'email',
+    page: f.page, x: f.x, y: f.y, width: f.width, height: f.height,
+  }))
+}
 
 const SAMPLE_URL_SECONDS = 900   // long enough for an editing session to load every page
 
 type Params = { params: { orgId: string; formId: string } }
+
+async function loadCurrent(orgId: string, formId: string) {
+  const db = ddbDocClient()
+  const pointer = await db.send(new GetCommand({ TableName: TABLE, Key: pointerKey(orgId, formId) }))
+  if (!pointer.Item || pointer.Item.form_status === 'ARCHIVED') return null
+  const version = await db.send(new GetCommand({
+    TableName: TABLE, Key: versionKey(orgId, formId, pointer.Item.current_version as number),
+  }))
+  if (!version.Item) return null
+  return { pointer: pointer.Item, version: version.Item }
+}
 
 // The current version of one form plus a short-lived link to its sample PDF,
 // for the editor.
@@ -23,7 +45,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
 
   let current
   try {
-    current = await loadCurrentForm(orgId, formId)
+    current = await loadCurrent(orgId, formId)
   } catch (err) {
     console.error('[operator/sign-forms/:id] Load failed', { orgId, formId, error: err })
     return NextResponse.json({ error: 'Failed to load the form' }, { status: 500 })
@@ -87,7 +109,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
 
   let current
   try {
-    current = await loadCurrentForm(orgId, formId)
+    current = await loadCurrent(orgId, formId)
   } catch (err) {
     console.error('[operator/sign-forms/:id] Load before save failed', { orgId, formId, error: err })
     return NextResponse.json({ error: 'Failed to load the form' }, { status: 500 })
