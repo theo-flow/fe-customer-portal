@@ -8,6 +8,7 @@ import {
   instructionOf, pagesPhrase, summariseGroups, todaySAST, validateSubmission,
   type GroupId, type MarkType, type Submission,
 } from '@/lib/sign-tasks'
+import { CONSENT_TEXT, CONSENT_VERSION, MAX_DECLINE_REASON_CHARS } from '@/lib/sign-consent'
 import type { BoxValue } from './DocumentPreview'
 import AdoptMark, { type MarkMode } from './AdoptMark'
 
@@ -49,6 +50,11 @@ export default function SignCapture({
   const [error, setError]           = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [done, setDone]             = useState(false)
+  const [consent, setConsent]       = useState(false)
+  const [declineOpen, setDeclineOpen]   = useState(false)
+  const [declineReason, setDeclineReason] = useState('')
+  const [declining, setDeclining]       = useState(false)
+  const [declined, setDeclined]         = useState(false)
 
   // signature and initials: what is being drawn or typed now, and what was applied
   const [sigMode, setSigMode]   = useState<MarkMode>('draw')
@@ -159,7 +165,7 @@ export default function SignCapture({
     setStepIndex((hasBoxes ? 1 : 0) + target)
   }
 
-  function buildSubmission(): Submission {
+  function buildSubmission(): Submission & { consent: boolean; consentVersion: string } {
     const placeBoxes = boxesOf(fields, 'place')
     const placeValues: Record<string, string> = {}
     for (const b of placeBoxes) if (b.field_id && placeApplied) placeValues[b.field_id] = placeApplied
@@ -170,11 +176,14 @@ export default function SignCapture({
       placeValues,
       // older boxes have no id, so they take the single place answer
       placeData:     placeApplied ?? undefined,
+      consent:       true,
+      consentVersion: CONSENT_VERSION,
     }
   }
 
   async function submit() {
     setError(null)
+    if (!consent) { setError('Please confirm that you agree to sign electronically.'); return }
     const submission = buildSubmission()
     const problem = validateSubmission(fields, submission)
     if (problem) { setError(problem); return }
@@ -199,7 +208,38 @@ export default function SignCapture({
     }
   }
 
+  async function decline() {
+    setError(null)
+    setDeclining(true)
+    try {
+      const res = await fetch(`/api/public/sign/${sessionId}/${signerId}/${token}/decline`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ reason: declineReason }),
+      })
+      if (res.ok) {
+        setDeclined(true)
+      } else {
+        const body = await res.json().catch(() => ({}))
+        setError(body.error ?? 'Something went wrong. Please try again.')
+      }
+    } catch {
+      setError('Something went wrong. Please try again.')
+    } finally {
+      setDeclining(false)
+    }
+  }
+
   // ---- screens ----
+  if (declined) {
+    return (
+      <div className="flex flex-col items-center justify-center py-10 text-center">
+        <h2 className="text-[20px] font-semibold text-black mb-2">You have declined to sign</h2>
+        <p className="text-[14px] text-gray-500">The person who sent this document has been told. You do not need to do anything else.</p>
+      </div>
+    )
+  }
+
   if (done) {
     return (
       <div className="flex flex-col items-center justify-center py-10 text-center">
@@ -251,6 +291,33 @@ export default function SignCapture({
       )}
 
       <div className="sticky bottom-3 z-10 rounded-2xl border border-black/[0.1] bg-white shadow-lg px-5 py-4 space-y-3">
+        {declineOpen ? (
+          <div className="space-y-3">
+            <h2 className="text-[16px] font-semibold text-black">Decline to sign</h2>
+            <p className="text-[13px] text-gray-500">
+              If you decline, nobody else can sign this document and the person who sent it is told.
+            </p>
+            <div>
+              <label className="block text-[13px] font-medium text-black mb-1.5" htmlFor="decline-reason">Why are you not signing? (optional)</label>
+              <textarea id="decline-reason" rows={3} value={declineReason} maxLength={MAX_DECLINE_REASON_CHARS}
+                        onChange={e => setDeclineReason(e.target.value)} className={smallInput} />
+            </div>
+            {error && (
+              <div role="alert" className="rounded-xl bg-red-50 border border-red-100 px-4 py-3 text-[13px] text-red-700">{error}</div>
+            )}
+            <div className="flex gap-3">
+              <button type="button" onClick={() => { setDeclineOpen(false); setError(null) }}
+                      className="px-5 py-3 rounded-xl border border-black/[0.15] text-[14px] font-semibold text-black">
+                Go back
+              </button>
+              <button type="button" onClick={decline} disabled={declining}
+                      className="flex-1 py-3 rounded-xl bg-red-600 text-white text-[14px] font-semibold hover:bg-red-700 disabled:opacity-50">
+                {declining ? 'Declining…' : 'Decline to sign'}
+              </button>
+            </div>
+          </div>
+        ) : (
+        <>
         {step === 'intro' && (
           <div>
             <h2 className="text-[16px] font-semibold text-black mb-1">
@@ -323,7 +390,11 @@ export default function SignCapture({
         {isLast && (
           <div>
             <h2 className="text-[16px] font-semibold text-black mb-1">That is everything</h2>
-            <p className="text-[13px] text-gray-500">Check the document above. If something is wrong, tap that box to change it. Then submit.</p>
+            <p className="text-[13px] text-gray-500 mb-3">Check the document above. If something is wrong, tap that box to change it. Then agree and submit.</p>
+            <label className="flex items-start gap-2.5 text-[13px] text-black cursor-pointer">
+              <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} className="mt-0.5" />
+              <span>{CONSENT_TEXT}</span>
+            </label>
           </div>
         )}
 
@@ -340,7 +411,7 @@ export default function SignCapture({
               </button>
             )}
             {isLast ? (
-              <button type="button" onClick={submit} disabled={submitting}
+              <button type="button" onClick={submit} disabled={submitting || !consent}
                       className="flex-1 py-3 rounded-xl bg-black text-white text-[14px] font-semibold hover:bg-gray-800
                                  active:bg-gray-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                 {submitting ? 'Submitting…' : 'Submit and finish'}
@@ -352,6 +423,15 @@ export default function SignCapture({
               </button>
             )}
           </div>
+        )}
+
+        <div className="pt-1 text-center">
+          <button type="button" onClick={() => { setDeclineOpen(true); setError(null) }}
+                  className="text-[12px] text-gray-400 hover:text-black underline underline-offset-2">
+            I cannot sign this document
+          </button>
+        </div>
+        </>
         )}
       </div>
     </div>

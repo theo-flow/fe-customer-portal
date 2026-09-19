@@ -31,7 +31,7 @@ vi.mock('@aws-sdk/client-sqs', () => ({
 }))
 
 import { verifyJwtClaims } from '@/lib/token'
-import { POST } from '../route'
+import { GET, POST } from '../route'
 
 const PDF_BYTES = new TextEncoder().encode('%PDF-1.7 rest of file')
 const PNG_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
@@ -110,5 +110,35 @@ describe('POST /api/sign/sessions', () => {
   it('still requires either a submission or an uploaded document', async () => {
     const res = await POST(makeReq({ signers }))
     expect(res.status).toBe(400)
+  })
+})
+
+describe('GET /api/sign/sessions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockCookieGet.mockReturnValue({ value: 'valid-token' })
+    vi.mocked(verifyJwtClaims).mockResolvedValue({
+      sub: 'user-1', email: 'owner@example.com', exp: 9999999999, 'custom:org_id': ORG_ID,
+    })
+  })
+
+  it('lists a declined session with who declined and the reason they gave', async () => {
+    const session = {
+      session_id: 's1', status: 'DECLINED', created_at: 'c', updated_at: 'u', metadata: {},
+      signers: [
+        { signer_id: 'a', name: 'Thandi', email: 't@example.com', status: 'DECLINED', decline_reason: 'Wrong amount', declined_at: '2026-01-02T00:00:00.000Z' },
+        { signer_id: 'b', name: 'Sipho', email: 's@example.com', status: 'PENDING' },
+      ],
+    }
+    mockDdbSend.mockImplementation(async (cmd: { __type: string }) => {
+      if (cmd.__type === 'Query') return { Items: [{ sessionId: 's1' }] }
+      if (cmd.__type === 'Get') return { Item: session }
+      return {}
+    })
+    const res = await GET({} as unknown as NextRequest)
+    const { sessions } = await res.json()
+    expect(sessions[0].status).toBe('DECLINED')
+    expect(sessions[0].signers[0]).toMatchObject({ status: 'DECLINED', declineReason: 'Wrong amount', declinedAt: '2026-01-02T00:00:00.000Z' })
+    expect(sessions[0].signers[1]).toMatchObject({ declineReason: null, declinedAt: null })
   })
 })

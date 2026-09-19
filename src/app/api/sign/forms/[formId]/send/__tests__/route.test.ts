@@ -221,6 +221,7 @@ describe('POST /api/sign/forms/[formId]/send', () => {
       await POST(req(body()), params)
       expect(sessionPut().input.Item.metadata).toEqual({
         created_by_email: 'staff@acme.test', form_id: FORM_ID, form_version: 3, form_name: 'New AOA', form_page_count: 3,
+        org_name: 'Acme Brokers',
       })
     })
 

@@ -33,6 +33,10 @@ export interface Signer {
   email_sent:        boolean
   expired_at?:       string | null
   signing_date?:     string | null   // YYYY-MM-DD the signer chose for the form's date boxes
+  consent_at?:       string | null   // when they agreed to sign electronically
+  consent_text_version?: string | null   // which wording they agreed to
+  decline_reason?:   string | null
+  declined_at?:      string | null
   initials_type?:    SignatureType | null
   initials_data?:    string | null
   field_values?:     Record<string, { value: string | null; at: string }>

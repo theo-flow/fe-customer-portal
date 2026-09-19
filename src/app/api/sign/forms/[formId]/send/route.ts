@@ -96,6 +96,7 @@ export async function POST(req: NextRequest, { params }: { params: { formId: str
   const sessionId = src.sessionId
   const now = new Date().toISOString()
 
+  const orgName = await lookupOrgName(orgId)
   const rawTokens = new Map<string, string>()
   const signers: Signer[] = roles.map((role, i) => {
     const input = inputs.find(s => s.role === role)!
@@ -136,6 +137,8 @@ export async function POST(req: NextRequest, { params }: { params: { formId: str
     metadata: {
       created_by_email: claims.email, form_id: formId, form_version: form.version,
       form_name: form.name, form_page_count: form.page_count,
+      // shown on the audit page appended to the sealed document
+      org_name: orgName,
     },
   }
 
@@ -170,7 +173,7 @@ export async function POST(req: NextRequest, { params }: { params: { formId: str
           session_id: sessionId,
           action: 'notify_signers',
           signer_links: signerLinks.map(l => ({ signer_id: l.signerId, sign_url: l.signUrl })),
-          requested_by: await lookupOrgName(orgId),
+          requested_by: orgName,
         }),
       }))
       emailQueued = true

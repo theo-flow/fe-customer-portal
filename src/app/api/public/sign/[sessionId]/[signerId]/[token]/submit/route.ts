@@ -5,6 +5,7 @@ import { ddbDocClient, sqsClient, TABLE } from '@/lib/aws'
 import { hashToken, type SignSession, type Signer } from '@/lib/sign'
 import { requirements, placeValueFor, validateSubmission, type Submission } from '@/lib/sign-tasks'
 import { isConditionalCheckFailure } from '@/lib/sign-server'
+import { CONSENT_VERSION, consentProblem, type ConsentInput } from '@/lib/sign-consent'
 
 const SQS_SIGN_URL = process.env.SQS_SIGN_URL
 
@@ -22,7 +23,7 @@ const fail = (error: string, status: number) => NextResponse.json({ error }, { s
 export async function POST(req: NextRequest, { params }: { params: Params }) {
   const { sessionId, signerId, token } = params
 
-  let body: Submission
+  let body: Submission & ConsentInput
   try {
     body = await req.json()
   } catch (err) {
@@ -62,6 +63,9 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
     const mine = (session.working_document?.detected_fields ?? []).filter(f => f.signer_order === signer.order)
     const problem = validateSubmission(mine, body)
     if (problem) return fail(problem, 400)
+    // Agreeing to sign electronically is recorded with the exact wording's version.
+    const consent = consentProblem(body)
+    if (consent) return fail(consent, 400)
 
     const now = new Date().toISOString()
     const need = requirements(mine)
@@ -86,6 +90,8 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
       // The date the signer chose for the form's date boxes. signed_at above is
       // the real moment they signed and is never affected by this choice.
       signing_date:    body.signingDate ?? signer.signing_date ?? null,
+      consent_at:      now,
+      consent_text_version: CONSENT_VERSION,
       field_values:    { ...(signer.field_values ?? {}), ...fieldValues },
       token_used:      true,
     }

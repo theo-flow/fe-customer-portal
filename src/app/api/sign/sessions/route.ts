@@ -60,6 +60,7 @@ export async function GET(req: NextRequest) {
         completedSha256: session.completed_document?.sha256 ?? null,
         signers: session.signers.map(s => ({
           signerId: s.signer_id, name: s.name, email: s.email, status: s.status,
+          declineReason: s.decline_reason ?? null, declinedAt: s.declined_at ?? null,
         })),
       }
     })

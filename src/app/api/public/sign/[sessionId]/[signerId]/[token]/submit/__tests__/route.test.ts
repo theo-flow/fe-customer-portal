@@ -19,6 +19,7 @@ vi.mock('@aws-sdk/client-sqs', () => ({
 }))
 
 import { hashToken } from '@/lib/sign'
+import { CONSENT_VERSION } from '@/lib/sign-consent'
 import { POST } from '../route'
 
 const SESSION_ID = 'sess-1'
@@ -51,7 +52,9 @@ const session = (over: Partial<SignSession> = {}, signers: Signer[] = [signer(1)
   created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-02T00:00:00.000Z', ...over,
 })
 
-const req = (b: unknown) => ({ json: async () => b, headers: new Headers({ 'x-forwarded-for': '203.0.113.9, 10.0.0.1', 'user-agent': 'TestBrowser/1' }) }) as unknown as NextRequest
+// A normal signer ticks the consent box; tests about consent set the fields themselves.
+const withConsent = (b: unknown) => (b && typeof b === 'object' && !('consent' in b) ? { ...b, consent: true, consentVersion: CONSENT_VERSION } : b)
+const req = (b: unknown) => ({ json: async () => withConsent(b), headers: new Headers({ 'x-forwarded-for': '203.0.113.9, 10.0.0.1', 'user-agent': 'TestBrowser/1' }) }) as unknown as NextRequest
 const params = (n: number, token = `tok${n}`) => ({ params: { sessionId: SESSION_ID, signerId: `signer-${n}`, token } })
 
 const customerAnswer = {
@@ -174,6 +177,30 @@ describe('POST /api/public/sign/.../submit', () => {
       const saved = savedSession()
       expect(saved.status).toBe('IN_PROGRESS')
       expect(saved.signers[1]).toMatchObject({ status: 'PENDING', token_used: false, signature_data: null })
+    })
+
+    it('records that they agreed to sign electronically, and to which wording', async () => {
+      await POST(req(customerAnswer), params(1))
+      const s = savedSession().signers[0]
+      expect(s.consent_text_version).toBe(CONSENT_VERSION)
+      expect(s.consent_at).toBe(s.signed_at)
+    })
+
+    it.each([
+      ['no consent', { ...customerAnswer, consent: undefined }, 'Please confirm that you agree to sign electronically.'],
+      ['consent false', { ...customerAnswer, consent: false, consentVersion: CONSENT_VERSION }, 'Please confirm that you agree to sign electronically.'],
+      ['consent to old wording', { ...customerAnswer, consent: true, consentVersion: 'old-version' }, 'The consent wording has changed. Please reload the page and try again.'],
+    ])('refuses %s and records nothing', async (_l, body, message) => {
+      const res = await POST(req(body), params(1))
+      expect(res.status).toBe(400)
+      expect((await res.json()).error).toBe(message)
+      expect(puts()).toHaveLength(0)
+      expect(mockSqsSend).not.toHaveBeenCalled()
+    })
+
+    it('checks what was provided before asking about consent', async () => {
+      const res = await POST(req({ consent: true, consentVersion: CONSENT_VERSION }), params(1))
+      expect((await res.json()).error).toBe('Please add your signature.')
     })
 
     it('records the date the signer chose, separately from the moment they actually signed', async () => {

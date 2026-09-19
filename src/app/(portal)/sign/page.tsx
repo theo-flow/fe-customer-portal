@@ -8,11 +8,13 @@ interface SessionSigner {
   name:     string
   email:    string
   status:   'PENDING' | 'SIGNED' | 'EXPIRED' | 'DECLINED'
+  declineReason?: string | null
+  declinedAt?:    string | null
 }
 
 interface SessionSummary {
   sessionId:    string
-  status:       'PENDING' | 'IN_PROGRESS' | 'SIGNED' | 'EXPIRED' | 'CANCELLED' | 'FAILED'
+  status:       'DRAFT' | 'PENDING' | 'IN_PROGRESS' | 'SIGNED' | 'EXPIRED' | 'CANCELLED' | 'DECLINED' | 'FAILED'
   createdAt:    string
   updatedAt:    string
   submissionId: string | null
@@ -23,11 +25,13 @@ interface SessionSummary {
 
 function StatusPill({ status }: { status: SessionSummary['status'] }) {
   const map: Record<SessionSummary['status'], { label: string; cls: string; dot: string }> = {
+    DRAFT:       { label: 'Not sent yet',          cls: 'bg-gray-100 text-gray-500',  dot: 'bg-gray-400' },
     PENDING:     { label: 'Awaiting signatures', cls: 'bg-gray-100 text-gray-500',   dot: 'bg-gray-400' },
     IN_PROGRESS: { label: 'In progress',          cls: 'bg-amber-50 text-amber-700', dot: 'bg-amber-400 animate-pulse' },
     SIGNED:      { label: 'Signed',                cls: 'bg-green-50 text-green-700', dot: 'bg-green-500' },
     EXPIRED:     { label: 'Expired',               cls: 'bg-gray-100 text-gray-500',  dot: 'bg-gray-400' },
     CANCELLED:   { label: 'Cancelled',             cls: 'bg-gray-100 text-gray-500',  dot: 'bg-gray-400' },
+    DECLINED:    { label: 'Declined',              cls: 'bg-red-50 text-red-600',     dot: 'bg-red-500' },
     FAILED:      { label: 'Failed',                cls: 'bg-red-50 text-red-600',     dot: 'bg-red-500' },
   }
   const m = map[status]
@@ -40,6 +44,7 @@ function StatusPill({ status }: { status: SessionSummary['status'] }) {
 
 function SessionRow({ session }: { session: SessionSummary }) {
   const signedCount = session.signers.filter(s => s.status === 'SIGNED').length
+  const declined = session.signers.filter(s => s.status === 'DECLINED')
   const [opening, setOpening] = useState(false)
   const [busy, setBusy]       = useState<string | null>(null)
   const [notice, setNotice]   = useState<string | null>(null)
@@ -128,8 +133,8 @@ function SessionRow({ session }: { session: SessionSummary }) {
           {session.signers.map(s => (
             <span key={s.signerId} className="text-[12px] text-gray-500">
               {s.name}{' '}
-              <span className={s.status === 'SIGNED' ? 'text-green-600' : s.status === 'EXPIRED' ? 'text-amber-600' : 'text-gray-300'}>
-                {s.status === 'SIGNED' ? '✓' : s.status === 'EXPIRED' ? 'link expired' : '·'}
+              <span className={s.status === 'SIGNED' ? 'text-green-600' : s.status === 'EXPIRED' ? 'text-amber-600' : s.status === 'DECLINED' ? 'text-red-600' : 'text-gray-300'}>
+                {s.status === 'SIGNED' ? '✓' : s.status === 'EXPIRED' ? 'link expired' : s.status === 'DECLINED' ? 'declined' : '·'}
               </span>
               {isOpen && (s.status === 'PENDING' || s.status === 'EXPIRED') && (
                 <button
@@ -161,6 +166,11 @@ function SessionRow({ session }: { session: SessionSummary }) {
         </button>
       </div>
       {notice && <p className="mt-2 text-[12px] text-gray-500" role="status">{notice}</p>}
+      {declined.map(d => (
+        <p key={d.signerId} className="mt-2 text-[12px] text-red-600">
+          {d.name} declined to sign{d.declineReason ? `: ${d.declineReason}` : '.'}
+        </p>
+      ))}
       {session.completedSha256 && (
         <p className="mt-2 text-[11px] text-gray-400" title={session.completedSha256}>
           Signed file fingerprint (SHA-256): {session.completedSha256.slice(0, 16)}…

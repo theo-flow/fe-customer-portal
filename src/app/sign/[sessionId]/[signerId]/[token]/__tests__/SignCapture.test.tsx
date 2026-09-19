@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import type { DetectedField } from '@/lib/sign'
 import { formatChosenDate, todaySAST, dateBounds } from '@/lib/sign-tasks'
+import { CONSENT_TEXT, CONSENT_VERSION } from '@/lib/sign-consent'
 
 // Which canvases the "signer" has drawn on, keyed by the canvas label.
 const drawn = vi.hoisted(() => new Set<string>())
@@ -63,10 +64,11 @@ const WITNESS: DetectedField[] = [box({ field_id: 'w1', page: 2, y: 0.86, instru
 
 const json = (body: unknown, ok = true, status = 200) => ({ ok, status, json: async () => body }) as Response
 
-function serve(doc: Record<string, unknown> | 'fail', submit: Response = json({ ok: true })) {
+function serve(doc: Record<string, unknown> | 'fail', submit: Response = json({ ok: true }), decline: Response = json({ ok: true })) {
   const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
     if (url.endsWith('/document')) return doc === 'fail' ? json({}, false, 500) : json({ url: 'https://s3/x.pdf', ...doc })
     if (url.endsWith('/submit')) return submit
+    if (url.endsWith('/decline')) return decline
     return json({}, false, 404)
   })
   vi.stubGlobal('fetch', fetchMock)
@@ -76,9 +78,13 @@ function serve(doc: Record<string, unknown> | 'fail', submit: Response = json({ 
 const customerDoc = { detectedFields: CUSTOMER, signerName: 'Thandi Nkosi', signerRole: 'Customer', formName: 'New AOA' }
 const mount = () => render(<SignCapture sessionId="sess-1" signerId="signer-1" token="tok" />)
 const primary = (name: RegExp | string) => fireEvent.click(screen.getByRole('button', { name }))
+const agree = () => fireEvent.click(screen.getByRole('checkbox', { name: CONSENT_TEXT }))
 const boxText = (id: string) => screen.getByTestId(`box-${id}`).textContent
 const submittedBody = (fetchMock: ReturnType<typeof serve>) =>
   JSON.parse((fetchMock.mock.calls.find(c => String(c[0]).endsWith('/submit'))![1] as unknown as RequestInit).body as string)
+
+const declinedBody = (fetchMock: ReturnType<typeof serve>) =>
+  JSON.parse((fetchMock.mock.calls.find(c => String(c[0]).endsWith('/decline'))![1] as unknown as RequestInit).body as string)
 
 const yesterday = () => new Date(Date.now() + 2 * 3600000 - 86400000).toISOString().slice(0, 10)
 
@@ -248,7 +254,7 @@ describe('SignCapture: the signer works on the document', () => {
     it('submits everything, including the date they chose and where they signed', async () => {
       const fetchMock = serve(customerDoc)
       await throughToFinish(fetchMock)
-      primary('Submit and finish')
+      agree(); primary('Submit and finish')
       await screen.findByText('Signed')
       expect(screen.getByText('Thank you, your signature has been recorded.')).toBeInTheDocument()
       expect(submittedBody(fetchMock)).toEqual({
@@ -256,7 +262,19 @@ describe('SignCapture: the signer works on the document', () => {
         initialsType: 'TYPED', initialsData: 'TN',
         signingDate: yesterday(),
         placeValues: { p1: 'Cape Town' }, placeData: 'Cape Town',
+        consent: true, consentVersion: CONSENT_VERSION,
       })
+    })
+
+    it('cannot be submitted until they agree to sign electronically', async () => {
+      const fetchMock = serve(customerDoc)
+      await throughToFinish(fetchMock)
+      expect(screen.getByRole('button', { name: 'Submit and finish' })).toBeDisabled()
+      agree()
+      expect(screen.getByRole('button', { name: 'Submit and finish' })).toBeEnabled()
+      agree()   // and un-ticking takes it away again
+      expect(screen.getByRole('button', { name: 'Submit and finish' })).toBeDisabled()
+      expect(fetchMock.mock.calls.some(c => String(c[0]).endsWith('/submit'))).toBe(false)
     })
 
     it('every box is filled on the document before they submit', async () => {
@@ -289,7 +307,7 @@ describe('SignCapture: the signer works on the document', () => {
     it('shows the server\'s message and stays on the last step when submitting fails', async () => {
       const fetchMock = serve(customerDoc, json({ error: 'This signing link has expired or already been used' }, false, 403))
       await throughToFinish(fetchMock)
-      primary('Submit and finish')
+      agree(); primary('Submit and finish')
       await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('expired or already been used'))
       expect(screen.queryByText('Signed')).not.toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'Submit and finish' })).toBeEnabled()
@@ -317,7 +335,7 @@ describe('SignCapture: the signer works on the document', () => {
       fireEvent.click(screen.getByRole('tab', { name: 'Type' }))
       fireEvent.change(screen.getByLabelText('Type your full name'), { target: { value: '  Sipho Dlamini ' } })
       primary('Use this signature')
-      primary('Submit and finish')
+      agree(); primary('Submit and finish')
       await screen.findByText('Signed')
       expect(submittedBody(fetchMock)).toMatchObject({ signatureType: 'TYPED', signatureData: 'Sipho Dlamini' })
     })
@@ -329,9 +347,53 @@ describe('SignCapture: the signer works on the document', () => {
       expect(screen.queryByText(/here is what you need to do/)).not.toBeInTheDocument()
       expect(screen.getByTestId('preview')).toBeInTheDocument()
       drawn.add('Draw your signature'); primary('Use this signature')
-      primary('Submit and finish')
+      agree(); primary('Submit and finish')
       await screen.findByText('Signed')
       expect(submittedBody(fetchMock)).toMatchObject({ signatureType: 'DRAWN' })
+    })
+  })
+
+  describe('declining to sign', () => {
+    it('is offered from the start, and going back returns to where they were', async () => {
+      serve(customerDoc)
+      mount()
+      await screen.findByText(/here is what you need to do/)
+      primary('I cannot sign this document')
+      expect(screen.getByRole('heading', { name: 'Decline to sign' })).toBeInTheDocument()
+      primary('Go back')
+      expect(screen.getByText(/here is what you need to do/)).toBeInTheDocument()
+    })
+
+    it('sends the reason, then tells them it is done and that the sender knows', async () => {
+      const fetchMock = serve(customerDoc)
+      mount()
+      await screen.findByText(/here is what you need to do/)
+      primary('I cannot sign this document')
+      fireEvent.change(screen.getByLabelText(/Why are you not signing/), { target: { value: 'Wrong amount on page 2' } })
+      primary('Decline to sign')
+      await screen.findByText('You have declined to sign')
+      expect(declinedBody(fetchMock)).toEqual({ reason: 'Wrong amount on page 2' })
+      expect(fetchMock.mock.calls.some(c => String(c[0]).endsWith('/submit'))).toBe(false)
+    })
+
+    it('needs no reason', async () => {
+      const fetchMock = serve(customerDoc)
+      mount()
+      await screen.findByText(/here is what you need to do/)
+      primary('I cannot sign this document')
+      primary('Decline to sign')
+      await screen.findByText('You have declined to sign')
+      expect(declinedBody(fetchMock)).toEqual({ reason: '' })
+    })
+
+    it('shows the server\'s message and stays put when it fails', async () => {
+      serve(customerDoc, json({ ok: true }), json({ error: 'This signing link has expired or already been used' }, false, 403))
+      mount()
+      await screen.findByText(/here is what you need to do/)
+      primary('I cannot sign this document')
+      primary('Decline to sign')
+      await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('expired or already been used'))
+      expect(screen.queryByText('You have declined to sign')).not.toBeInTheDocument()
     })
   })
 

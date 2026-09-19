@@ -51,7 +51,7 @@ export default async function SignPage({
     return <InvalidLink title="Link expired"
                          message="This signing link has expired or has already been used." />
   }
-  if (session.status === 'CANCELLED' || session.status === 'EXPIRED' || session.status === 'FAILED') {
+  if (['DRAFT', 'CANCELLED', 'EXPIRED', 'FAILED', 'DECLINED'].includes(session.status)) {
     return <InvalidLink title="Signing session unavailable"
                          message="This document is no longer available for signature." />
   }
