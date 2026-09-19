@@ -34,6 +34,8 @@ export async function GET() {
         pageHeight:     i.page_height as number,
         roles:          (i.roles as string[]) ?? [],
         anchors:        (i.anchors as { page: number; text: string }[]) ?? [],
+        reads:          (i.read_boxes as unknown[]) ?? [],
+        roleDefaults:   (i.role_defaults as unknown[]) ?? [],
       }))
       .sort((a, b) => a.name.localeCompare(b.name))
     return NextResponse.json({ forms })

@@ -201,6 +201,22 @@ describe('POST /api/sign/forms/[formId]/send', () => {
       expect(byId.s1.date_format).toBeUndefined()
     })
 
+    it('never turns a box that only READS the recipient into something a signer must do', async () => {
+      const withReads = [
+        ...FIELDS,
+        { field_id: 'r1', field_type: 'read_name', role: 'Customer', page: 1, x: 0.3, y: 0.33, width: 0.3, height: 0.03, instruction: 'Read from the document', required: true },
+        { field_id: 'r2', field_type: 'read_email', role: 'Customer', page: 1, x: 0.3, y: 0.5, width: 0.4, height: 0.03, instruction: 'Read from the document', required: true },
+      ]
+      ddb({ version: { version: 3, name: 'New AOA', valid: true, roles: ROLES, fields: withReads, page_count: 3 } })
+      const res = await POST(req(body()), params)
+      expect(res.status).toBe(201)
+      const saved = sessionPut().input.Item.working_document.detected_fields
+      expect(saved).toHaveLength(FIELDS.length)
+      expect(saved.map((f: { field_id: string }) => f.field_id)).not.toContain('r1')
+      expect(saved.map((f: { field_id: string }) => f.field_id)).not.toContain('r2')
+      expect(saved.every((f: { field_type: string }) => !f.field_type.startsWith('read_'))).toBe(true)
+    })
+
     it('records who sent it and the form it came from, for the requester emails and the page-count guard', async () => {
       await POST(req(body()), params)
       expect(sessionPut().input.Item.metadata).toEqual({

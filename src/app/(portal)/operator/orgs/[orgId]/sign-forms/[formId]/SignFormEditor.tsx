@@ -3,9 +3,9 @@ import { useEffect, useRef, useState } from 'react'
 import { Document, Page, pdfjs } from 'react-pdf'
 import {
   FIELD_TYPES, FIELD_TYPE_LABELS, DATE_FORMATS, DATE_FORMAT_LABELS, DEFAULT_INSTRUCTIONS,
-  MAX_INSTRUCTION_CHARS, MAX_ROLES, MAX_ANCHORS, MAX_ANCHOR_CHARS,
+  MAX_INSTRUCTION_CHARS, MAX_ROLES, MAX_ANCHORS, MAX_ANCHOR_CHARS, isReadType,
   clampBox, newField, repeatOnAllPages, removeRole, renameRole, describeField, fieldsByPage, validateLayout,
-  type FieldType, type DateFormat, type FormField, type FormAnchor,
+  type FieldType, type DateFormat, type FormField, type FormAnchor, type RoleDefault,
 } from '@/lib/sign-form'
 import { mergeAnchors, suggestAnchors } from '@/lib/pdf-text'
 
@@ -28,6 +28,7 @@ export interface EditorInitial {
     roles:       string[]
     fields:      FormField[]
     anchors?:    FormAnchor[]
+    role_defaults?: RoleDefault[]
   }
 }
 
@@ -56,6 +57,7 @@ export default function SignFormEditor({ orgId, formId, initial }: { orgId: stri
   const [fields, setFields]     = useState<FormField[]>(initial.layout.fields)
   const [anchors, setAnchors]   = useState<FormAnchor[]>(initial.layout.anchors ?? [])
   const [suggesting, setSuggesting] = useState(false)
+  const [roleDefaults, setRoleDefaults] = useState<RoleDefault[]>(initial.layout.role_defaults ?? [])
   const [version, setVersion]   = useState(initial.version)
   const [valid, setValid]       = useState(initial.valid)
   const [dirty, setDirty]       = useState(false)
@@ -150,7 +152,9 @@ export default function SignFormEditor({ orgId, formId, initial }: { orgId: stri
       return
     }
     const next = renameRole({ roles, fields }, role, to)
-    setRoles(next.roles); setFields(next.fields); setDirty(true)
+    setRoles(next.roles); setFields(next.fields)
+    setRoleDefaults(ds => ds.map(d => (d.role === role ? { ...d, role: to } : d)))
+    setDirty(true)
   }
 
   function addNewRole() {
@@ -165,7 +169,9 @@ export default function SignFormEditor({ orgId, formId, initial }: { orgId: stri
     const count = fields.filter(f => f.role === role).length
     if (count > 0 && !window.confirm(`Remove "${role}"? Its ${count} box${count !== 1 ? 'es' : ''} will be removed too.`)) return
     const next = removeRole({ roles, fields }, role)
-    setRoles(next.roles); setFields(next.fields); setSelectedId(null); setDirty(true)
+    setRoles(next.roles); setFields(next.fields); setSelectedId(null)
+    setRoleDefaults(ds => ds.filter(d => d.role !== role))
+    setDirty(true)
   }
 
   // ---- placing and dragging boxes ----
@@ -231,6 +237,16 @@ export default function SignFormEditor({ orgId, formId, initial }: { orgId: stri
     }
   }
 
+  function setDefault(role: string, patch: Partial<RoleDefault>) {
+    setRoleDefaults(ds => {
+      const existing = ds.find(d => d.role === role)
+      return existing
+        ? ds.map(d => (d.role === role ? { ...d, ...patch } : d))
+        : [...ds, { role, name: '', email: '', ...patch }]
+    })
+    setDirty(true)
+  }
+
   function updateAnchor(index: number, patch: Partial<FormAnchor>) {
     setAnchors(as => as.map((a, i) => (i === index ? { ...a, ...patch } : a)))
     setDirty(true)
@@ -239,7 +255,7 @@ export default function SignFormEditor({ orgId, formId, initial }: { orgId: stri
   // ---- save ----
   async function save() {
     setNotice(null)
-    const payload = { name, page_count: pageCount, page_width: pageWidth, page_height: pageHeight, roles, fields, anchors }
+    const payload = { name, page_count: pageCount, page_width: pageWidth, page_height: pageHeight, roles, fields, anchors, role_defaults: roleDefaults.filter(d => d.name.trim() || d.email.trim()) }
     const checked = validateLayout(payload)
     if (!checked.ok) { setNotice({ kind: 'error', text: checked.errors[0], warnings: checked.errors.slice(1) }); return }
 
@@ -402,6 +418,30 @@ export default function SignFormEditor({ orgId, formId, initial }: { orgId: stri
         </section>
 
         <section className="rounded-2xl border border-black/[0.08] px-4 py-4">
+          <h2 className="text-[13px] font-semibold text-black mb-0.5">People who are always the same</h2>
+          <p className="text-[11px] text-gray-400 mb-3">
+            For a role that is always the same person, for example the bank's representative who signs as Seller.
+            They are filled in on the send screen, and the agent can still change them. Leave blank for a role that changes every time.
+          </p>
+          <ul className="space-y-3">
+            {roles.map(role => {
+              const d = roleDefaults.find(x => x.role === role)
+              return (
+                <li key={role}>
+                  <p className="text-[12px] font-medium text-gray-500 mb-1">{role}</p>
+                  <div className="flex gap-2">
+                    <input aria-label={`Usual name for ${role}`} className={inputCls} placeholder="Name" maxLength={100}
+                           value={d?.name ?? ''} onChange={e => setDefault(role, { name: e.target.value })} />
+                    <input aria-label={`Usual email for ${role}`} className={inputCls} placeholder="Email" maxLength={120}
+                           value={d?.email ?? ''} onChange={e => setDefault(role, { email: e.target.value })} />
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        </section>
+
+        <section className="rounded-2xl border border-black/[0.08] px-4 py-4">
           <h2 className="text-[13px] font-semibold text-black mb-3">Add a box</h2>
           <div className="grid grid-cols-2 gap-2 mb-2">
             <div>
@@ -460,14 +500,24 @@ export default function SignFormEditor({ orgId, formId, initial }: { orgId: stri
                 </select>
               </div>
             )}
-            <label className={labelCls} htmlFor="sf-sel-instruction">What the signer is told</label>
-            <input id="sf-sel-instruction" className={inputCls} value={selected.instruction} maxLength={MAX_INSTRUCTION_CHARS}
-                   onChange={e => patchField(selected.field_id, { instruction: e.target.value })} />
-            <label className="flex items-center gap-2 mt-3 text-[12px] text-gray-600">
-              <input type="checkbox" checked={selected.required}
-                     onChange={e => patchField(selected.field_id, { required: e.target.checked })} />
-              The signer must complete this
-            </label>
+            {isReadType(selected.field_type) ? (
+              <p className="text-[12px] text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
+                The signer never sees this box. When someone uploads a copy of this form, the text inside the box is read
+                and used to fill in who it is for. Cover only the {selected.field_type === 'read_name' ? 'name' : 'email address'} itself,
+                not the label next to it.
+              </p>
+            ) : (
+              <>
+                <label className={labelCls} htmlFor="sf-sel-instruction">What the signer is told</label>
+                <input id="sf-sel-instruction" className={inputCls} value={selected.instruction} maxLength={MAX_INSTRUCTION_CHARS}
+                       onChange={e => patchField(selected.field_id, { instruction: e.target.value })} />
+                <label className="flex items-center gap-2 mt-3 text-[12px] text-gray-600">
+                  <input type="checkbox" checked={selected.required}
+                         onChange={e => patchField(selected.field_id, { required: e.target.checked })} />
+                  The signer must complete this
+                </label>
+              </>
+            )}
             <div className="flex flex-wrap gap-2 mt-4">
               {pageCount > 1 && (
                 <button type="button"

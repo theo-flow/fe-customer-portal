@@ -33,7 +33,7 @@ const SAMPLE = `sign/forms/org-abc123/${FORM_ID}/sample.pdf`
 const layout = (over: Partial<FormLayout> = {}): FormLayout => ({
   name: 'New AOA', page_count: 3, page_width: 595.32, page_height: 841.92,
   roles: ['Customer', 'Witness 1'],
-  anchors: [],
+  anchors: [], role_defaults: [],
   fields: [
     { field_id: 'a', field_type: 'signature', role: 'Customer', page: 2, x: 0.1, y: 0.79, width: 0.28, height: 0.03, instruction: 'Sign here', required: true },
     { field_id: 'b', field_type: 'signature', role: 'Witness 1', page: 3, x: 0.3, y: 0.05, width: 0.25, height: 0.04, instruction: 'Sign as witness', required: true },
@@ -191,6 +191,49 @@ describe('operator sign-form (one form)', () => {
     it('rejects a recognition phrase that is too short or on a page that does not exist', async () => {
       expect((await PUT(req({ baseVersion: 2, layout: layout({ anchors: [{ page: 1, text: 'Hi' }] }) }), params)).status).toBe(400)
       expect((await PUT(req({ baseVersion: 2, layout: layout({ anchors: [{ page: 9, text: 'AMENDMENT OF AGREEMENT' }] }) }), params)).status).toBe(400)
+    })
+
+    it('keeps where the recipient is read from, and the usual people, on the pointer the customer screens read', async () => {
+      const withReads = layout({
+        roles: ['Customer', 'Witness 1'],
+        fields: [
+          ...layout().fields,
+          { field_id: 'r1', field_type: 'read_name', role: 'Customer', page: 1, x: 0.3, y: 0.33, width: 0.3, height: 0.03, instruction: 'Read from the document', required: true },
+          { field_id: 'r2', field_type: 'read_email', role: 'Customer', page: 1, x: 0.3, y: 0.5, width: 0.4, height: 0.03, instruction: 'Read from the document', required: true },
+        ],
+        role_defaults: [{ role: 'Witness 1', name: 'Anele Botha', email: 'anele@bank.example' }],
+      })
+      const res = await PUT(req({ baseVersion: 2, layout: withReads }), params)
+      expect(res.status).toBe(200)
+      const tx = mockDdbSend.mock.calls.map(([c]) => c).find(c => c.__type === 'Tx')
+      const values = tx.input.TransactItems[1].Update.ExpressionAttributeValues
+      expect(values[':reads']).toEqual([
+        { role: 'Customer', kind: 'name', page: 1, x: 0.3, y: 0.33, width: 0.3, height: 0.03 },
+        { role: 'Customer', kind: 'email', page: 1, x: 0.3, y: 0.5, width: 0.4, height: 0.03 },
+      ])
+      expect(values[':rd']).toEqual([{ role: 'Witness 1', name: 'Anele Botha', email: 'anele@bank.example' }])
+      // "reads" is a DynamoDB reserved word, so the attribute has another name
+      expect(tx.input.TransactItems[1].Update.UpdateExpression).toContain('read_boxes = :reads')
+      expect(tx.input.TransactItems[0].Put.Item.role_defaults).toHaveLength(1)
+    })
+
+    it('saves an empty list when the form has no read boxes or default people', async () => {
+      await PUT(req({ baseVersion: 2, layout: layout() }), params)
+      const tx = mockDdbSend.mock.calls.map(([c]) => c).find(c => c.__type === 'Tx')
+      expect(tx.input.TransactItems[1].Update.ExpressionAttributeValues[':reads']).toEqual([])
+      expect(tx.input.TransactItems[1].Update.ExpressionAttributeValues[':rd']).toEqual([])
+    })
+
+    it('rejects a default person with an invalid email, and writes nothing', async () => {
+      const res = await PUT(req({ baseVersion: 2, layout: layout({ role_defaults: [{ role: 'Customer', name: 'A', email: 'nope' }] }) }), params)
+      expect(res.status).toBe(400)
+      expect(mockDdbSend.mock.calls.some(([c]) => c.__type === 'Tx')).toBe(false)
+    })
+
+    it('returns the usual people when the editor loads', async () => {
+      ddb({ version: { ...layout({ role_defaults: [{ role: 'Customer', name: 'Anele', email: 'a@b.co' }] }), version: 2, valid: true, sample_key: SAMPLE } })
+      const body = await (await GET({} as NextRequest, params)).json()
+      expect(body.layout.role_defaults).toEqual([{ role: 'Customer', name: 'Anele', email: 'a@b.co' }])
     })
 
     it('cleans instruction text on the way in', async () => {

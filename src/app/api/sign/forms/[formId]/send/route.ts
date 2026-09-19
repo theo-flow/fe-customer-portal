@@ -12,7 +12,7 @@ import {
 } from '@/lib/sign'
 import { hasPdfHeader, lookupOrgName } from '@/lib/sign-server'
 import { isSafeId, pointerKey, versionKey } from '@/lib/sign-forms-server'
-import type { FormField } from '@/lib/sign-form'
+import { isReadType, type FormField } from '@/lib/sign-form'
 
 const SQS_SIGN_URL = process.env.SQS_SIGN_URL
 const MAX_NAME_CHARS = 100
@@ -111,8 +111,11 @@ export async function POST(req: NextRequest, { params }: { params: { formId: str
   })
 
   const orderOf = (role: string) => roles.indexOf(role) + 1
-  const detected: DetectedField[] = (form.fields as FormField[]).map(f => ({
-    field_id: f.field_id, field_type: f.field_type,
+  // Boxes that only tell the send screen where to READ the recipient's details
+  // from are configuration, not something a signer is asked to do.
+  const signingBoxes = (form.fields as FormField[]).filter(f => !isReadType(f.field_type))
+  const detected: DetectedField[] = signingBoxes.map(f => ({
+    field_id: f.field_id, field_type: f.field_type as DetectedField['field_type'],
     signer_order: orderOf(f.role), signer_role: f.role,
     page: f.page, x: f.x, y: f.y, width: f.width, height: f.height,
     instruction: f.instruction, required: f.required, confirmed_by_org: true,

@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import Link from 'next/link'
 import { useOrg } from '@/lib/org-context'
 import { suggestForm, type FormSummary, type UploadInfo, type MatchResult } from '@/lib/sign-form-match'
+import { readRecipients, suggestPeople, type Source } from '@/lib/sign-recipients'
 
 // Send one of the organisation's saved Sign forms to one set of people.
 // The operator has already set up where each person initials, signs and dates;
@@ -43,6 +44,8 @@ export default function SendFormPage() {
   const [selectedId, setSelectedId] = useState('')
   const [confirmed, setConfirmed]   = useState(false)
   const [people, setPeople]         = useState<Record<string, Person>>({})
+  // where each pre-filled value came from, so the agent knows what to check
+  const [sources, setSources]       = useState<Record<string, { name: Source; email: Source }>>({})
 
   const [sending, setSending] = useState(false)
   const [error, setError]     = useState('')
@@ -60,8 +63,29 @@ export default function SendFormPage() {
   const selected = forms?.find(f => f.formId === selectedId) ?? null
   const selectedResult = selected && matching ? matching.results[selected.formId] : null
 
+  // Fills the people from what the form says about who it is for: read from the
+  // uploaded document first, then the form's fixed default person for a role.
+  // Only empty boxes are filled, so nothing the agent typed is overwritten.
+  function prefill(form: FormSummary | undefined, upload: UploadInfo | null, current: Record<string, Person>) {
+    if (!form) return
+    const extracted = upload?.pageItems && form.reads?.length
+      ? readRecipients(upload.pageItems, upload.pageWidth, upload.pageHeight, form.reads)
+      : {}
+    const suggested = suggestPeople(form.roles, extracted, form.roleDefaults ?? [])
+    const nextPeople: Record<string, Person> = {}
+    const nextSources: Record<string, { name: Source; email: Source }> = {}
+    for (const role of form.roles) {
+      const cur = current[role] ?? { name: '', email: '' }
+      const sg = suggested[role]
+      nextPeople[role]  = { name: cur.name.trim() ? cur.name : sg.name, email: cur.email.trim() ? cur.email : sg.email }
+      nextSources[role] = { name: cur.name.trim() ? null : sg.nameFrom, email: cur.email.trim() ? null : sg.emailFrom }
+    }
+    setPeople(nextPeople)
+    setSources(nextSources)
+  }
+
   async function pickFile(f: File) {
-    setFileError(''); setError(''); setConfirmed(false); setInfo(null); setSelectedId('')
+    setFileError(''); setError(''); setConfirmed(false); setInfo(null); setSelectedId(''); setPeople({}); setSources({})
     if (f.type !== 'application/pdf') { setFileError('Only PDF documents can be sent for signature.'); return }
     if (f.size > MAX_BYTES) { setFileError(`File too large. Max ${MAX_MB} MB.`); return }
     setFile(f)
@@ -73,7 +97,9 @@ export default function SendFormPage() {
       if (forms) {
         const { suggested } = suggestForm(read, forms)
         // one clear match is pre-selected; a lone form is pre-selected too (its check still shows)
-        setSelectedId(suggested?.formId ?? (forms.length === 1 ? forms[0].formId : ''))
+        const chosen = suggested ?? (forms.length === 1 ? forms[0] : undefined)
+        setSelectedId(chosen?.formId ?? '')
+        prefill(chosen, read, {})
       }
     } catch {
       setFile(null)
@@ -87,7 +113,19 @@ export default function SendFormPage() {
     setSelectedId(id); setConfirmed(false); setError('')
     const form = forms?.find(f => f.formId === id)
     // keep anything already typed for roles the new form also has
-    setPeople(prev => Object.fromEntries((form?.roles ?? []).map(r => [r, prev[r] ?? { name: '', email: '' }])))
+    prefill(form, info, people)
+  }
+
+  // What the agent should know about a role's pre-filled details.
+  function hintFor(role: string): string {
+    const src = sources[role]
+    const parts: string[] = []
+    if (src?.name === 'document') parts.push('Name read from the document.')
+    if (src?.email === 'document') parts.push('Email read from the document.')
+    if (src?.name === 'default' || src?.email === 'default') parts.push('Usual person for this form.')
+    const expectedName = selected?.reads?.some(r => r.role === role && r.kind === 'name')
+    if (expectedName && !src?.name && !people[role]?.name) parts.push('No name could be read from the document. Please type it.')
+    return parts.join(' ')
   }
 
   function setPerson(role: string, patch: Partial<Person>) {
@@ -134,7 +172,7 @@ export default function SendFormPage() {
   }
 
   function reset() {
-    setFile(null); setInfo(null); setSelectedId(''); setConfirmed(false); setPeople({})
+    setFile(null); setInfo(null); setSelectedId(''); setConfirmed(false); setPeople({}); setSources({})
     setResult(null); setError(''); setFileError('')
   }
 
@@ -262,6 +300,11 @@ export default function SendFormPage() {
                 <>
                   <p className="text-[13px] font-semibold text-black mt-6 mb-1">3. Who signs</p>
                   <p className="text-[12px] text-gray-400 mb-3">Each person gets their own link and only sees what they need to do.</p>
+                  {Object.values(sources).some(s => s.name === 'document' || s.email === 'document') && (
+                    <p role="status" className="text-[12px] text-green-700 bg-green-50 rounded-xl px-3 py-2 mb-3">
+                      We filled in the people we could from the document. Please check every name and email before you send.
+                    </p>
+                  )}
                   <div className="space-y-3">
                     {selected.roles.map(role => (
                       <div key={role}>
@@ -274,6 +317,7 @@ export default function SendFormPage() {
                                  value={people[role]?.email ?? ''} onChange={e => setPerson(role, { email: e.target.value })}
                                  className="flex-1 px-3 py-2.5 rounded-lg border border-black/[0.12] text-[13px] outline-none focus:border-black/40" />
                         </div>
+                        {hintFor(role) && <p className="text-[11px] text-gray-400 mt-1">{hintFor(role)}</p>}
                       </div>
                     ))}
                   </div>

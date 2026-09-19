@@ -13,8 +13,15 @@
  * no Node APIs, so the editor and the API routes share it.
  */
 
-export const FIELD_TYPES = ['signature', 'initials', 'name', 'date', 'place'] as const
+export const FIELD_TYPES = ['signature', 'initials', 'name', 'date', 'place', 'read_name', 'read_email'] as const
 export type FieldType = (typeof FIELD_TYPES)[number]
+
+// Boxes that are READ from the uploaded document instead of being filled in by
+// a signer: where the form prints who it is for (their name, their email).
+// They never reach a signing session; the send screen uses them to work out
+// who the form is destined to.
+export const READ_TYPES = ['read_name', 'read_email'] as const
+export const isReadType = (t: FieldType): boolean => (READ_TYPES as readonly string[]).includes(t)
 
 export const DATE_FORMATS = ['iso', 'long', 'day_month', 'year_2', 'year_4'] as const
 export type DateFormat = (typeof DATE_FORMATS)[number]
@@ -25,6 +32,8 @@ export const FIELD_TYPE_LABELS: Record<FieldType, string> = {
   name:      'Printed name',
   date:      'Date',
   place:     'Place signed',
+  read_name:  'Name (read from the document)',
+  read_email: 'Email (read from the document)',
 }
 
 export const DATE_FORMAT_LABELS: Record<DateFormat, string> = {
@@ -41,6 +50,8 @@ export const DEFAULT_INSTRUCTIONS: Record<FieldType, string> = {
   name:      'Print your full name',
   date:      'The date is filled in for you',
   place:     'Write where you are signing',
+  read_name:  'Read from the document',
+  read_email: 'Read from the document',
 }
 
 // Default box size (fraction of the page) when the operator places a new box.
@@ -50,6 +61,8 @@ export const DEFAULT_SIZES: Record<FieldType, { width: number; height: number }>
   name:      { width: 0.30, height: 0.03 },
   date:      { width: 0.20, height: 0.03 },
   place:     { width: 0.30, height: 0.03 },
+  read_name:  { width: 0.40, height: 0.03 },
+  read_email: { width: 0.35, height: 0.03 },
 }
 
 export const MAX_ROLES = 8
@@ -84,6 +97,14 @@ export interface FormAnchor {
   text: string
 }
 
+// A person who is always the same for a role on this form (for example the
+// bank's representative who signs as Seller). Pre-fills the send screen.
+export interface RoleDefault {
+  role:  string
+  name:  string
+  email: string
+}
+
 export interface FormLayout {
   name:        string
   page_count:  number
@@ -92,6 +113,7 @@ export interface FormLayout {
   roles:       string[]
   fields:      FormField[]
   anchors:     FormAnchor[]
+  role_defaults: RoleDefault[]
 }
 
 // ---- ids ------------------------------------------------------------------
@@ -329,6 +351,21 @@ export function validateLayout(input: unknown): LayoutResult {
     anchors.push({ page: page as number, text })
   })
 
+  const roleDefaults: RoleDefault[] = []
+  const rawDefaults = Array.isArray(raw.role_defaults) ? raw.role_defaults : []
+  if (rawDefaults.length > MAX_ROLES) errors.push('Too many default people.')
+  rawDefaults.slice(0, MAX_ROLES).forEach((rd, i) => {
+    const d = (rd && typeof rd === 'object' ? rd : {}) as Record<string, unknown>
+    const role = cleanLabel(d.role, MAX_ROLE_CHARS)
+    const name = cleanLabel(d.name, 100)
+    const email = cleanLabel(d.email, 120).toLowerCase()
+    if (!roles.includes(role)) { errors.push(`Default person ${i + 1} is for a role that does not exist.`); return }
+    if (!name && !email) return   // an empty row is just nothing
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { errors.push(`The email for the default ${role} is not valid.`); return }
+    if (roleDefaults.some(x => x.role === role)) { errors.push(`${role} has two default people.`); return }
+    roleDefaults.push({ role, name, email })
+  })
+
   if (errors.length) return { ok: false, errors }
 
   const warnings: string[] = []
@@ -349,6 +386,7 @@ export function validateLayout(input: unknown): LayoutResult {
       roles,
       fields,
       anchors,
+      role_defaults: roleDefaults,
     },
     warnings,
     // Ready to send only if every role signs somewhere and there is something to do.

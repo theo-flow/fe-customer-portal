@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   cleanInstruction, clampBox, newField, repeatOnAllPages, removeRole, renameRole,
-  describeField, fieldsByPage, validateLayout, DEFAULT_INSTRUCTIONS, MAX_INSTRUCTION_CHARS,
+  describeField, fieldsByPage, validateLayout, DEFAULT_INSTRUCTIONS, MAX_INSTRUCTION_CHARS, isReadType,
   type FormField, type FormLayout,
 } from '../sign-form'
 
@@ -15,7 +15,7 @@ function newAoa(): FormLayout {
   return {
     name: 'New AOA', page_count: 3, page_width: 595.32, page_height: 841.92,
     roles: ['Customer', 'Witness 1', 'Witness 2', 'Seller'],
-    anchors: [],
+    anchors: [], role_defaults: [],
     fields: [
       box({ field_id: 'i1', field_type: 'initials', page: 1, x: 0.85, y: 0.94, width: 0.1, height: 0.04, instruction: 'Initial here to confirm you have read this page' }),
       box({ field_id: 's1', page: 2, x: 0.13, y: 0.79, width: 0.28, height: 0.03 }),
@@ -242,5 +242,67 @@ describe('validateLayout', () => {
   it('caps the number of boxes', () => {
     const many = Array.from({ length: 201 }, (_, i) => box({ field_id: `f${i}` }))
     expect(validateLayout({ ...newAoa(), roles: ['Customer'], fields: many }).ok).toBe(false)
+  })
+})
+
+
+describe('boxes that are read from the document', () => {
+  it('knows which box types are read from the document, not filled in by a signer', () => {
+    expect(isReadType('read_name')).toBe(true)
+    expect(isReadType('read_email')).toBe(true)
+    for (const t of ['signature', 'initials', 'name', 'date', 'place'] as const) expect(isReadType(t)).toBe(false)
+  })
+
+  it('can be placed like any other box and read back by page', () => {
+    const f = newField('read_name', 'Customer', 1, 0.45, 0.34)
+    expect(f.field_type).toBe('read_name')
+    expect(f.instruction).toBe('Read from the document')
+    expect(describeField(f)).toBe('Name (read from the document) - Customer')
+    expect(fieldsByPage([f], 2)[0].fields).toHaveLength(1)
+  })
+
+  it('a form with read boxes is still valid, and they do not count as the role signing', () => {
+    const layout = { ...newAoa(), fields: [...newAoa().fields, box({ field_id: 'r1', field_type: 'read_name', role: 'Customer', page: 1, y: 0.33 })] }
+    const r = validateLayout(layout)
+    expect(r.ok && r.valid).toBe(true)
+
+    const onlyRead = { ...newAoa(), roles: ['Customer'], fields: [box({ field_id: 'r1', field_type: 'read_name', role: 'Customer' })] }
+    const bad = validateLayout(onlyRead)
+    expect(bad.ok && bad.valid).toBe(false)
+    expect(bad.ok && bad.warnings.join(' ')).toContain('Customer has no signature box')
+  })
+})
+
+describe('people who are always the same (role defaults)', () => {
+  const withDefaults = (role_defaults: unknown) => validateLayout({ ...newAoa(), role_defaults })
+
+  it('accepts a default person for a role and lower-cases the email', () => {
+    const r = withDefaults([{ role: 'Seller', name: '  Anele   Botha ', email: 'Anele@Bank.Example' }])
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.layout.role_defaults).toEqual([{ role: 'Seller', name: 'Anele Botha', email: 'anele@bank.example' }])
+  })
+
+  it('a form with no defaults has an empty list', () => {
+    const r = validateLayout(newAoa())
+    expect(r.ok && r.layout.role_defaults).toEqual([])
+  })
+
+  it('drops a row that is empty', () => {
+    const r = withDefaults([{ role: 'Seller', name: '  ', email: '' }])
+    expect(r.ok && r.layout.role_defaults).toEqual([])
+  })
+
+  it.each([
+    ['an email that is not an email', [{ role: 'Seller', name: 'A', email: 'not-an-email' }]],
+    ['a role that does not exist', [{ role: 'Ghost', name: 'A', email: 'a@b.co' }]],
+    ['two defaults for one role', [{ role: 'Seller', name: 'A', email: 'a@b.co' }, { role: 'Seller', name: 'B', email: 'b@b.co' }]],
+    ['too many rows', Array.from({ length: 9 }, () => ({ role: 'Seller', name: 'A', email: 'a@b.co' }))],
+  ])('rejects %s', (_l, defaults) => {
+    expect(withDefaults(defaults).ok).toBe(false)
+  })
+
+  it('a name without an email is fine (the agent supplies the email)', () => {
+    const r = withDefaults([{ role: 'Seller', name: 'Anele Botha', email: '' }])
+    expect(r.ok && r.layout.role_defaults[0]).toEqual({ role: 'Seller', name: 'Anele Botha', email: '' })
   })
 })

@@ -3,10 +3,21 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { GetCommand, TransactWriteCommand } from '@aws-sdk/lib-dynamodb'
 import { NextRequest, NextResponse } from 'next/server'
 import { ddbDocClient, s3Client, TABLE, BUCKET } from '@/lib/aws'
-import { validateLayout } from '@/lib/sign-form'
+import { isReadType, validateLayout } from '@/lib/sign-form'
+import type { FormField } from '@/lib/sign-form'
 import {
   requireOperator, orgExists, isSafeId, pointerKey, versionKey, isTransactionConflict,
 } from '@/lib/sign-forms-server'
+
+// Where on the form the recipient's details are printed, in the shape the send
+// screen needs. Kept on the pointer so listing a customer's forms is one query.
+// (Named read_boxes: "reads" is a DynamoDB reserved word.)
+function readBoxes(fields: FormField[]) {
+  return fields.filter(f => isReadType(f.field_type)).map(f => ({
+    role: f.role, kind: f.field_type === 'read_name' ? 'name' : 'email',
+    page: f.page, x: f.x, y: f.y, width: f.width, height: f.height,
+  }))
+}
 
 const SAMPLE_URL_SECONDS = 900   // long enough for an editing session to load every page
 
@@ -67,6 +78,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
       roles:       version.roles,
       fields:      version.fields ?? [],
       anchors:     version.anchors ?? [],
+      role_defaults: version.role_defaults ?? [],
     },
   })
 }
@@ -138,11 +150,11 @@ export async function PUT(req: NextRequest, { params }: Params) {
             TableName: TABLE,
             Key: pointerKey(orgId, formId),
             UpdateExpression:
-              'SET current_version = :next, #n = :name, roles = :roles, anchors = :anchors, field_count = :fc, valid = :valid, updated_at = :now, updated_by = :by',
+              'SET current_version = :next, #n = :name, roles = :roles, anchors = :anchors, read_boxes = :reads, role_defaults = :rd, field_count = :fc, valid = :valid, updated_at = :now, updated_by = :by',
             ConditionExpression: 'current_version = :base',
             ExpressionAttributeNames: { '#n': 'name' },
             ExpressionAttributeValues: {
-              ':next': next, ':base': body.baseVersion, ':name': layout.name, ':roles': layout.roles, ':anchors': layout.anchors,
+              ':next': next, ':base': body.baseVersion, ':name': layout.name, ':roles': layout.roles, ':anchors': layout.anchors, ':reads': readBoxes(layout.fields), ':rd': layout.role_defaults,
               ':fc': layout.fields.length, ':valid': checked.valid, ':now': now, ':by': auth.claims.email,
             },
           },

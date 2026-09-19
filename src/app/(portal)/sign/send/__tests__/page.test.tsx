@@ -279,4 +279,129 @@ describe('SendFormPage', () => {
     expect(screen.getByLabelText('Choose the PDF')).toBeInTheDocument()
     expect(screen.queryByLabelText('Name for Customer')).not.toBeInTheDocument()
   })
+
+  describe('working out who the form is for', () => {
+    const W = 595.32
+    const H = 841.92
+    // text placed so its centre lands `top` down the page and `left` across it
+    const at = (str: string, left: number, top: number, width = 120, height = 10) => ({
+      str, width, height, transform: [1, 0, 0, 1, left * W, (1 - top) * H - height / 2],
+    })
+
+    const readingForm = {
+      ...aoa,
+      reads: [{ role: 'Customer', kind: 'name', page: 1, x: 0.30, y: 0.33, width: 0.30, height: 0.03 }],
+      roleDefaults: [{ role: 'Seller', name: 'Anele Botha', email: 'anele@bank.example' }],
+    }
+    const upload = (name = 'THANDI NKOSI'): UploadInfo => ({
+      ...aoaUpload,
+      pageItems: [[at('AMENDMENT OF AGREEMENT', 0.25, 0.17, 300), at(name, 0.32, 0.34, 150)], [], []],
+    })
+
+    async function open(form: unknown, info: UploadInfo) {
+      withForms([form])
+      vi.mocked(readUploadInfo).mockResolvedValue(info)
+      render(<SendFormPage />)
+      await waitFor(() => screen.getByLabelText('Choose the PDF'))
+      await chooseFile(pdfFile())
+      await waitFor(() => screen.getByLabelText('Name for Customer'))
+    }
+
+    it('fills in the customer from the document, the usual person for a fixed role, and leaves the rest', async () => {
+      await open(readingForm, upload())
+      expect((screen.getByLabelText('Name for Customer') as HTMLInputElement).value).toBe('Thandi Nkosi')
+      expect((screen.getByLabelText('Email for Customer') as HTMLInputElement).value).toBe('')   // the form prints no email
+      expect((screen.getByLabelText('Name for Seller') as HTMLInputElement).value).toBe('Anele Botha')
+      expect((screen.getByLabelText('Email for Seller') as HTMLInputElement).value).toBe('anele@bank.example')
+      expect((screen.getByLabelText('Name for Witness 1') as HTMLInputElement).value).toBe('')
+    })
+
+    it('tells the agent what was filled in and to check it', async () => {
+      await open(readingForm, upload())
+      expect(screen.getByText(/We filled in the people we could from the document/)).toBeInTheDocument()
+      expect(screen.getByText('Name read from the document.')).toBeInTheDocument()
+      expect(screen.getByText('Usual person for this form.')).toBeInTheDocument()
+    })
+
+    it('does not send until the agent supplies what could not be read, such as the email', async () => {
+      await open(readingForm, upload())
+      fillPeople({ 'Witness 1': everyone['Witness 1'] })
+      expect(sendBtn()).toBeDisabled()                                   // customer email is still missing
+      fireEvent.change(screen.getByLabelText('Email for Customer'), { target: { value: 'thandi@example.com' } })
+      expect(sendBtn()).toBeEnabled()
+    })
+
+    it('the agent can correct what was read', async () => {
+      await open(readingForm, upload())
+      fireEvent.change(screen.getByLabelText('Name for Customer'), { target: { value: 'Thandi N. Nkosi' } })
+      expect((screen.getByLabelText('Name for Customer') as HTMLInputElement).value).toBe('Thandi N. Nkosi')
+    })
+
+    it('says so when no name could be read, instead of guessing', async () => {
+      await open(readingForm, { ...upload(), pageItems: [[at('AMENDMENT OF AGREEMENT', 0.25, 0.17, 300)], [], []] })
+      expect((screen.getByLabelText('Name for Customer') as HTMLInputElement).value).toBe('')
+      expect(screen.getByText('No name could be read from the document. Please type it.')).toBeInTheDocument()
+    })
+
+    it('never puts something that is not a name into the name box', async () => {
+      await open(readingForm, upload('R23 062.01'))
+      expect((screen.getByLabelText('Name for Customer') as HTMLInputElement).value).toBe('')
+    })
+
+    it('a different upload starts clean: nothing from the last person carries over', async () => {
+      await open(readingForm, upload('THANDI NKOSI'))
+      fireEvent.change(screen.getByLabelText('Email for Customer'), { target: { value: 'thandi@example.com' } })
+
+      vi.mocked(readUploadInfo).mockResolvedValue(upload('SIPHO DLAMINI'))
+      fireEvent.change(screen.getByLabelText('Choose the PDF'), { target: { files: [pdfFile('sipho-aoa.pdf')] } })
+      await waitFor(() => expect((screen.getByLabelText('Name for Customer') as HTMLInputElement).value).toBe('Sipho Dlamini'))
+      expect((screen.getByLabelText('Email for Customer') as HTMLInputElement).value).toBe('')
+    })
+
+    it('changing the form keeps what the agent already typed', async () => {
+      withForms([readingForm, { ...consent, roles: ['Customer'], reads: [], roleDefaults: [] }])
+      vi.mocked(readUploadInfo).mockResolvedValue(upload())
+      render(<SendFormPage />)
+      await waitFor(() => screen.getByLabelText('Choose the PDF'))
+      await chooseFile(pdfFile())
+      await waitFor(() => screen.getByLabelText('Name for Customer'))
+      fireEvent.change(screen.getByLabelText('Email for Customer'), { target: { value: 'thandi@example.com' } })
+
+      fireEvent.change(screen.getByLabelText('Which form is this?'), { target: { value: 'consent' } })
+      expect((screen.getByLabelText('Email for Customer') as HTMLInputElement).value).toBe('thandi@example.com')
+      expect((screen.getByLabelText('Name for Customer') as HTMLInputElement).value).toBe('Thandi Nkosi')
+    })
+
+    it('a form that does not say who it is for still works exactly as before', async () => {
+      await open(aoa, upload())
+      expect((screen.getByLabelText('Name for Customer') as HTMLInputElement).value).toBe('')
+      expect(screen.queryByText(/We filled in the people we could/)).not.toBeInTheDocument()
+    })
+
+    it('sends the name that was read together with the email the agent typed', async () => {
+      fetchMock.mockImplementation(async (url: string) => {
+        if (url === '/api/sign/forms') return json({ forms: [readingForm] })
+        if (url === '/api/sign/upload/presign') return json({ sessionId: 's', uploadUrl: 'https://s3/put', key: 'sign/source/s/a.pdf' })
+        if (url === 'https://s3/put') return json({})
+        return json({ sessionId: 's', signers: [{ signerId: 'a', role: 'Customer', name: 'Thandi Nkosi', email: 't@example.com', signUrl: 'https://t/x' }], emailQueued: true }, true, 201)
+      })
+      vi.mocked(readUploadInfo).mockResolvedValue(upload())
+      render(<SendFormPage />)
+      await waitFor(() => screen.getByLabelText('Choose the PDF'))
+      await chooseFile(pdfFile())
+      await waitFor(() => screen.getByLabelText('Name for Customer'))
+      fireEvent.change(screen.getByLabelText('Email for Customer'), { target: { value: 'thandi@example.com' } })
+      fillPeople({ 'Witness 1': everyone['Witness 1'] })
+      fireEvent.click(sendBtn())
+      await waitFor(() => screen.getByText('Form sent'))
+
+      const sendCall = fetchMock.mock.calls.find(c => String(c[0]).endsWith('/send'))!
+      const sent = JSON.parse(sendCall[1].body)
+      expect(sent.signers).toEqual([
+        { role: 'Customer', name: 'Thandi Nkosi', email: 'thandi@example.com' },
+        { role: 'Witness 1', name: 'Sipho Dlamini', email: 'sipho@example.com' },
+        { role: 'Seller', name: 'Anele Botha', email: 'anele@bank.example' },
+      ])
+    })
+  })
 })

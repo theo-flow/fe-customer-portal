@@ -1,5 +1,6 @@
 import type { FormAnchor } from './sign-form'
 import { squash } from './pdf-text'
+import type { PositionedItem, ReadBox, RoleDefaultPerson } from './sign-recipients'
 
 /**
  * Decides whether an uploaded PDF fits a saved Sign form, and which of a
@@ -13,6 +14,7 @@ export interface UploadInfo {
   pageWidth:  number
   pageHeight: number
   pageTexts:  string[]   // text of each page, in order
+  pageItems?: PositionedItem[][]   // the same text with positions, to read the recipient's details
 }
 
 export interface FormSummary {
@@ -24,6 +26,8 @@ export interface FormSummary {
   pageHeight: number
   roles:      string[]
   anchors:    FormAnchor[]
+  reads?:        ReadBox[]            // where the form prints who it is for
+  roleDefaults?: RoleDefaultPerson[]  // roles that are always the same person
 }
 
 // 'match'    fits and every recognition phrase was found

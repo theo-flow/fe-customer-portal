@@ -45,7 +45,23 @@ describe('GET /api/sign/forms', () => {
     expect(forms).toEqual([{
       formId: 'f1', name: 'New AOA', currentVersion: 3, pageCount: 3, pageWidth: 595.32, pageHeight: 841.92,
       roles: ['Customer', 'Seller'], anchors: [{ page: 1, text: 'AMENDMENT OF AGREEMENT' }],
+      reads: [], roleDefaults: [],
     }])
+  })
+
+  it('returns where each form prints who it is for, and the usual people, for the send screen', async () => {
+    const reads = [{ role: 'Customer', kind: 'name', page: 1, x: 0.3, y: 0.33, width: 0.3, height: 0.03 }]
+    const roleDefaults = [{ role: 'Seller', name: 'Anele Botha', email: 'anele@bank.example' }]
+    mockDdbSend.mockResolvedValue({ Items: [pointer({ read_boxes: reads, role_defaults: roleDefaults })] })
+    const { forms } = await (await GET()).json()
+    expect(forms[0].reads).toEqual(reads)
+    expect(forms[0].roleDefaults).toEqual(roleDefaults)
+  })
+
+  it('returns empty lists for a form saved before this existed', async () => {
+    const { forms } = await (await GET()).json()
+    expect(forms[0].reads).toEqual([])
+    expect(forms[0].roleDefaults).toEqual([])
   })
 
   it('hides forms that are not ready and archived ones, and sorts by name', async () => {

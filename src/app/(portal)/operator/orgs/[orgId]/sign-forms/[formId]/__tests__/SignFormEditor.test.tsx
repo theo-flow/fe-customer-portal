@@ -318,6 +318,78 @@ describe('SignFormEditor', () => {
     })
   })
 
+  describe('reading who a form is for', () => {
+    it('places a box that reads the customer\'s name, and explains that the signer never sees it', () => {
+      render(<SignFormEditor orgId="org-1" formId="f1" initial={initial()} />)
+      place(1, 0.45, 0.34, { type: 'read_name' })
+      expect(within(overlays()[0]).getByRole('button', { name: 'Name (read from the document) - Customer' })).toBeInTheDocument()
+      expect(screen.getByText(/The signer never sees this box/)).toBeInTheDocument()
+      expect(screen.queryByLabelText('What the signer is told')).not.toBeInTheDocument()
+      expect(screen.queryByLabelText('The signer must complete this')).not.toBeInTheDocument()
+    })
+
+    it('saves the read box with the layout', async () => {
+      vi.mocked(fetch).mockResolvedValue(jsonResponse({ version: 2, valid: true, warnings: [] }))
+      render(<SignFormEditor orgId="org-1" formId="f1" initial={initial()} />)
+      place(1, 0.45, 0.34, { type: 'read_name' })
+      fireEvent.click(screen.getByRole('button', { name: 'Save version' }))
+      await waitFor(() => expect(screen.getByText('Saved as version 2.')).toBeInTheDocument())
+      const body = JSON.parse((vi.mocked(fetch).mock.calls[0][1] as RequestInit).body as string)
+      expect(body.layout.fields[0]).toMatchObject({ field_type: 'read_name', role: 'Customer', page: 1 })
+    })
+  })
+
+  describe('people who are always the same', () => {
+    const saveOk = () => vi.mocked(fetch).mockResolvedValue(jsonResponse({ version: 2, valid: true, warnings: [] }))
+    const savedBody = () => JSON.parse((vi.mocked(fetch).mock.calls[0][1] as RequestInit).body as string)
+
+    it('saves a usual person for a role, and leaves out roles with nothing typed', async () => {
+      saveOk()
+      render(<SignFormEditor orgId="org-1" formId="f1" initial={initial({ roles: ['Customer', 'Seller'] })} />)
+      fireEvent.change(screen.getByLabelText('Usual name for Seller'), { target: { value: 'Anele Botha' } })
+      fireEvent.change(screen.getByLabelText('Usual email for Seller'), { target: { value: 'anele@bank.example' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Save version' }))
+      await waitFor(() => screen.getByText('Saved as version 2.'))
+      expect(savedBody().layout.role_defaults).toEqual([{ role: 'Seller', name: 'Anele Botha', email: 'anele@bank.example' }])
+    })
+
+    it('shows what was saved before', () => {
+      render(<SignFormEditor orgId="org-1" formId="f1" initial={initial({ roles: ['Customer', 'Seller'], role_defaults: [{ role: 'Seller', name: 'Anele Botha', email: 'a@bank.example' }] })} />)
+      expect((screen.getByLabelText('Usual name for Seller') as HTMLInputElement).value).toBe('Anele Botha')
+      expect((screen.getByLabelText('Usual email for Seller') as HTMLInputElement).value).toBe('a@bank.example')
+      expect((screen.getByLabelText('Usual name for Customer') as HTMLInputElement).value).toBe('')
+    })
+
+    it('renaming a role keeps its usual person', async () => {
+      saveOk()
+      render(<SignFormEditor orgId="org-1" formId="f1" initial={initial({ roles: ['Customer', 'Seller'], role_defaults: [{ role: 'Seller', name: 'Anele', email: 'a@bank.example' }] })} />)
+      const input = screen.getByLabelText('Role name: Seller')
+      fireEvent.change(input, { target: { value: 'Bank rep' } })
+      fireEvent.blur(input)
+      fireEvent.click(screen.getByRole('button', { name: 'Save version' }))
+      await waitFor(() => screen.getByText('Saved as version 2.'))
+      expect(savedBody().layout.role_defaults).toEqual([{ role: 'Bank rep', name: 'Anele', email: 'a@bank.example' }])
+    })
+
+    it('removing a role removes its usual person', async () => {
+      saveOk()
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      render(<SignFormEditor orgId="org-1" formId="f1" initial={initial({ roles: ['Customer', 'Seller'], role_defaults: [{ role: 'Seller', name: 'Anele', email: 'a@bank.example' }] })} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Remove Seller' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Save version' }))
+      await waitFor(() => screen.getByText('Saved as version 2.'))
+      expect(savedBody().layout.role_defaults).toEqual([])
+    })
+
+    it('refuses to save an email that is not an email', async () => {
+      render(<SignFormEditor orgId="org-1" formId="f1" initial={initial({ roles: ['Customer', 'Seller'] })} />)
+      fireEvent.change(screen.getByLabelText('Usual email for Seller'), { target: { value: 'not-an-email' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Save version' }))
+      await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('email for the default Seller is not valid'))
+      expect(fetch).not.toHaveBeenCalled()
+    })
+  })
+
   it('cannot place a box until a role exists', () => {
     render(<SignFormEditor orgId="org-1" formId="f1" initial={initial({ roles: [] })} />)
     expect(screen.getByRole('button', { name: 'Place on the page' })).toBeDisabled()
