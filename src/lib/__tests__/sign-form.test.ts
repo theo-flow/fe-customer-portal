@@ -15,6 +15,7 @@ function newAoa(): FormLayout {
   return {
     name: 'New AOA', page_count: 3, page_width: 595.32, page_height: 841.92,
     roles: ['Customer', 'Witness 1', 'Witness 2', 'Seller'],
+    anchors: [],
     fields: [
       box({ field_id: 'i1', field_type: 'initials', page: 1, x: 0.85, y: 0.94, width: 0.1, height: 0.04, instruction: 'Initial here to confirm you have read this page' }),
       box({ field_id: 's1', page: 2, x: 0.13, y: 0.79, width: 0.28, height: 0.03 }),
@@ -37,9 +38,9 @@ describe('cleanInstruction', () => {
   })
 
   it('removes long dashes and double hyphens (product copy rule)', () => {
-    expect(cleanInstruction('Sign here — as the seller', 'signature')).toBe('Sign here - as the seller')
+    expect(cleanInstruction('Sign here \u2014 as the seller', 'signature')).toBe('Sign here - as the seller')
     expect(cleanInstruction('Sign here -- as the seller', 'signature')).toBe('Sign here - as the seller')
-    expect(cleanInstruction('a–b', 'signature')).toBe('a - b')
+    expect(cleanInstruction('a\u2013b', 'signature')).toBe('a - b')
   })
 
   it('flattens newlines and caps the length', () => {
@@ -202,7 +203,7 @@ describe('validateLayout', () => {
   })
 
   it('cleans free text instead of trusting it', () => {
-    const layout = { ...newAoa(), name: '  New — AOA  ', fields: [box({ instruction: 'Sign — here\n now' })], roles: ['Customer'] }
+    const layout = { ...newAoa(), name: '  New \u2014 AOA  ', fields: [box({ instruction: 'Sign \u2014 here\n now' })], roles: ['Customer'] }
     const r = validateLayout(layout)
     expect(r.ok).toBe(true)
     if (r.ok) {

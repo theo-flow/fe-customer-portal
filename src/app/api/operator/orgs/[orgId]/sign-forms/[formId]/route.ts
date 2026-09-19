@@ -66,6 +66,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
       page_height: version.page_height,
       roles:       version.roles,
       fields:      version.fields ?? [],
+      anchors:     version.anchors ?? [],
     },
   })
 }

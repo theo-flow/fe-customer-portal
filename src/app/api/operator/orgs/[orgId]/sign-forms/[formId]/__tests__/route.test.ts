@@ -33,6 +33,7 @@ const SAMPLE = `sign/forms/org-abc123/${FORM_ID}/sample.pdf`
 const layout = (over: Partial<FormLayout> = {}): FormLayout => ({
   name: 'New AOA', page_count: 3, page_width: 595.32, page_height: 841.92,
   roles: ['Customer', 'Witness 1'],
+  anchors: [],
   fields: [
     { field_id: 'a', field_type: 'signature', role: 'Customer', page: 2, x: 0.1, y: 0.79, width: 0.28, height: 0.03, instruction: 'Sign here', required: true },
     { field_id: 'b', field_type: 'signature', role: 'Witness 1', page: 3, x: 0.3, y: 0.05, width: 0.25, height: 0.04, instruction: 'Sign as witness', required: true },
