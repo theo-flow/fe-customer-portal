@@ -3,10 +3,11 @@ import { useEffect, useRef, useState } from 'react'
 import { Document, Page, pdfjs } from 'react-pdf'
 import {
   FIELD_TYPES, FIELD_TYPE_LABELS, DATE_FORMATS, DATE_FORMAT_LABELS, DEFAULT_INSTRUCTIONS,
-  MAX_INSTRUCTION_CHARS, MAX_ROLES,
+  MAX_INSTRUCTION_CHARS, MAX_ROLES, MAX_ANCHORS, MAX_ANCHOR_CHARS,
   clampBox, newField, repeatOnAllPages, removeRole, renameRole, describeField, fieldsByPage, validateLayout,
-  type FieldType, type DateFormat, type FormField,
+  type FieldType, type DateFormat, type FormField, type FormAnchor,
 } from '@/lib/sign-form'
+import { mergeAnchors, suggestAnchors } from '@/lib/pdf-text'
 
 // Must be set in this same module (react-pdf's requirement), same as
 // DocumentPreview.tsx.
@@ -26,6 +27,7 @@ export interface EditorInitial {
     page_height: number
     roles:       string[]
     fields:      FormField[]
+    anchors?:    FormAnchor[]
   }
 }
 
@@ -52,6 +54,8 @@ export default function SignFormEditor({ orgId, formId, initial }: { orgId: stri
   const [name, setName]         = useState(initial.layout.name)
   const [roles, setRoles]       = useState(initial.layout.roles)
   const [fields, setFields]     = useState<FormField[]>(initial.layout.fields)
+  const [anchors, setAnchors]   = useState<FormAnchor[]>(initial.layout.anchors ?? [])
+  const [suggesting, setSuggesting] = useState(false)
   const [version, setVersion]   = useState(initial.version)
   const [valid, setValid]       = useState(initial.valid)
   const [dirty, setDirty]       = useState(false)
@@ -207,10 +211,35 @@ export default function SignFormEditor({ orgId, formId, initial }: { orgId: stri
     try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* already released */ }
   }
 
+  // ---- recognition phrases ----
+  async function suggestPhrases() {
+    setSuggesting(true)
+    setNotice(null)
+    try {
+      const { readSampleLines } = await import('./sample-text')
+      const found = suggestAnchors(await readSampleLines(initial.sampleUrl), fields)
+      if (found.length === 0) {
+        setNotice({ kind: 'error', text: 'No fixed wording could be found automatically. Add phrases by hand.' })
+        return
+      }
+      setAnchors(prev => mergeAnchors(prev, found))
+      setDirty(true)
+    } catch {
+      setNotice({ kind: 'error', text: 'The sample could not be read. Add phrases by hand.' })
+    } finally {
+      setSuggesting(false)
+    }
+  }
+
+  function updateAnchor(index: number, patch: Partial<FormAnchor>) {
+    setAnchors(as => as.map((a, i) => (i === index ? { ...a, ...patch } : a)))
+    setDirty(true)
+  }
+
   // ---- save ----
   async function save() {
     setNotice(null)
-    const payload = { name, page_count: pageCount, page_width: pageWidth, page_height: pageHeight, roles, fields }
+    const payload = { name, page_count: pageCount, page_width: pageWidth, page_height: pageHeight, roles, fields, anchors }
     const checked = validateLayout(payload)
     if (!checked.ok) { setNotice({ kind: 'error', text: checked.errors[0], warnings: checked.errors.slice(1) }); return }
 
@@ -454,6 +483,45 @@ export default function SignFormEditor({ orgId, formId, initial }: { orgId: stri
             </div>
           </section>
         )}
+
+        <section className="rounded-2xl border border-black/[0.08] px-4 py-4">
+          <h2 className="text-[13px] font-semibold text-black mb-0.5">How the system recognises this form</h2>
+          <p className="text-[11px] text-gray-400 mb-3">
+            Fixed wording that is on every copy of this form, such as the heading or the words beside a signature line.
+            Never a name or an amount. When someone uploads a document, these are used to suggest this form.
+          </p>
+          {anchors.length === 0 ? (
+            <p className="text-[12px] text-gray-300 mb-3">No phrases yet, so this form can only be picked from the list.</p>
+          ) : (
+            <ul className="space-y-2 mb-3">
+              {anchors.map((a, i) => (
+                <li key={i} className="flex items-center gap-2">
+                  <select aria-label={`Page for phrase ${i + 1}`} value={a.page}
+                          onChange={e => updateAnchor(i, { page: Number(e.target.value) })}
+                          className="rounded-lg border border-black/[0.12] px-2 py-2 text-[12px]">
+                    {Array.from({ length: pageCount }, (_, n) => n + 1).map(n => <option key={n} value={n}>Page {n}</option>)}
+                  </select>
+                  <input aria-label={`Phrase ${i + 1}`} className={inputCls} value={a.text} maxLength={MAX_ANCHOR_CHARS}
+                         onChange={e => updateAnchor(i, { text: e.target.value })} />
+                  <button type="button" aria-label={`Remove phrase ${i + 1}`}
+                          onClick={() => { setAnchors(as => as.filter((_, n) => n !== i)); setDirty(true) }}
+                          className="text-[12px] text-gray-400 hover:text-red-600 px-1">Remove</button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={suggestPhrases} disabled={suggesting || anchors.length >= MAX_ANCHORS}
+                    className="rounded-lg border border-black/[0.15] text-[12px] font-medium px-3 py-2 disabled:opacity-40">
+              {suggesting ? 'Reading the sample…' : 'Suggest from the sample'}
+            </button>
+            <button type="button" disabled={anchors.length >= MAX_ANCHORS}
+                    onClick={() => { setAnchors(as => [...as, { page: 1, text: '' }]); setDirty(true) }}
+                    className="rounded-lg border border-black/[0.15] text-[12px] font-medium px-3 py-2 disabled:opacity-40">
+              Add a phrase
+            </button>
+          </div>
+        </section>
 
         <section className="rounded-2xl border border-black/[0.08] px-4 py-4">
           <h2 className="text-[13px] font-semibold text-black mb-0.5">What the signer will be asked</h2>

@@ -10,7 +10,10 @@ vi.mock('react-pdf', () => ({
   Page: ({ pageNumber }: { pageNumber: number }) => <div data-testid={`pdf-page-${pageNumber}`} style={{ height: 900 }} />,
 }))
 
+vi.mock('../sample-text', () => ({ readSampleLines: vi.fn() }))
+
 import SignFormEditor from '../SignFormEditor'
+import { readSampleLines } from '../sample-text'
 
 const PAGE_W = 640
 const PAGE_H = 900
@@ -254,6 +257,65 @@ describe('SignFormEditor', () => {
     render(<SignFormEditor orgId="org-1" formId="f1" initial={initial({ page_count: 1 })} />)
     place(1, 0.5, 0.5)
     expect(screen.queryByRole('button', { name: 'Repeat on every page' })).not.toBeInTheDocument()
+  })
+
+  describe('recognition phrases', () => {
+    const sample = [
+      { page: 1, lines: [{ y: 0.16, text: 'AMENDMENT OF AGREEMENT: 533 323 703 ("THE AGREEMENT")' }] },
+      { page: 2, lines: [{ y: 0.78, text: 'Signed ______________ at ______________ on' }] },
+    ]
+
+    it('suggests phrases from the sample, keeps them editable, and saves them with the layout', async () => {
+      vi.mocked(readSampleLines).mockResolvedValue(sample)
+      vi.mocked(fetch).mockResolvedValue(jsonResponse({ version: 2, valid: true, warnings: [] }))
+      render(<SignFormEditor orgId="org-1" formId="f1" initial={initial()} />)
+      place(2, 0.3, 0.78)   // a box beside the "Signed ... at ... on" line
+
+      fireEvent.click(screen.getByRole('button', { name: 'Suggest from the sample' }))
+      await waitFor(() => expect(screen.getByLabelText('Phrase 1')).toBeInTheDocument())
+      expect((screen.getByLabelText('Phrase 1') as HTMLInputElement).value).toBe('AMENDMENT OF AGREEMENT')
+      expect((screen.getByLabelText('Phrase 2') as HTMLInputElement).value).toBe('Signed at on')
+      expect((screen.getByLabelText('Page for phrase 2') as HTMLSelectElement).value).toBe('2')
+
+      fireEvent.change(screen.getByLabelText('Phrase 2'), { target: { value: 'Signed at on the day' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Save version' }))
+      await waitFor(() => expect(screen.getByText('Saved as version 2.')).toBeInTheDocument())
+      const body = JSON.parse((vi.mocked(fetch).mock.calls[0][1] as RequestInit).body as string)
+      expect(body.layout.anchors).toEqual([
+        { page: 1, text: 'AMENDMENT OF AGREEMENT' },
+        { page: 2, text: 'Signed at on the day' },
+      ])
+    })
+
+    it('says so when nothing usable can be suggested', async () => {
+      vi.mocked(readSampleLines).mockResolvedValue([{ page: 1, lines: [] }])
+      render(<SignFormEditor orgId="org-1" formId="f1" initial={initial()} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Suggest from the sample' }))
+      await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('No fixed wording could be found'))
+    })
+
+    it('says so when the sample cannot be read', async () => {
+      vi.mocked(readSampleLines).mockRejectedValue(new Error('bad pdf'))
+      render(<SignFormEditor orgId="org-1" formId="f1" initial={initial()} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Suggest from the sample' }))
+      await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('could not be read'))
+    })
+
+    it('adds a phrase by hand, and refuses to save one that is too short', async () => {
+      render(<SignFormEditor orgId="org-1" formId="f1" initial={initial()} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Add a phrase' }))
+      fireEvent.change(screen.getByLabelText('Phrase 1'), { target: { value: 'Hi' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Save version' }))
+      await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('too short'))
+      expect(fetch).not.toHaveBeenCalled()
+    })
+
+    it('removes a phrase', () => {
+      render(<SignFormEditor orgId="org-1" formId="f1" initial={{ ...initial(), layout: { ...initial().layout, anchors: [{ page: 1, text: 'AMENDMENT OF AGREEMENT' }] } }} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Remove phrase 1' }))
+      expect(screen.queryByLabelText('Phrase 1')).not.toBeInTheDocument()
+      expect(screen.getByText(/can only be picked from the list/)).toBeInTheDocument()
+    })
   })
 
   it('cannot place a box until a role exists', () => {
