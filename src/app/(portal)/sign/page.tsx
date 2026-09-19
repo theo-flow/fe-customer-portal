@@ -211,11 +211,18 @@ export default function SignSessionsPage() {
           </p>
           <h1 className="font-display text-[2.1rem] leading-tight text-black">Signing sessions</h1>
         </div>
-        <Link href="/sign/new"
-              className="px-5 py-2.5 rounded-full bg-black text-white text-[13px] font-semibold
-                         hover:bg-gray-800 transition-colors whitespace-nowrap">
-          New signing session
-        </Link>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Link href="/sign/send"
+                className="px-5 py-2.5 rounded-full bg-black text-white text-[13px] font-semibold
+                           hover:bg-gray-800 transition-colors whitespace-nowrap">
+            Send a form
+          </Link>
+          <Link href="/sign/new"
+                className="px-5 py-2.5 rounded-full border border-black/[0.15] text-black text-[13px] font-semibold
+                           hover:border-black/40 transition-colors whitespace-nowrap">
+            Other document
+          </Link>
+        </div>
       </div>
 
       {sessions.length === 0 ? (
@@ -224,10 +231,10 @@ export default function SignSessionsPage() {
           <p className="text-[13px] text-gray-400 mb-5">
             Request a signature from a document's status page, or upload a document directly.
           </p>
-          <Link href="/sign/new"
+          <Link href="/sign/send"
                 className="inline-block text-[13px] font-semibold px-5 py-2.5 rounded-full bg-black
                            text-white hover:bg-gray-800 transition-colors">
-            New signing session
+            Send a form
           </Link>
         </div>
       ) : (

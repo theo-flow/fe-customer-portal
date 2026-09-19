@@ -18,6 +18,7 @@ export interface UploadInfo {
 export interface FormSummary {
   formId:     string
   name:       string
+  currentVersion?: number
   pageCount:  number
   pageWidth:  number
   pageHeight: number
