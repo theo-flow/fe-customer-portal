@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { Document, Page, pdfjs } from 'react-pdf'
 import type { DetectedField } from '@/lib/sign'
+import { orderFields } from '@/lib/sign-tasks'
 
 // Must be set in this same module (react-pdf's requirement) -- setting it
 // elsewhere and importing this component later can let the default value
@@ -45,6 +46,7 @@ export default function DocumentPreview({
     return () => window.removeEventListener('resize', compute)
   }, [])
 
+  const ordered = orderFields(fields)   // the same numbering the checklist uses
   const pagesWithFields = Array.from(new Set(fields.map(f => f.page))).sort((a, b) => a - b)
   const pagesToShow = pagesWithFields.length > 0 ? pagesWithFields : [1]
 
@@ -73,7 +75,7 @@ export default function DocumentPreview({
                   }}
                 >
                   <span className="absolute -top-[1px] -left-[1px] text-[10px] font-semibold text-white bg-indigo-500 px-1.5 py-0.5 rounded-br-md whitespace-nowrap">
-                    {FIELD_TYPE_LABELS[field.field_type]}
+                    {ordered.indexOf(field) + 1}. {FIELD_TYPE_LABELS[field.field_type]}
                   </span>
                 </div>
               ))}
@@ -82,7 +84,7 @@ export default function DocumentPreview({
       </Document>
       {pagesWithFields.length > 0 && (
         <p className="text-[12px] text-gray-400">
-          Showing {pagesWithFields.length} of {numPages || '…'} page{numPages !== 1 ? 's' : ''} — highlighted where you need to act.
+          Showing {pagesWithFields.length} of {numPages || '…'} page{numPages !== 1 ? 's' : ''}, highlighted where you need to act.
         </p>
       )}
     </div>

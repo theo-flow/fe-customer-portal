@@ -49,6 +49,11 @@ export async function GET(
     )
     return NextResponse.json({
       url,
+      // The signer's own name and role, so the page can pre-fill their
+      // initials and say who they are signing as. Only THEIR boxes are sent.
+      signerName: signer.name,
+      signerRole: signer.role,
+      formName:   session.working_document?.form?.name ?? null,
       detectedFields: (session.working_document?.detected_fields ?? [])
         .filter(f => f.signer_order === signer.order),
     })

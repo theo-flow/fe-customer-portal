@@ -11,7 +11,7 @@ import { randomBytes, createHash } from 'crypto'
 export const TOKEN_EXPIRY_HOURS = 72
 
 export type SignerStatus  = 'PENDING' | 'SIGNED' | 'EXPIRED' | 'DECLINED'
-export type SessionStatus = 'PENDING' | 'IN_PROGRESS' | 'SIGNED' | 'EXPIRED' | 'CANCELLED' | 'FAILED'
+export type SessionStatus = 'DRAFT' | 'PENDING' | 'IN_PROGRESS' | 'SIGNED' | 'EXPIRED' | 'CANCELLED' | 'DECLINED' | 'FAILED'
 export type SignatureType = 'DRAWN' | 'TYPED'
 
 export interface Signer {
@@ -32,6 +32,9 @@ export interface Signer {
   place_data:        string | null
   email_sent:        boolean
   expired_at?:       string | null
+  initials_type?:    SignatureType | null
+  initials_data?:    string | null
+  field_values?:     Record<string, { value: string | null; at: string }>
 }
 
 // Populated by fn-13's document_locator.py (locate_and_notify) -- absent/

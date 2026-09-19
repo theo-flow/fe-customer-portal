@@ -60,7 +60,7 @@ export default async function SignPage({
                          message="You have already signed this document. Thank you." />
   }
 
-  const filename = session.source_document.s3_key.split('/').pop() ?? 'document.pdf'
+  const filename = session.working_document?.form?.name ?? session.source_document.s3_key.split('/').pop() ?? 'document.pdf'
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -84,10 +84,11 @@ export default async function SignPage({
         <div className="bg-white rounded-2xl border border-black/[0.08] shadow-sm px-6 py-7">
           <h1 className="text-[20px] font-semibold text-black mb-1">Signature requested</h1>
           <p className="text-[13px] text-gray-400 mb-1">
-            {signer.name}, you've been asked to sign <span className="font-medium text-black">{filename}</span>.
+            {signer.name}, you've been asked to sign <span className="font-medium text-black">{filename}</span>
+            {signer.role ? <> as <span className="font-medium text-black">{signer.role}</span></> : null}.
           </p>
           <p className="text-[13px] text-gray-400 mb-7">
-            Draw or type your signature below, then submit.
+            Follow the steps below. Each one tells you exactly what to do.
           </p>
 
           <SignCapture sessionId={sessionId} signerId={signerId} token={token} />
