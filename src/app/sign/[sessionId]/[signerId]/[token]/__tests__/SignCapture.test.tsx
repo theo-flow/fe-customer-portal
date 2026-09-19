@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import type { DetectedField } from '@/lib/sign'
+import { formatChosenDate, todaySAST, dateBounds } from '@/lib/sign-tasks'
 
 // Which canvases the "signer" has drawn on, keyed by the canvas label.
 const drawn = vi.hoisted(() => new Set<string>())
@@ -20,10 +21,24 @@ vi.mock('react-signature-canvas', async () => {
   return { default: Canvas }
 })
 
-// react-pdf cannot run in jsdom: the preview becomes a list of the boxes it was given.
+// react-pdf cannot run in jsdom: the document becomes one clickable box per field,
+// showing whatever value the page has put into it.
 vi.mock('next/dynamic', () => ({
-  default: () => function Preview({ fields }: { fields: DetectedField[] }) {
-    return <div data-testid="preview">{fields.map(f => <span key={f.field_id ?? f.y}>{f.field_type}</span>)}</div>
+  default: () => function Preview({ fields, values, activeType, onBoxClick }: {
+    fields: DetectedField[]
+    values?: Record<string, { kind: string; value: string }>
+    activeType?: string | null
+    onBoxClick?: (f: DetectedField) => void
+  }) {
+    return (
+      <div data-testid="preview" data-active={activeType ?? ''}>
+        {fields.map(f => (
+          <button key={f.field_id ?? f.y} type="button" data-testid={`box-${f.field_id}`} onClick={() => onBoxClick?.(f)}>
+            {f.field_id ? (values?.[f.field_id]?.value ?? '') : ''}
+          </button>
+        ))}
+      </div>
+    )
   },
 }))
 
@@ -34,11 +49,15 @@ const box = (over: Partial<DetectedField>): DetectedField => ({
   source: 'org_configured', confidence: 1, ...over,
 })
 
+// The customer's boxes on the New AOA
 const CUSTOMER: DetectedField[] = [
   box({ field_id: 'i1', field_type: 'initials', page: 1, y: 0.94, x: 0.85, instruction: 'Initial here to confirm you have read this page' }),
+  box({ field_id: 'i2', field_type: 'initials', page: 2, y: 0.94, x: 0.85, instruction: 'Initial here to confirm you have read this page' }),
   box({ field_id: 's1', field_type: 'signature', page: 2, y: 0.79, instruction: 'Sign here' }),
   box({ field_id: 'p1', field_type: 'place', page: 2, y: 0.79, x: 0.5, instruction: 'Write where you are signing' }),
-  box({ field_id: 'd1', field_type: 'date', page: 2, y: 0.82, instruction: 'The date is filled in for you' }),
+  box({ field_id: 'd1', field_type: 'date', page: 2, y: 0.82, x: 0.1, date_format: 'day_month', instruction: 'Choose the date' }),
+  box({ field_id: 'd2', field_type: 'date', page: 2, y: 0.82, x: 0.5, date_format: 'year_2', instruction: 'Choose the date' }),
+  box({ field_id: 'n1', field_type: 'name', page: 2, y: 0.9, instruction: 'Print your full name' }),
 ]
 const WITNESS: DetectedField[] = [box({ field_id: 'w1', page: 2, y: 0.86, instruction: 'Sign as a witness' })]
 
@@ -56,168 +75,264 @@ function serve(doc: Record<string, unknown> | 'fail', submit: Response = json({ 
 
 const customerDoc = { detectedFields: CUSTOMER, signerName: 'Thandi Nkosi', signerRole: 'Customer', formName: 'New AOA' }
 const mount = () => render(<SignCapture sessionId="sess-1" signerId="signer-1" token="tok" />)
-const next = () => fireEvent.click(screen.getByRole('button', { name: 'Next' }))
-const stepLabel = () => screen.getByText(/^Step \d+ of \d+$/).textContent
+const primary = (name: RegExp | string) => fireEvent.click(screen.getByRole('button', { name }))
+const boxText = (id: string) => screen.getByTestId(`box-${id}`).textContent
 const submittedBody = (fetchMock: ReturnType<typeof serve>) =>
   JSON.parse((fetchMock.mock.calls.find(c => String(c[0]).endsWith('/submit'))![1] as unknown as RequestInit).body as string)
 
-describe('SignCapture (the signer\'s step-by-step page)', () => {
+const yesterday = () => new Date(Date.now() + 2 * 3600000 - 86400000).toISOString().slice(0, 10)
+
+// walks a customer to the date step
+async function toDate() {
+  mount()
+  await screen.findByText(/here is what you need to do/)
+  primary('Start')
+  drawn.add('Draw your signature'); primary('Use this signature')
+  primary('Use these initials')
+  await screen.findByLabelText('Choose the date')
+}
+
+describe('SignCapture: the signer works on the document', () => {
   beforeEach(() => { drawn.clear() })
   afterEach(() => { vi.unstubAllGlobals() })
 
-  it('starts with a numbered checklist of exactly what this person has to do, in the operator\'s words', async () => {
-    serve(customerDoc)
-    mount()
-    await screen.findByText('Thandi Nkosi, here is what you need to do')
-    expect(stepLabel()).toBe('Step 1 of 5')
-    expect(screen.getByText(/You are signing as/)).toHaveTextContent('You are signing as Customer.')
+  describe('the checklist', () => {
+    it('opens with one line per KIND of task, not one per box', async () => {
+      serve(customerDoc)
+      mount()
+      await screen.findByText('Thandi Nkosi, here is what you need to do')
+      expect(screen.getByText(/You are signing as/)).toHaveTextContent('You are signing as Customer.')
+      const lines = screen.getAllByRole('listitem').map(li => li.textContent)
+      expect(lines).toEqual([
+        '1Sign on page 2',
+        '2Initial on pages 1 and 2',
+        '3Choose the date, it is written on page 2',
+        '4Write where you are signing, on page 2',
+      ])
+      expect(screen.getByTestId('preview')).toBeInTheDocument()   // the document is on screen from the start
+    })
 
-    const items = screen.getAllByRole('listitem')
-    expect(items).toHaveLength(4)
-    expect(items[0]).toHaveTextContent('1Page 1: Initial here to confirm you have read this page')
-    expect(items[1]).toHaveTextContent('2Page 2: Sign here')
-    expect(items[2]).toHaveTextContent('3Page 2: Write where you are signing')
-    expect(items[3]).toHaveTextContent('4Page 2: The date is filled in for youfilled in for you')
-  })
-
-  it('walks the customer through signature, initials, place and review, then submits everything', async () => {
-    const fetchMock = serve(customerDoc)
-    mount()
-    await screen.findByText(/here is what you need to do/)
-    next()
-
-    // step 2: signature, cannot skip
-    expect(stepLabel()).toBe('Step 2 of 5')
-    expect(screen.getByText('It will be placed on page 2. Draw it, or type your name.')).toBeVisible()
-    next()
-    expect(screen.getByRole('alert')).toHaveTextContent('Please add your signature.')
-    expect(stepLabel()).toBe('Step 2 of 5')
-    drawn.add('Draw your signature')
-    next()
-
-    // step 3: initials start as the letters of the name
-    expect(stepLabel()).toBe('Step 3 of 5')
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-    expect((screen.getByLabelText('Type your initials') as HTMLInputElement).value).toBe('TN')
-    next()
-
-    // step 4: where signed, cannot skip
-    expect(stepLabel()).toBe('Step 4 of 5')
-    next()
-    expect(screen.getByRole('alert')).toHaveTextContent('Please say where you are signing (page 2).')
-    fireEvent.change(screen.getByLabelText('Page 2: Write where you are signing'), { target: { value: 'Cape Town' } })
-    next()
-
-    // step 5: review with the document, then finish
-    expect(stepLabel()).toBe('Step 5 of 5')
-    expect(screen.getByTestId('preview')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Next' })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Submit and finish' }))
-
-    await screen.findByText('Signed')
-    expect(screen.getByText('Thank you, your signature has been recorded.')).toBeInTheDocument()
-    expect(submittedBody(fetchMock)).toEqual({
-      signatureType: 'DRAWN', signatureData: 'data:image/png;base64,DRAWN-Draw your signature',
-      initialsType: 'TYPED', initialsData: 'TN',
-      placeValues: { p1: 'Cape Town' }, placeData: 'Cape Town',
+    it('fills in the printed name straight away, since there is nothing to do', async () => {
+      serve(customerDoc)
+      mount()
+      await screen.findByText(/here is what you need to do/)
+      expect(boxText('n1')).toBe('Thandi Nkosi')
+      expect(boxText('s1')).toBe('')
     })
   })
 
-  it('a witness only sees the steps that apply to them', async () => {
-    serve({ detectedFields: WITNESS, signerName: 'Sipho Dlamini', signerRole: 'Witness 1', formName: 'New AOA' })
-    mount()
-    await screen.findByText(/here is what you need to do/)
-    expect(stepLabel()).toBe('Step 1 of 3')
-    expect(screen.getByText('Witness 1')).toBeInTheDocument()
-    next()
-    expect(screen.queryByText('Your initials', { selector: 'h2' })).not.toBeInTheDocument()   // a witness is never asked for initials
-    drawn.add('Draw your signature')
-    next()
-    expect(stepLabel()).toBe('Step 3 of 3')   // straight to review: no initials, no place
+  describe('one kind of task at a time, with the boxes lighting up', () => {
+    it('shows which step it is, what to do in the operator\'s words, and where it applies', async () => {
+      serve(customerDoc)
+      mount()
+      await screen.findByText(/here is what you need to do/)
+      primary('Start')
+      expect(screen.getByText('Step 1 of 4')).toBeInTheDocument()
+      expect(screen.getByText('Your signature', { selector: 'h2' })).toBeInTheDocument()
+      expect(screen.getByText('Sign here')).toBeInTheDocument()
+      expect(screen.getByText('Applies to page 2')).toBeInTheDocument()
+      expect(screen.getByTestId('preview').getAttribute('data-active')).toBe('signature')
+    })
+
+    it('will not move on without a signature', async () => {
+      serve(customerDoc)
+      mount()
+      await screen.findByText(/here is what you need to do/)
+      primary('Start')
+      primary('Use this signature')
+      expect(screen.getByRole('alert')).toHaveTextContent('Please add your signature.')
+      expect(screen.getByText('Step 1 of 4')).toBeInTheDocument()
+    })
+
+    it('one signature fills every signature box, and the initials step then applies to every page at once', async () => {
+      serve(customerDoc)
+      mount()
+      await screen.findByText(/here is what you need to do/)
+      primary('Start')
+      drawn.add('Draw your signature')
+      primary('Use this signature')
+      expect(boxText('s1')).toBe('data:image/png;base64,DRAWN-Draw your signature')
+
+      expect(screen.getByText('Step 2 of 4')).toBeInTheDocument()
+      expect(screen.getByText('Applies to pages 1 and 2')).toBeInTheDocument()
+      expect(screen.getByTestId('preview').getAttribute('data-active')).toBe('initials')
+      // started from the name, and already showing in BOTH initials boxes before they press anything
+      expect((screen.getByLabelText('Type your initials') as HTMLInputElement).value).toBe('TN')
+      expect(boxText('i1')).toBe('TN')
+      expect(boxText('i2')).toBe('TN')
+    })
+
+    it('what they type appears in the boxes as they type', async () => {
+      serve(customerDoc)
+      mount()
+      await screen.findByText(/here is what you need to do/)
+      primary('Start')
+      fireEvent.click(screen.getByRole('tab', { name: 'Type' }))
+      fireEvent.change(screen.getByLabelText('Type your full name'), { target: { value: 'Thandi Nkosi' } })
+      expect(boxText('s1')).toBe('Thandi Nkosi')
+      fireEvent.change(screen.getByLabelText('Type your full name'), { target: { value: 'Thandi N' } })
+      expect(boxText('s1')).toBe('Thandi N')
+    })
+
+    it('will not move on without initials', async () => {
+      serve(customerDoc)
+      mount()
+      await screen.findByText(/here is what you need to do/)
+      primary('Start')
+      drawn.add('Draw your signature'); primary('Use this signature')
+      fireEvent.change(screen.getByLabelText('Type your initials'), { target: { value: '' } })
+      primary('Use these initials')
+      expect(screen.getByRole('alert')).toHaveTextContent('Please add your initials.')
+    })
   })
 
-  it('accepts a typed signature instead of a drawn one', async () => {
-    const fetchMock = serve({ detectedFields: WITNESS, signerName: 'Sipho Dlamini', signerRole: 'Witness 1', formName: null })
-    mount()
-    await screen.findByText(/here is what you need to do/)
-    next()
-    fireEvent.click(screen.getByRole('tab', { name: 'Type' }))
-    fireEvent.change(screen.getByLabelText('Type your full name'), { target: { value: '  Sipho Dlamini ' } })
-    next()
-    fireEvent.click(screen.getByRole('button', { name: 'Submit and finish' }))
-    await screen.findByText('Signed')
-    expect(submittedBody(fetchMock)).toMatchObject({ signatureType: 'TYPED', signatureData: 'Sipho Dlamini' })
+  describe('the date the form asks for', () => {
+    it('starts as today, and can only go back a limited number of days, never forward', async () => {
+      serve(customerDoc)
+      await toDate()
+      const input = screen.getByLabelText('Choose the date') as HTMLInputElement
+      const { min, max } = dateBounds()
+      expect(input.value).toBe(todaySAST())
+      expect(input.min).toBe(min)
+      expect(input.max).toBe(max)
+    })
+
+    it('writes the chosen date into each date box in the format that box asks for, live', async () => {
+      serve(customerDoc)
+      await toDate()
+      expect(boxText('d1')).toBe(formatChosenDate(todaySAST(), 'day_month'))
+      expect(boxText('d2')).toBe(formatChosenDate(todaySAST(), 'year_2'))
+
+      fireEvent.change(screen.getByLabelText('Choose the date'), { target: { value: yesterday() } })
+      expect(boxText('d1')).toBe(formatChosenDate(yesterday(), 'day_month'))
+      expect(screen.getByText(/It will be written on the form as:/)).toHaveTextContent(formatChosenDate(yesterday(), 'day_month'))
+    })
+
+    it('refuses a date in the future or an empty date, and says why', async () => {
+      serve(customerDoc)
+      await toDate()
+      fireEvent.change(screen.getByLabelText('Choose the date'), { target: { value: '2999-01-01' } })
+      primary('Use this date')
+      expect(screen.getByRole('alert')).toHaveTextContent('The date cannot be in the future.')
+      fireEvent.change(screen.getByLabelText('Choose the date'), { target: { value: '' } })
+      primary('Use this date')
+      expect(screen.getByRole('alert')).toHaveTextContent('Please choose a valid date.')
+      expect(screen.getByText('Step 3 of 4')).toBeInTheDocument()
+    })
   })
 
-  it('lets the signer change their initials, and sends what they typed', async () => {
-    const fetchMock = serve({ ...customerDoc, detectedFields: [CUSTOMER[0], CUSTOMER[1]] })
-    mount()
-    await screen.findByText(/here is what you need to do/)
-    next(); drawn.add('Draw your signature'); next()
-    fireEvent.change(screen.getByLabelText('Type your initials'), { target: { value: 'T.N' } })
-    next()
-    fireEvent.click(screen.getByRole('button', { name: 'Submit and finish' }))
-    await screen.findByText('Signed')
-    expect(submittedBody(fetchMock)).toMatchObject({ initialsType: 'TYPED', initialsData: 'T.N' })
+  describe('where they signed', () => {
+    it('shows what they type in the place box, and will not move on without it', async () => {
+      serve(customerDoc)
+      await toDate()
+      primary('Use this date')
+      expect(screen.getByText('Step 4 of 4')).toBeInTheDocument()
+      primary('Use this place')
+      expect(screen.getByRole('alert')).toHaveTextContent('Please say where you are signing.')
+      fireEvent.change(screen.getByLabelText('Where are you signing?'), { target: { value: 'Cape Town' } })
+      expect(boxText('p1')).toBe('Cape Town')
+    })
   })
 
-  it('will not go past the initials step with them cleared', async () => {
-    serve({ ...customerDoc, detectedFields: [CUSTOMER[0], CUSTOMER[1]] })
-    mount()
-    await screen.findByText(/here is what you need to do/)
-    next(); drawn.add('Draw your signature'); next()
-    fireEvent.change(screen.getByLabelText('Type your initials'), { target: { value: '' } })
-    next()
-    expect(screen.getByRole('alert')).toHaveTextContent('Please add your initials.')
+  describe('finishing', () => {
+    async function throughToFinish(fetchMock: ReturnType<typeof serve>, chosen = yesterday()) {
+      await toDate()
+      fireEvent.change(screen.getByLabelText('Choose the date'), { target: { value: chosen } })
+      primary('Use this date')
+      fireEvent.change(screen.getByLabelText('Where are you signing?'), { target: { value: 'Cape Town' } })
+      primary('Use this place')
+      await screen.findByText('That is everything')
+      return fetchMock
+    }
+
+    it('submits everything, including the date they chose and where they signed', async () => {
+      const fetchMock = serve(customerDoc)
+      await throughToFinish(fetchMock)
+      primary('Submit and finish')
+      await screen.findByText('Signed')
+      expect(screen.getByText('Thank you, your signature has been recorded.')).toBeInTheDocument()
+      expect(submittedBody(fetchMock)).toEqual({
+        signatureType: 'DRAWN', signatureData: 'data:image/png;base64,DRAWN-Draw your signature',
+        initialsType: 'TYPED', initialsData: 'TN',
+        signingDate: yesterday(),
+        placeValues: { p1: 'Cape Town' }, placeData: 'Cape Town',
+      })
+    })
+
+    it('every box is filled on the document before they submit', async () => {
+      const fetchMock = serve(customerDoc)
+      await throughToFinish(fetchMock)
+      for (const id of ['s1', 'i1', 'i2', 'd1', 'd2', 'p1', 'n1']) expect(boxText(id)).not.toBe('')
+    })
+
+    it('tapping a box on the document jumps back to that task, and the answers are kept', async () => {
+      const fetchMock = serve(customerDoc)
+      await throughToFinish(fetchMock)
+      fireEvent.click(screen.getByTestId('box-i1'))
+      expect(screen.getByText('Step 2 of 4')).toBeInTheDocument()
+      expect(screen.getByText('Your initials', { selector: 'h2' })).toBeInTheDocument()
+      expect(boxText('s1')).toBe('data:image/png;base64,DRAWN-Draw your signature')   // signature still applied
+      fireEvent.change(screen.getByLabelText('Type your initials'), { target: { value: 'T.N' } })
+      expect(boxText('i2')).toBe('T.N')
+    })
+
+    it('Back keeps what was drawn and what was chosen', async () => {
+      const fetchMock = serve(customerDoc)
+      await throughToFinish(fetchMock)
+      for (let i = 0; i < 5; i++) primary('Back')   // finish, place, date, initials, signature, back to the checklist
+      expect(screen.getByText(/here is what you need to do/)).toBeInTheDocument()
+      primary('Start')
+      expect(drawn.has('Draw your signature')).toBe(true)
+      expect(boxText('d1')).toBe(formatChosenDate(yesterday(), 'day_month'))
+    })
+
+    it('shows the server\'s message and stays on the last step when submitting fails', async () => {
+      const fetchMock = serve(customerDoc, json({ error: 'This signing link has expired or already been used' }, false, 403))
+      await throughToFinish(fetchMock)
+      primary('Submit and finish')
+      await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('expired or already been used'))
+      expect(screen.queryByText('Signed')).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Submit and finish' })).toBeEnabled()
+    })
   })
 
-  it('keeps what was entered when the signer goes back and forward again', async () => {
-    serve(customerDoc)
-    mount()
-    await screen.findByText(/here is what you need to do/)
-    next(); drawn.add('Draw your signature'); next(); next()
-    fireEvent.change(screen.getByLabelText('Page 2: Write where you are signing'), { target: { value: 'Durban' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
-    expect(stepLabel()).toBe('Step 2 of 5')
-    expect(drawn.has('Draw your signature')).toBe(true)
-    next(); next()
-    expect((screen.getByLabelText('Page 2: Write where you are signing') as HTMLInputElement).value).toBe('Durban')
-    next()
-    expect(stepLabel()).toBe('Step 5 of 5')
-  })
+  describe('other people, other forms', () => {
+    it('a witness has one task, and is never asked for initials, a date or a place', async () => {
+      serve({ detectedFields: WITNESS, signerName: 'Sipho Dlamini', signerRole: 'Witness 1', formName: 'New AOA' })
+      mount()
+      await screen.findByText(/here is what you need to do/)
+      expect(screen.getAllByRole('listitem')).toHaveLength(1)
+      primary('Start')
+      expect(screen.getByText('Step 1 of 1')).toBeInTheDocument()
+      expect(screen.queryByLabelText('Choose the date')).not.toBeInTheDocument()
+      drawn.add('Draw your signature'); primary('Use this signature')
+      await screen.findByText('That is everything')
+    })
 
-  it('has no Back button on the first step', async () => {
-    serve(customerDoc)
-    mount()
-    await screen.findByText(/here is what you need to do/)
-    expect(screen.queryByRole('button', { name: 'Back' })).not.toBeInTheDocument()
-  })
+    it('a typed signature works and is what gets sent', async () => {
+      const fetchMock = serve({ detectedFields: WITNESS, signerName: 'Sipho Dlamini', signerRole: 'Witness 1', formName: null })
+      mount()
+      await screen.findByText(/here is what you need to do/)
+      primary('Start')
+      fireEvent.click(screen.getByRole('tab', { name: 'Type' }))
+      fireEvent.change(screen.getByLabelText('Type your full name'), { target: { value: '  Sipho Dlamini ' } })
+      primary('Use this signature')
+      primary('Submit and finish')
+      await screen.findByText('Signed')
+      expect(submittedBody(fetchMock)).toMatchObject({ signatureType: 'TYPED', signatureData: 'Sipho Dlamini' })
+    })
 
-  it('an older session with no boxes asks for a signature and a final check, as before', async () => {
-    const fetchMock = serve({ detectedFields: [], signerName: 'Jane', signerRole: null, formName: null })
-    mount()
-    await screen.findByText('Your signature', { selector: 'h2' })
-    expect(stepLabel()).toBe('Step 1 of 2')
-    expect(screen.queryByText(/here is what you need to do/)).not.toBeInTheDocument()
-    drawn.add('Draw your signature')
-    next()
-    fireEvent.click(screen.getByRole('button', { name: 'Submit and finish' }))
-    await screen.findByText('Signed')
-    expect(submittedBody(fetchMock)).toMatchObject({ signatureType: 'DRAWN' })
-  })
-
-  it('shows the server\'s message and stays on the last step when submitting fails', async () => {
-    serve(customerDoc, json({ error: 'This signing link has expired or already been used' }, false, 403))
-    mount()
-    await screen.findByText(/here is what you need to do/)
-    next(); drawn.add('Draw your signature'); next(); next()
-    fireEvent.change(screen.getByLabelText('Page 2: Write where you are signing'), { target: { value: 'Cape Town' } })
-    next()
-    fireEvent.click(screen.getByRole('button', { name: 'Submit and finish' }))
-    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('expired or already been used'))
-    expect(screen.queryByText('Signed')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Submit and finish' })).toBeEnabled()   // can retry
+    it('an older session with no boxes has no checklist, just a signature and a final check', async () => {
+      const fetchMock = serve({ detectedFields: [], signerName: 'Jane', signerRole: null, formName: null })
+      mount()
+      await screen.findByText('Your signature', { selector: 'h2' })
+      expect(screen.queryByText(/here is what you need to do/)).not.toBeInTheDocument()
+      expect(screen.getByTestId('preview')).toBeInTheDocument()
+      drawn.add('Draw your signature'); primary('Use this signature')
+      primary('Submit and finish')
+      await screen.findByText('Signed')
+      expect(submittedBody(fetchMock)).toMatchObject({ signatureType: 'DRAWN' })
+    })
   })
 
   it('offers a reload when the document cannot be loaded', async () => {
@@ -231,7 +346,8 @@ describe('SignCapture (the signer\'s step-by-step page)', () => {
     serve(customerDoc)
     const { container } = mount()
     await screen.findByText(/here is what you need to do/)
-    for (let i = 0; i < 4; i++) next()
+    expect(container.textContent).not.toContain(String.fromCharCode(0x2014))
+    primary('Start')
     expect(container.textContent).not.toContain(String.fromCharCode(0x2014))
     expect(container.textContent).not.toContain('--')
   })

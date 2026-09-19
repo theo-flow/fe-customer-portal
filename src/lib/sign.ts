@@ -32,6 +32,7 @@ export interface Signer {
   place_data:        string | null
   email_sent:        boolean
   expired_at?:       string | null
+  signing_date?:     string | null   // YYYY-MM-DD the signer chose for the form's date boxes
   initials_type?:    SignatureType | null
   initials_data?:    string | null
   field_values?:     Record<string, { value: string | null; at: string }>

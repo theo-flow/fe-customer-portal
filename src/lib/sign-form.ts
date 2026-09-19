@@ -48,7 +48,7 @@ export const DEFAULT_INSTRUCTIONS: Record<FieldType, string> = {
   signature: 'Sign here',
   initials:  'Initial here',
   name:      'Print your full name',
-  date:      'The date is filled in for you',
+  date:      'Choose the date',
   place:     'Write where you are signing',
   read_name:  'Read from the document',
   read_email: 'Read from the document',

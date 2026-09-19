@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
-  orderFields, instructionOf, buildTasks, requirements, buildSteps, initialsFromName,
+  orderFields, instructionOf, buildTasks, requirements, initialsFromName, formatChosenDate,
   cleanPlace, placeValueFor, validateSubmission, MAX_MARK_CHARS, MAX_TYPED_CHARS, MAX_PLACE_CHARS,
+  buildGroups, boxesOf, pagesPhrase, summariseGroups, todaySAST, dateBounds, isRealDate, dateProblem, DATE_WINDOW_DAYS,
 } from '../sign-tasks'
 import type { DetectedField } from '../sign'
 
@@ -46,45 +47,32 @@ describe('reading the boxes', () => {
       [1, 1, 'Initial here to confirm you have read this page', false],
       [2, 2, 'Sign here', false],
       [3, 2, 'Write where you are signing', false],
-      [4, 2, 'The date is filled in for you', true],
+      [4, 2, 'The date is filled in for you', false],
     ])
     expect(buildTasks([f({ field_type: 'name' })])[0].auto).toBe(true)
   })
 })
 
 describe('what each person is asked for', () => {
-  it('the customer: signature, initials and a place', () => {
+  it('the customer: signature, initials, a date and a place', () => {
     const r = requirements(customer)
     expect(r.signature).toBe(true)
     expect(r.initials).toBe(true)
+    expect(r.dates.map(d => d.field_id)).toEqual(['d2'])
     expect(r.places.map(p => p.field_id)).toEqual(['p1'])
-    expect(buildSteps(customer)).toEqual(['overview', 'signature', 'initials', 'place', 'review'])
-  })
-
-  it('a witness: only a signature, so no initials or place steps', () => {
-    expect(buildSteps(witness)).toEqual(['overview', 'signature', 'review'])
   })
 
   it('a person with only initials is not asked for a signature', () => {
-    const only = [f({ field_type: 'initials' })]
-    expect(requirements(only)).toMatchObject({ signature: false, initials: true })
-    expect(buildSteps(only)).toEqual(['overview', 'initials', 'review'])
+    expect(requirements([f({ field_type: 'initials' })])).toMatchObject({ signature: false, initials: true })
   })
 
-  it('an optional box the operator marked "not required" adds no step', () => {
+  it('an optional box the operator marked "not required" is not required', () => {
     const opt = [...witness, f({ field_id: 'o', field_type: 'initials', required: false })]
     expect(requirements(opt).initials).toBe(false)
-    expect(buildSteps(opt)).toEqual(['overview', 'signature', 'review'])
   })
 
   it('an older session with no boxes for the signer still asks for a signature, as before', () => {
-    expect(requirements([])).toEqual({ signature: true, initials: false, places: [] })
-    expect(buildSteps([])).toEqual(['signature', 'review'])
-  })
-
-  it('date and printed name boxes never add a step of their own', () => {
-    const auto = [...witness, f({ field_type: 'date' }), f({ field_type: 'name' })]
-    expect(buildSteps(auto)).toEqual(['overview', 'signature', 'review'])
+    expect(requirements([])).toEqual({ signature: true, initials: false, dates: [], places: [] })
   })
 })
 
@@ -168,5 +156,119 @@ describe('validateSubmission (the server runs this, not just the page)', () => {
 
   it('a place answer of only spaces counts as missing', () => {
     expect(validateSubmission(customer, { ...complete, placeValues: { p1: '   ' } })).toBe('Please say where you are signing (page 2).')
+  })
+})
+
+
+describe('groups: one kind of thing at a time, done once for every box of that kind', () => {
+  it('the customer is asked for a signature, initials, the date and where they signed, in that order', () => {
+    expect(buildGroups(customer)).toEqual(['signature', 'initials', 'date', 'place'])
+  })
+
+  it('a witness only signs', () => {
+    expect(buildGroups(witness)).toEqual(['signature'])
+  })
+
+  it('a kind with only optional boxes is skipped, and a form with no boxes at all asks for a signature', () => {
+    expect(buildGroups([f({ field_type: 'initials', required: false }), f({ field_id: 'q' })])).toEqual(['signature'])
+    expect(buildGroups([])).toEqual(['signature'])
+  })
+
+  it('the printed name never becomes a task, it is filled in', () => {
+    expect(buildGroups([...witness, f({ field_type: 'name' })])).toEqual(['signature'])
+  })
+
+  it('finds every box of a kind in reading order, across pages', () => {
+    const many = [f({ field_id: 'c', field_type: 'initials', page: 3 }), f({ field_id: 'a', field_type: 'initials', page: 1 }), f({ field_id: 'b', field_type: 'initials', page: 2 }), f({ field_id: 'z' })]
+    expect(boxesOf(many, 'initials').map(x => x.field_id)).toEqual(['a', 'b', 'c'])
+  })
+
+  it.each([
+    [[], 'the document'],
+    [[f({ page: 2 })], 'page 2'],
+    [[f({ page: 2 }), f({ page: 1 })], 'pages 1 and 2'],
+    [[f({ page: 3 }), f({ page: 1 }), f({ page: 2 }), f({ page: 2 })], 'pages 1, 2 and 3'],
+  ])('describes the pages plainly', (fields, text) => expect(pagesPhrase(fields)).toBe(text))
+
+  it('writes the checklist a person reads first, one line per kind of task', () => {
+    const many = [...customer, f({ field_id: 'i2', field_type: 'initials', page: 2 }), f({ field_id: 'i3', field_type: 'initials', page: 3 })]
+    expect(summariseGroups(many).map(x => x.text)).toEqual([
+      'Sign on page 2',
+      'Initial on pages 1, 2 and 3',
+      'Choose the date, it is written on page 2',
+      'Write where you are signing, on page 2',
+    ])
+  })
+
+  it('an older session is simply asked to sign', () => {
+    expect(summariseGroups([])).toEqual([{ group: 'signature', text: 'Sign the document' }])
+  })
+})
+
+describe('the date the signer chooses', () => {
+  const noon = (iso: string) => new Date(`${iso}T12:00:00+02:00`)
+
+  it('today is the South African day, not the UTC day', () => {
+    expect(todaySAST(new Date('2026-09-19T10:00:00Z'))).toBe('2026-09-19')
+    expect(todaySAST(new Date('2026-09-19T22:30:00Z'))).toBe('2026-09-20')   // already tomorrow in South Africa
+    expect(todaySAST(new Date('2026-12-31T23:30:00Z'))).toBe('2027-01-01')
+  })
+
+  it('may go back a limited number of days and never forward', () => {
+    const b = dateBounds(noon('2026-09-19'))
+    expect(b.max).toBe('2026-09-19')
+    expect(b.min).toBe('2026-08-20')
+    expect(DATE_WINDOW_DAYS).toBe(30)
+  })
+
+  it('the window crosses a year end correctly', () => {
+    expect(dateBounds(noon('2027-01-10')).min).toBe('2026-12-11')
+  })
+
+  it.each([['2026-02-30', false], ['2026-13-01', false], ['26-09-19', false], ['19 September', false], ['', false], ['2026-09-19', true], ['2028-02-29', true]])(
+    'isRealDate(%s) is %s', (iso, ok) => expect(isRealDate(iso)).toBe(ok))
+
+  it('accepts today, yesterday and the oldest allowed day', () => {
+    const now = noon('2026-09-19')
+    expect(dateProblem('2026-09-19', now)).toBeNull()
+    expect(dateProblem('2026-09-18', now)).toBeNull()
+    expect(dateProblem('2026-08-20', now)).toBeNull()
+  })
+
+  it('refuses tomorrow, too old, and anything that is not a date', () => {
+    const now = noon('2026-09-19')
+    expect(dateProblem('2026-09-20', now)).toBe('The date cannot be in the future.')
+    expect(dateProblem('2026-08-19', now)).toBe('The date cannot be more than 30 days ago.')
+    expect(dateProblem('2026-02-30', now)).toBe('Please choose a valid date.')
+    expect(dateProblem(undefined, now)).toBe('Please choose a valid date.')
+    expect(dateProblem(20260919, now)).toBe('Please choose a valid date.')
+  })
+
+  it('is optional in a submission, but checked when it is sent', () => {
+    const base = { signatureType: 'TYPED' as const, signatureData: 'Sipho' }
+    expect(validateSubmission(witness, base)).toBeNull()
+    expect(validateSubmission(witness, { ...base, signingDate: todaySAST() })).toBeNull()
+    expect(validateSubmission(witness, { ...base, signingDate: '2999-01-01' })).toBe('The date cannot be in the future.')
+    expect(validateSubmission(witness, { ...base, signingDate: 'yesterday' })).toBe('Please choose a valid date.')
+  })
+})
+
+
+describe('formatChosenDate (what the signer sees in the box)', () => {
+  it.each([
+    ['2026-09-17', 'day_month', '17 September'],
+    ['2026-09-07', 'day_month', '7 September'],
+    ['2026-09-17', 'year_2', '26'],
+    ['2009-06-01', 'year_2', '09'],
+    ['2026-09-17', 'year_4', '2026'],
+    ['2026-09-17', 'long', '17 September 2026'],
+    ['2026-09-17', 'iso', '2026-09-17'],
+    ['2026-09-17', undefined, '2026-09-17'],
+  ])('%s as %s is %s', (iso, format, expected) => expect(formatChosenDate(iso, format)).toBe(expected))
+
+  it('shows nothing for something that is not a date', () => {
+    expect(formatChosenDate('', 'day_month')).toBe('')
+    expect(formatChosenDate('2026-02-30', 'day_month')).toBe('')
+    expect(formatChosenDate('nonsense', 'long')).toBe('')
   })
 })

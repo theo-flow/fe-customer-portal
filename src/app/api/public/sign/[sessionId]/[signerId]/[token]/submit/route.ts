@@ -83,6 +83,9 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
       initials_type:   body.initialsData ? (body.initialsType ?? null) : (signer.initials_type ?? null),
       initials_data:   body.initialsData ? body.initialsData.trim() : (signer.initials_data ?? null),
       place_data:      firstPlace || signer.place_data,
+      // The date the signer chose for the form's date boxes. signed_at above is
+      // the real moment they signed and is never affected by this choice.
+      signing_date:    body.signingDate ?? signer.signing_date ?? null,
       field_values:    { ...(signer.field_values ?? {}), ...fieldValues },
       token_used:      true,
     }

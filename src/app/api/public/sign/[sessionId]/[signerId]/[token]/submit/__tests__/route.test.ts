@@ -176,6 +176,32 @@ describe('POST /api/public/sign/.../submit', () => {
       expect(saved.signers[1]).toMatchObject({ status: 'PENDING', token_used: false, signature_data: null })
     })
 
+    it('records the date the signer chose, separately from the moment they actually signed', async () => {
+      const chosen = new Date(Date.now() - 3 * 86400000 + 2 * 3600000).toISOString().slice(0, 10)
+      const res = await POST(req({ ...customerAnswer, signingDate: chosen }), params(1))
+      expect(res.status).toBe(200)
+      const s = savedSession().signers[0]
+      expect(s.signing_date).toBe(chosen)
+      expect(s.signed_at).not.toContain(chosen)   // signed_at is the real time, not the chosen day
+    })
+
+    it('an older page that sends no date still signs, with no chosen date recorded', async () => {
+      await POST(req(customerAnswer), params(1))
+      expect(savedSession().signers[0].signing_date).toBeNull()
+    })
+
+    it.each([
+      ['a date in the future', '2999-01-01', 'The date cannot be in the future.'],
+      ['a date long ago', '2020-01-01', 'The date cannot be more than 30 days ago.'],
+      ['something that is not a date', 'yesterday', 'Please choose a valid date.'],
+      ['an impossible date', '2026-02-30', 'Please choose a valid date.'],
+    ])('rejects %s and writes nothing', async (_l, signingDate, message) => {
+      const res = await POST(req({ ...customerAnswer, signingDate }), params(1))
+      expect(res.status).toBe(400)
+      expect((await res.json()).error).toBe(message)
+      expect(puts()).toHaveLength(0)
+    })
+
     it('records an older single place answer for a box with no id', async () => {
       const old = [box({ field_id: undefined, field_type: 'signature' }), box({ field_id: undefined, field_type: 'place' })]
       reads(session({}, [signer(1)], old))

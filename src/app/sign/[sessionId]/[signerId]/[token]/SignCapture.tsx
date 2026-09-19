@@ -4,9 +4,11 @@ import dynamic from 'next/dynamic'
 import type SignatureCanvas from 'react-signature-canvas'
 import type { DetectedField } from '@/lib/sign'
 import {
-  buildSteps, buildTasks, initialsFromName, requirements, validateSubmission, STEP_TITLES,
-  type MarkType, type StepId, type Submission,
+  boxesOf, buildGroups, cleanPlace, dateBounds, dateProblem, formatChosenDate, GROUP_TITLES, initialsFromName,
+  instructionOf, pagesPhrase, summariseGroups, todaySAST, validateSubmission,
+  type GroupId, type MarkType, type Submission,
 } from '@/lib/sign-tasks'
+import type { BoxValue } from './DocumentPreview'
 import AdoptMark, { type MarkMode } from './AdoptMark'
 
 // ssr:false is only permitted inside a Client Component in the App Router
@@ -22,14 +24,16 @@ interface DocumentData {
   formName:   string | null
 }
 
+interface Mark { type: MarkType; data: string }
+
 const bigTyped = 'w-full px-4 py-3 rounded-xl border border-black/[0.12] text-[22px] italic bg-white outline-none focus:border-black/40 focus:ring-2 focus:ring-black/5 transition-all'
 const smallInput = 'w-full px-4 py-2.5 rounded-xl border border-black/[0.12] text-[14px] bg-white outline-none focus:border-black/40 focus:ring-2 focus:ring-black/5 transition-all'
 
-const pagesList = (fields: DetectedField[]) => {
-  const pages = Array.from(new Set(fields.map(f => f.page))).sort((a, b) => a - b)
-  return pages.length === 1 ? `page ${pages[0]}` : `pages ${pages.join(', ')}`
-}
-
+// The signer works ON the document. They are walked through one KIND of thing
+// at a time (their signature, their initials, the date, where they signed);
+// the pages and boxes it applies to light up, and what they enter appears
+// inside every one of those boxes straight away. Doing it once fills every box
+// of that kind, so initials on seven pages is a single task.
 export default function SignCapture({
   sessionId, signerId, token,
 }: {
@@ -37,8 +41,8 @@ export default function SignCapture({
   signerId:  string
   token:     string
 }) {
-  const [data, setData]             = useState<DocumentData | null>(null)
-  const [loadError, setLoadError]   = useState(false)
+  const [data, setData]           = useState<DocumentData | null>(null)
+  const [loadError, setLoadError] = useState(false)
   const [previewFailed, setPreviewFailed] = useState(false)
 
   const [stepIndex, setStepIndex]   = useState(0)
@@ -46,16 +50,22 @@ export default function SignCapture({
   const [submitting, setSubmitting] = useState(false)
   const [done, setDone]             = useState(false)
 
+  // signature and initials: what is being drawn or typed now, and what was applied
   const [sigMode, setSigMode]   = useState<MarkMode>('draw')
   const [sigTyped, setSigTyped] = useState('')
   const sigRef = useRef<SignatureCanvas>(null)
+  const [sigApplied, setSigApplied] = useState<Mark | null>(null)
 
   const [iniMode, setIniMode]   = useState<MarkMode>('type')
   const [iniTyped, setIniTyped] = useState('')
   const [iniTouched, setIniTouched] = useState(false)
   const iniRef = useRef<SignatureCanvas>(null)
+  const [iniApplied, setIniApplied] = useState<Mark | null>(null)
 
-  const [places, setPlaces]     = useState<Record<string, string>>({})
+  const [dateDraft, setDateDraft]     = useState(todaySAST())
+  const [dateApplied, setDateApplied] = useState<string | null>(null)
+  const [placeDraft, setPlaceDraft]     = useState('')
+  const [placeApplied, setPlaceApplied] = useState<string | null>(null)
 
   useEffect(() => {
     fetch(`/api/public/sign/${sessionId}/${signerId}/${token}/document`)
@@ -71,62 +81,96 @@ export default function SignCapture({
     if (data && !iniTouched) setIniTyped(initialsFromName(data.signerName))
   }, [data, iniTouched])
 
-  const fields = data?.fields ?? []
-  const steps  = useMemo(() => buildSteps(fields), [fields])
-  const tasks  = useMemo(() => buildTasks(fields), [fields])
-  const need   = useMemo(() => requirements(fields), [fields])
-  const step: StepId = steps[Math.min(stepIndex, steps.length - 1)]
+  const fields = useMemo(() => data?.fields ?? [], [data])
+  const groups = useMemo(() => buildGroups(fields), [fields])
+  const hasBoxes = fields.length > 0
+  // intro (only when there are boxes to explain), one step per kind of task, then the final check
+  const steps = useMemo(() => [...(hasBoxes ? ['intro'] : []), ...groups, 'finish'] as (GroupId | 'intro' | 'finish')[], [hasBoxes, groups])
+  const step = steps[Math.min(stepIndex, steps.length - 1)]
+  const group = (groups as string[]).includes(step) ? (step as GroupId) : null
+  const groupNumber = group ? groups.indexOf(group) + 1 : 0
 
-  const sigBoxes = fields.filter(f => f.field_type === 'signature')
-  const iniBoxes = fields.filter(f => f.field_type === 'initials')
+  // ---- what each box should be showing right now ----
+  const values = useMemo(() => {
+    const out: Record<string, BoxValue> = {}
+    const asValue = (applied: Mark | null, active: boolean, mode: MarkMode, typed: string): BoxValue | undefined => {
+      if (active && mode === 'type' && typed.trim()) return { kind: 'text', value: typed.trim() }
+      if (!applied) return undefined
+      return applied.type === 'DRAWN' ? { kind: 'image', value: applied.data } : { kind: 'text', value: applied.data }
+    }
+    for (const box of fields) {
+      if (!box.field_id) continue
+      let v: BoxValue | undefined
+      if (box.field_type === 'signature') v = asValue(sigApplied, group === 'signature', sigMode, sigTyped)
+      else if (box.field_type === 'initials') v = asValue(iniApplied, group === 'initials', iniMode, iniTyped)
+      else if (box.field_type === 'date') {
+        const text = formatChosenDate(group === 'date' ? dateDraft : (dateApplied ?? ''), box.date_format)
+        if (text) v = { kind: 'text', value: text }
+      } else if (box.field_type === 'place') {
+        const text = cleanPlace(group === 'place' ? placeDraft : (placeApplied ?? ''))
+        if (text) v = { kind: 'text', value: text }
+      } else if (box.field_type === 'name' && data?.signerName) v = { kind: 'text', value: data.signerName }
+      if (v) out[box.field_id] = v
+    }
+    return out
+  }, [fields, group, sigApplied, sigMode, sigTyped, iniApplied, iniMode, iniTyped, dateDraft, dateApplied, placeDraft, placeApplied, data?.signerName])
 
-  // ---- reading what the signer has adopted ----
-  function readMark(mode: MarkMode, typed: string, ref: React.RefObject<SignatureCanvas>): { type?: MarkType; data?: string } {
+  // ---- reading a drawn or typed mark ----
+  function readMark(mode: MarkMode, typed: string, ref: React.RefObject<SignatureCanvas>): Mark | null {
     if (mode === 'draw') {
-      if (!ref.current || ref.current.isEmpty()) return {}
+      if (!ref.current || ref.current.isEmpty()) return null
       return { type: 'DRAWN', data: ref.current.toDataURL('image/png') }
     }
-    return typed.trim() ? { type: 'TYPED', data: typed.trim() } : {}
+    return typed.trim() ? { type: 'TYPED', data: typed.trim() } : null
   }
 
-  function buildSubmission(): Submission {
-    const sig = readMark(sigMode, sigTyped, sigRef)
-    const ini = readMark(iniMode, iniTyped, iniRef)
-    return {
-      signatureType: sig.type, signatureData: sig.data,
-      initialsType:  ini.type, initialsData:  ini.data,
-      placeValues:   places,
-      // older boxes have no id, so they take the first place answer
-      placeData:     need.places.length > 0 ? (places[need.places[0].field_id ?? ''] ?? '') : undefined,
+  // Applies what is entered for this kind of task to every box of that kind,
+  // then moves to the next task.
+  function applyAndContinue() {
+    if (!group) return
+    if (group === 'signature') {
+      const m = readMark(sigMode, sigTyped, sigRef)
+      if (!m) { setError('Please add your signature.'); return }
+      setSigApplied(m)
+    } else if (group === 'initials') {
+      const m = readMark(iniMode, iniTyped, iniRef)
+      if (!m) { setError('Please add your initials.'); return }
+      setIniApplied(m)
+    } else if (group === 'date') {
+      const problem = dateProblem(dateDraft)
+      if (problem) { setError(problem); return }
+      setDateApplied(dateDraft)
+    } else {
+      const text = cleanPlace(placeDraft)
+      if (!text) { setError('Please say where you are signing.'); return }
+      setPlaceApplied(text)
     }
-  }
-
-  // What is still missing for one step, so "Next" can say so right there.
-  function stepProblem(id: StepId): string | null {
-    if (id === 'signature' && need.signature) {
-      const s = buildSubmission()
-      return s.signatureData ? null : 'Please add your signature.'
-    }
-    if (id === 'initials' && need.initials) {
-      return buildSubmission().initialsData ? null : 'Please add your initials.'
-    }
-    if (id === 'place') {
-      const missing = need.places.find(f => !(f.field_id ? places[f.field_id] : '')?.trim())
-      return missing ? `Please say where you are signing (page ${missing.page}).` : null
-    }
-    return null
-  }
-
-  function next() {
-    const problem = stepProblem(step)
-    if (problem) { setError(problem); return }
     setError(null)
     setStepIndex(i => Math.min(i + 1, steps.length - 1))
   }
 
-  function back() {
+  const back = () => { setError(null); setStepIndex(i => Math.max(i - 1, 0)) }
+
+  // Clicking a box on the document jumps to the task it belongs to.
+  function onBoxClick(field: DetectedField) {
+    const target = (groups as string[]).indexOf(field.field_type)
+    if (target < 0) return
     setError(null)
-    setStepIndex(i => Math.max(i - 1, 0))
+    setStepIndex((hasBoxes ? 1 : 0) + target)
+  }
+
+  function buildSubmission(): Submission {
+    const placeBoxes = boxesOf(fields, 'place')
+    const placeValues: Record<string, string> = {}
+    for (const b of placeBoxes) if (b.field_id && placeApplied) placeValues[b.field_id] = placeApplied
+    return {
+      signatureType: sigApplied?.type, signatureData: sigApplied?.data,
+      initialsType:  iniApplied?.type, initialsData:  iniApplied?.data,
+      signingDate:   dateApplied ?? undefined,
+      placeValues,
+      // older boxes have no id, so they take the single place answer
+      placeData:     placeApplied ?? undefined,
+    }
   }
 
   async function submit() {
@@ -184,120 +228,130 @@ export default function SignCapture({
 
   if (!data) return <div className="h-48 rounded-xl bg-gray-50 animate-pulse" aria-label="Loading" />
 
-  const isLast = stepIndex >= steps.length - 1
-  const progress = ((stepIndex + 1) / steps.length) * 100
+  const boxes = group ? boxesOf(fields, group) : []
+  const instruction = boxes.length > 0 ? instructionOf(boxes[0]) : ''
+  const dateBoxes = boxesOf(fields, 'date')
+  const written = Array.from(new Set(dateBoxes.map(b => formatChosenDate(dateDraft, b.date_format)).filter(Boolean)))
+  const bounds = dateBounds()
+  const isLast = step === 'finish'
+
+  const enter = (e: React.KeyboardEvent) => { if (e.key === 'Enter') { e.preventDefault(); applyAndContinue() } }
 
   return (
-    <div className="space-y-5">
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <p className="text-[12px] font-semibold uppercase tracking-[0.1em] text-gray-400">
-            Step {stepIndex + 1} of {steps.length}
-          </p>
-          <p className="text-[12px] text-gray-400">{STEP_TITLES[step]}</p>
-        </div>
-        <div className="h-1 rounded-full bg-gray-100 overflow-hidden" role="progressbar" aria-valuemin={1} aria-valuemax={steps.length} aria-valuenow={stepIndex + 1}>
-          <div className="h-full bg-black transition-all" style={{ width: `${progress}%` }} />
-        </div>
-      </div>
-
-      {step === 'overview' && (
-        <div>
-          <h2 className="text-[17px] font-semibold text-black mb-1">
-            {data.signerName ? `${data.signerName}, here is what you need to do` : 'Here is what you need to do'}
-          </h2>
-          {data.signerRole && (
-            <p className="text-[13px] text-gray-500 mb-3">You are signing as <span className="font-medium text-black">{data.signerRole}</span>.</p>
-          )}
-          <ol className="space-y-2 mb-4">
-            {tasks.map(t => (
-              <li key={`${t.n}-${t.field.field_id ?? t.n}`} className="flex gap-3 rounded-xl border border-black/[0.08] px-4 py-3">
-                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-black text-white text-[12px] font-semibold flex items-center justify-center">{t.n}</span>
-                <span className="text-[13px] text-black">
-                  <span className="text-gray-400">Page {t.page}: </span>{t.text}
-                  {t.auto && <span className="ml-2 text-[11px] text-green-700 bg-green-50 rounded-full px-2 py-0.5">filled in for you</span>}
-                </span>
-              </li>
-            ))}
-          </ol>
-          <p className="text-[12px] text-gray-400">The next steps take about a minute. Nothing is sent until you press the final button.</p>
-        </div>
+    <div className="space-y-4">
+      {!previewFailed && (
+        <DocumentPreview
+          url={data.url}
+          fields={fields}
+          values={values}
+          activeType={group}
+          onError={() => setPreviewFailed(true)}
+          onBoxClick={hasBoxes ? onBoxClick : undefined}
+        />
       )}
 
-      {steps.includes('signature') && (
-        <div hidden={step !== 'signature'}>
-          <h2 className="text-[17px] font-semibold text-black mb-1">Your signature</h2>
-          <p className="text-[13px] text-gray-500 mb-4">
-            {sigBoxes.length > 0 ? `It will be placed on ${pagesList(sigBoxes)}.` : 'It will be added to the document.'} Draw it, or type your name.
-          </p>
-          <AdoptMark label="signature" mode={sigMode} onMode={setSigMode} canvasRef={sigRef} typed={sigTyped} onTyped={setSigTyped}
-                     typedLabel="Type your full name" typedPlaceholder="Your full name" typedClass={bigTyped} visible />
-        </div>
-      )}
-
-      {steps.includes('initials') && (
-        <div hidden={step !== 'initials'}>
-          <h2 className="text-[17px] font-semibold text-black mb-1">Your initials</h2>
-          <p className="text-[13px] text-gray-500 mb-4">They will be placed on {pagesList(iniBoxes)}. We started you off with the letters of your name.</p>
-          <AdoptMark label="initials" mode={iniMode} onMode={setIniMode} canvasRef={iniRef} typed={iniTyped}
-                     onTyped={v => { setIniTouched(true); setIniTyped(v) }}
-                     typedLabel="Type your initials" typedPlaceholder="For example TN" typedClass={bigTyped} visible />
-        </div>
-      )}
-
-      {step === 'place' && (
-        <div>
-          <h2 className="text-[17px] font-semibold text-black mb-1">Where you are signing</h2>
-          <p className="text-[13px] text-gray-500 mb-4">This is written on the document next to your signature.</p>
-          <div className="space-y-3">
-            {need.places.map(f => (
-              <div key={f.field_id ?? `${f.page}-${f.y}`}>
-                <label className="block text-[13px] font-medium text-black mb-1.5" htmlFor={`place-${f.field_id}`}>
-                  Page {f.page}: {f.instruction || 'Where you are signing'}
-                </label>
-                <input id={`place-${f.field_id}`} type="text" value={places[f.field_id ?? ''] ?? ''} maxLength={100}
-                       onChange={e => setPlaces(p => ({ ...p, [f.field_id ?? '']: e.target.value }))}
-                       placeholder="For example Cape Town" className={smallInput} />
-              </div>
-            ))}
+      <div className="sticky bottom-3 z-10 rounded-2xl border border-black/[0.1] bg-white shadow-lg px-5 py-4 space-y-3">
+        {step === 'intro' && (
+          <div>
+            <h2 className="text-[16px] font-semibold text-black mb-1">
+              {data.signerName ? `${data.signerName}, here is what you need to do` : 'Here is what you need to do'}
+            </h2>
+            {data.signerRole && (
+              <p className="text-[12px] text-gray-500 mb-2">You are signing as <span className="font-medium text-black">{data.signerRole}</span>.</p>
+            )}
+            <ol className="space-y-1.5 mb-3">
+              {summariseGroups(fields).map((g, i) => (
+                <li key={g.group} className="flex gap-2.5 text-[13px] text-black">
+                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-black text-white text-[11px] font-semibold flex items-center justify-center">{i + 1}</span>
+                  <span>{g.text}</span>
+                </li>
+              ))}
+            </ol>
+            <p className="text-[12px] text-gray-400 mb-3">
+              The boxes on the document above show where each one goes. Nothing is sent until you press the final button.
+            </p>
+            <button type="button" onClick={() => setStepIndex(1)}
+                    className="w-full py-3 rounded-xl bg-black text-white text-[14px] font-semibold hover:bg-gray-800 transition-colors">
+              Start
+            </button>
           </div>
-        </div>
-      )}
-
-      {step === 'review' && (
-        <div>
-          <h2 className="text-[17px] font-semibold text-black mb-1">Check and finish</h2>
-          <p className="text-[13px] text-gray-500 mb-4">
-            The numbered boxes show where each thing will go. Nothing has been sent yet.
-          </p>
-          {!previewFailed && (
-            <DocumentPreview url={data.url} fields={fields} onError={() => setPreviewFailed(true)} />
-          )}
-        </div>
-      )}
-
-      {error && (
-        <div role="alert" className="rounded-xl bg-red-50 border border-red-100 px-4 py-3 text-[13px] text-red-700">{error}</div>
-      )}
-
-      <div className="flex gap-3">
-        {stepIndex > 0 && (
-          <button type="button" onClick={back}
-                  className="px-5 py-3.5 rounded-xl border border-black/[0.15] text-[14px] font-semibold text-black">
-            Back
-          </button>
         )}
-        {isLast ? (
-          <button type="button" onClick={submit} disabled={submitting}
-                  className="flex-1 py-3.5 rounded-xl bg-black text-white text-[14px] font-semibold hover:bg-gray-800
-                             active:bg-gray-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-            {submitting ? 'Submitting…' : 'Submit and finish'}
-          </button>
-        ) : (
-          <button type="button" onClick={next}
-                  className="flex-1 py-3.5 rounded-xl bg-black text-white text-[14px] font-semibold hover:bg-gray-800 active:bg-gray-900 transition-colors">
-            Next
-          </button>
+
+        {group && (
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-gray-400">Step {groupNumber} of {groups.length}</p>
+              <p className="text-[11px] text-gray-400">{boxes.length > 0 ? `Applies to ${pagesPhrase(boxes)}` : ''}</p>
+            </div>
+            <h2 className="text-[16px] font-semibold text-black mb-0.5">{GROUP_TITLES[group]}</h2>
+            {instruction && <p className="text-[13px] text-gray-500 mb-3">{instruction}</p>}
+          </div>
+        )}
+
+        {/* the inputs stay mounted so a drawn signature survives Back and Next */}
+        {groups.includes('signature') && (
+          <div hidden={group !== 'signature'}>
+            <AdoptMark label="signature" mode={sigMode} onMode={setSigMode} canvasRef={sigRef} typed={sigTyped} onTyped={setSigTyped}
+                       typedLabel="Type your full name" typedPlaceholder="Your full name" typedClass={bigTyped} visible />
+          </div>
+        )}
+        {groups.includes('initials') && (
+          <div hidden={group !== 'initials'}>
+            <AdoptMark label="initials" mode={iniMode} onMode={setIniMode} canvasRef={iniRef} typed={iniTyped}
+                       onTyped={v => { setIniTouched(true); setIniTyped(v) }}
+                       typedLabel="Type your initials" typedPlaceholder="For example TN" typedClass={bigTyped} visible />
+          </div>
+        )}
+        {group === 'date' && (
+          <div>
+            <label className="block text-[13px] font-medium text-black mb-1.5" htmlFor="chosen-date">Choose the date</label>
+            <input id="chosen-date" type="date" value={dateDraft} min={bounds.min} max={bounds.max}
+                   onChange={e => setDateDraft(e.target.value)} onKeyDown={enter} className={smallInput} />
+            {written.length > 0 && (
+              <p className="text-[12px] text-gray-500 mt-2">It will be written on the form as: <span className="font-medium text-black">{written.join(' and ')}</span></p>
+            )}
+          </div>
+        )}
+        {group === 'place' && (
+          <div>
+            <label className="block text-[13px] font-medium text-black mb-1.5" htmlFor="chosen-place">Where are you signing?</label>
+            <input id="chosen-place" type="text" value={placeDraft} maxLength={100} onChange={e => setPlaceDraft(e.target.value)}
+                   onKeyDown={enter} placeholder="For example Cape Town" className={smallInput} />
+          </div>
+        )}
+
+        {isLast && (
+          <div>
+            <h2 className="text-[16px] font-semibold text-black mb-1">That is everything</h2>
+            <p className="text-[13px] text-gray-500">Check the document above. If something is wrong, tap that box to change it. Then submit.</p>
+          </div>
+        )}
+
+        {error && (
+          <div role="alert" className="rounded-xl bg-red-50 border border-red-100 px-4 py-3 text-[13px] text-red-700">{error}</div>
+        )}
+
+        {step !== 'intro' && (
+          <div className="flex gap-3">
+            {stepIndex > 0 && (
+              <button type="button" onClick={back}
+                      className="px-5 py-3 rounded-xl border border-black/[0.15] text-[14px] font-semibold text-black">
+                Back
+              </button>
+            )}
+            {isLast ? (
+              <button type="button" onClick={submit} disabled={submitting}
+                      className="flex-1 py-3 rounded-xl bg-black text-white text-[14px] font-semibold hover:bg-gray-800
+                                 active:bg-gray-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                {submitting ? 'Submitting…' : 'Submit and finish'}
+              </button>
+            ) : (
+              <button type="button" onClick={applyAndContinue}
+                      className="flex-1 py-3 rounded-xl bg-black text-white text-[14px] font-semibold hover:bg-gray-800 active:bg-gray-900 transition-colors">
+                {group === 'signature' ? 'Use this signature' : group === 'initials' ? 'Use these initials' : group === 'date' ? 'Use this date' : 'Use this place'}
+              </button>
+            )}
+          </div>
         )}
       </div>
     </div>
