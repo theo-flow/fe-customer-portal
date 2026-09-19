@@ -53,7 +53,7 @@ describe('fixedWording (what stays the same on every copy of the form)', () => {
   })
   it('rejects amounts, dates, IDs and anything too short to identify a form', () => {
     expect(fixedWording('R23 062.01')).toBe('')
-    expect(fixedWording('9407175302080')).toBe('')
+    expect(fixedWording('8801015800086')).toBe('')
     expect(fixedWording('Date')).toBe('')
     expect(fixedWording('2026/09/19')).toBe('')
     expect(fixedWording('')).toBe('')
@@ -68,7 +68,7 @@ describe('suggestAnchors', () => {
   const pages = [
     { page: 1, lines: [
       { y: 0.16, text: 'AMENDMENT OF AGREEMENT: 533 323 703 ("THE AGREEMENT")' },
-      { y: 0.25, text: 'SITHEMBISO MJOKO' },                 // a person: variable content
+      { y: 0.25, text: 'THANDI NKOSI' },                 // a person: variable content
       { y: 0.6,  text: 'R23 062.01 over a period of ____ months.' },
     ] },
     { page: 2, lines: [
@@ -94,7 +94,7 @@ describe('suggestAnchors', () => {
       { page: 3, text: 'Witness for consumer' },
     ]))
     const texts = out.map(a => a.text.toLowerCase())
-    expect(texts.some(t => t.includes('mjoko'))).toBe(false)     // page 1 second line is not near a box
+    expect(texts.some(t => t.includes('nkosi'))).toBe(false)     // page 1 second line is not near a box
     expect(texts.some(t => t.includes('payment shall'))).toBe(false)
     expect(out.every(a => !/\d/.test(a.text))).toBe(true)
   })
