@@ -1,8 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   cleanInstruction, clampBox, newField, repeatOnAllPages, removeRole, renameRole,
-  describeField, fieldsByPage, validateLayout, DEFAULT_INSTRUCTIONS, MAX_INSTRUCTION_CHARS, isReadType, mergeSuggestions,
-  MAX_FIELDS,
+  describeField, fieldsByPage, validateLayout, DEFAULT_INSTRUCTIONS, MAX_INSTRUCTION_CHARS, isReadType,
   type FormField, type FormLayout,
 } from '../sign-form'
 
@@ -305,78 +304,5 @@ describe('people who are always the same (role defaults)', () => {
   it('a name without an email is fine (the agent supplies the email)', () => {
     const r = withDefaults([{ role: 'Seller', name: 'Anele Botha', email: '' }])
     expect(r.ok && r.layout.role_defaults[0]).toEqual({ role: 'Seller', name: 'Anele Botha', email: '' })
-  })
-})
-
-describe('mergeSuggestions', () => {
-  const ROLES = ['Customer', 'Witness 1']
-  const sug = (over: Record<string, unknown> = {}) => ({
-    field_type: 'signature', role: 'Customer', page: 1, x: 0.1, y: 0.8, width: 0.25, height: 0.04, instruction: 'Sign here', ...over,
-  })
-
-  it('adds a suggestion as an ordinary, required box with its own id', () => {
-    const r = mergeSuggestions([], [sug()], ROLES, 3)
-    expect(r).toMatchObject({ added: 1, skipped: 0 })
-    expect(r.fields[0]).toMatchObject({ field_type: 'signature', role: 'Customer', page: 1, x: 0.1, y: 0.8, width: 0.25, height: 0.04, instruction: 'Sign here', required: true })
-    expect(r.fields[0].field_id).toBeTruthy()
-  })
-
-  it('never touches what the operator already placed', () => {
-    const mine = [box({ field_id: 'mine', x: 0.5, y: 0.5 })]
-    const r = mergeSuggestions(mine, [sug()], ROLES, 3)
-    expect(r.fields[0]).toBe(mine[0])
-    expect(r.fields).toHaveLength(2)
-  })
-
-  it('skips a suggestion that sits on an existing box, or on another suggestion', () => {
-    const existing = [box({ field_id: 'mine', page: 1, x: 0.1, y: 0.8, width: 0.25, height: 0.04 })]
-    const r = mergeSuggestions(existing, [sug({ x: 0.12 }), sug({ y: 0.3 }), sug({ y: 0.31 })], ROLES, 3)
-    expect(r).toMatchObject({ added: 1, skipped: 2 })
-  })
-
-  it('a box at the same place on a different page is not a duplicate', () => {
-    const existing = [box({ page: 1, x: 0.1, y: 0.8, width: 0.25, height: 0.04 })]
-    expect(mergeSuggestions(existing, [sug({ page: 2 })], ROLES, 3).added).toBe(1)
-  })
-
-  it('puts an unknown role on the first role', () => {
-    const r = mergeSuggestions([], [sug({ role: 'Notary' })], ROLES, 3)
-    expect(r.fields[0].role).toBe('Customer')
-  })
-
-  it('drops what cannot be placed: bad type, read types, off-page, non-numbers', () => {
-    const r = mergeSuggestions([], [
-      sug({ field_type: 'checkbox' }), sug({ field_type: 'read_name' }), sug({ page: 4 }), sug({ page: 0 }),
-      sug({ x: 'left' }), sug({ width: NaN }), null, 'text', 7,
-    ], ROLES, 3)
-    expect(r).toMatchObject({ added: 0, skipped: 9 })
-  })
-
-  it('keeps boxes on the page, and cleans the instruction', () => {
-    const r = mergeSuggestions([], [sug({ x: 0.95, width: 0.3, instruction: 'Sign \u2014 here\nnow' })], ROLES, 3)
-    expect(r.fields[0].x + r.fields[0].width).toBeLessThanOrEqual(1.0000001)
-    expect(r.fields[0].instruction).toBe('Sign - here now')
-  })
-
-  it('gives a missing instruction the default, and dates a written-out format', () => {
-    const r = mergeSuggestions([], [sug({ instruction: '' }), sug({ field_type: 'date', y: 0.2 })], ROLES, 3)
-    expect(r.fields[0].instruction).toBe(DEFAULT_INSTRUCTIONS.signature)
-    expect(r.fields[1]).toMatchObject({ field_type: 'date', date_format: 'long' })
-  })
-
-  it('never goes past the most boxes a form can have', () => {
-    const many = Array.from({ length: MAX_FIELDS + 20 }, (_v, i) => sug({ page: 1 + (i % 2), y: (Math.floor(i / 2) % 20) * 0.045, x: 0.05 + (Math.floor(i / 40) * 0.3) }))
-    expect(mergeSuggestions([], many, ROLES, 2).fields.length).toBeLessThanOrEqual(MAX_FIELDS)
-  })
-
-  it('tolerates a suggestion payload that is not a list', () => {
-    expect(mergeSuggestions([box()], undefined, ROLES, 3)).toMatchObject({ added: 0, skipped: 0 })
-    expect(mergeSuggestions([box()], { a: 1 }, ROLES, 3)).toMatchObject({ added: 0, skipped: 0 })
-  })
-
-  it('what it adds passes the same validation as anything the operator draws', () => {
-    const r = mergeSuggestions([], [sug(), sug({ field_type: 'initials', y: 0.94, x: 0.85, width: 0.1 }), sug({ role: 'Witness 1', y: 0.6 })], ROLES, 3)
-    const checked = validateLayout({ name: 'F', page_count: 3, page_width: 595, page_height: 842, roles: ROLES, fields: r.fields, anchors: [], role_defaults: [] })
-    expect(checked.ok).toBe(true)
   })
 })

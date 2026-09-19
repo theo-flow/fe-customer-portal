@@ -51,7 +51,6 @@ export async function orgExists(orgId: string): Promise<boolean> {
 export const pointerKey = (orgId: string, formId: string) => ({ PK: `ORG#${orgId}`, SK: `SIGNFORM#${formId}` })
 export const versionKey = (orgId: string, formId: string, version: number) =>
   ({ PK: `ORG#${orgId}`, SK: `SIGNFORMV#${formId}#${String(version).padStart(4, '0')}` })
-export const suggestionKey = (orgId: string, formId: string) => ({ PK: `ORG#${orgId}`, SK: `SIGNSUGG#${formId}` })
 export const sampleKey  = (orgId: string, formId: string) => `sign/forms/${orgId}/${formId}/sample.pdf`
 
 export function isTransactionConflict(err: unknown): boolean {
