@@ -4,6 +4,8 @@ import { cookies } from 'next/headers'
 import { ddbDocClient, TABLE } from '@/lib/aws'
 import { verifyJwtClaims, type JwtClaims } from '@/lib/token'
 import { isOperatorEmail } from '@/lib/operator'
+import { isReadType } from '@/lib/sign-form'
+import type { FormField } from '@/lib/sign-form'
 
 // Server-only helpers for the operator's Sign form configuration routes.
 //
@@ -55,3 +57,32 @@ export function isTransactionConflict(err: unknown): boolean {
   const name = (err as { name?: string } | null)?.name
   return name === 'TransactionCanceledException' || name === 'ConditionalCheckFailedException'
 }
+
+// Where on the form the recipient's details are printed, in the shape the send
+// screen needs. Kept on the pointer so listing a customer's forms is one query.
+// (Named read_boxes: "reads" is a DynamoDB reserved word.)
+export function readBoxes(fields: FormField[]) {
+  return fields.filter(f => isReadType(f.field_type)).map(f => ({
+    role: f.role, kind: f.field_type === 'read_name' ? 'name' : 'email',
+    page: f.page, x: f.x, y: f.y, width: f.width, height: f.height,
+  }))
+}
+
+// The pointer and the current version of one form, or null if it does not
+// exist or has been archived.
+export async function loadCurrentForm(orgId: string, formId: string) {
+  const db = ddbDocClient()
+  const pointer = await db.send(new GetCommand({ TableName: TABLE, Key: pointerKey(orgId, formId) }))
+  if (!pointer.Item || pointer.Item.form_status === 'ARCHIVED') return null
+  const version = await db.send(new GetCommand({
+    TableName: TABLE, Key: versionKey(orgId, formId, pointer.Item.current_version as number),
+  }))
+  if (!version.Item) return null
+  return { pointer: pointer.Item, version: version.Item }
+}
+
+// Two page sizes count as the same when they are within 2% (the same tolerance
+// the send screen uses to recognise a form), so a blank copy of a form made by a
+// different PDF tool still lines up.
+const SIZE_TOLERANCE = 0.02
+export const sameSize = (a: number, b: number) => Math.abs(a - b) <= Math.max(a, b) * SIZE_TOLERANCE

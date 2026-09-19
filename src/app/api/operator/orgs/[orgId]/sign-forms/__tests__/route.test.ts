@@ -125,7 +125,7 @@ describe('operator sign-forms collection', () => {
     it('creates the pointer and version 1 together, with the server-derived sample key', async () => {
       const res = await POST(req(goodBody), params)
       expect(res.status).toBe(201)
-      expect(await res.json()).toEqual({ formId: FORM_ID, version: 1 })
+      expect(await res.json()).toEqual({ formId: FORM_ID, version: 1, copied: false })
 
       const tx = mockDdbSend.mock.calls.map(([c]) => c).find(c => c.__type === 'Tx')
       const [pointer, version] = tx.input.TransactItems.map((t: { Put: { Item: Record<string, unknown> } }) => t.Put.Item)
@@ -150,6 +150,115 @@ describe('operator sign-forms collection', () => {
     it('returns 409 if the form id already exists', async () => {
       ddb({ txError: Object.assign(new Error('x'), { name: 'TransactionCanceledException' }) })
       expect((await POST(req(goodBody), params)).status).toBe(409)
+    })
+    describe('copying another form\'s layout', () => {
+      const SRC = { orgId: 'org-other9', formId: 'src-form-1' }
+      const box = (over: Record<string, unknown>) => ({
+        field_id: 'x', field_type: 'signature', role: 'Customer', page: 1, x: 0.1, y: 0.8, width: 0.2, height: 0.04,
+        instruction: 'Sign here', required: true, ...over,
+      })
+      const sourceVersion = {
+        version: 4, name: 'Their AOA', page_count: 3, page_width: 595.32, page_height: 841.92,
+        roles: ['Customer', 'Witness 1'],
+        fields: [
+          box({ field_id: 'a' }),
+          box({ field_id: 'r', field_type: 'read_name', y: 0.1, instruction: '' }),
+          box({ field_id: 'w', role: 'Witness 1', y: 0.9, instruction: 'Sign as a witness' }),
+        ],
+        anchors: [{ page: 1, text: 'Amendment of Agreement' }],
+        role_defaults: [{ role: 'Witness 1', name: 'Their Employee', email: 'employee@other.test' }],
+        sample_key: 'sign/forms/org-other9/src-form-1/sample.pdf',
+      }
+
+      function withSource(pointer: Record<string, unknown> | null = { form_status: 'ACTIVE', current_version: 4 }, version: Record<string, unknown> = sourceVersion) {
+        mockDdbSend.mockImplementation(async (cmd: { __type: string; input: { Key?: { PK: string; SK: string } } }) => {
+          if (cmd.__type === 'Get') {
+            const key = cmd.input.Key!
+            if (key.SK === 'PROFILE') return { Item: { orgId: 'org-abc123' } }
+            if (key.PK === `ORG#${SRC.orgId}` && key.SK === `SIGNFORM#${SRC.formId}`) return pointer ? { Item: pointer } : {}
+            if (key.PK === `ORG#${SRC.orgId}` && key.SK === `SIGNFORMV#${SRC.formId}#0004`) return { Item: version }
+          }
+          return {}
+        })
+      }
+      const copyBody = { ...goodBody, name: 'Our AOA', copyFrom: SRC }
+      const written = () => {
+        const tx = mockDdbSend.mock.calls.map(([c]) => c).find(c => c.__type === 'Tx')
+        return tx.input.TransactItems.map((t: { Put: { Item: Record<string, unknown> } }) => t.Put.Item)
+      }
+
+      it('starts version 1 from the other form\'s roles, boxes and recognition phrases', async () => {
+        withSource()
+        const res = await POST(req(copyBody), params)
+        expect(res.status).toBe(201)
+        expect(await res.json()).toEqual({ formId: FORM_ID, version: 1, copied: true })
+        const [pointer, version] = written()
+        expect(pointer).toMatchObject({ name: 'Our AOA', roles: ['Customer', 'Witness 1'], field_count: 3, valid: true, anchors: [{ page: 1, text: 'Amendment of Agreement' }] })
+        expect(pointer.read_boxes).toEqual([expect.objectContaining({ role: 'Customer', kind: 'name', page: 1 })])
+        expect(version.fields).toHaveLength(3)
+        expect(version).toMatchObject({ name: 'Our AOA', version: 1, valid: true, copied_from: { org_id: 'org-other9', form_id: 'src-form-1', version: 4 } })
+      })
+
+      it('uses the NEW sample, never the other customer\'s, and never their fixed default people', async () => {
+        withSource()
+        await POST(req(copyBody), params)
+        const [pointer, version] = written()
+        expect(version.sample_key).toBe(`sign/forms/org-abc123/${FORM_ID}/sample.pdf`)
+        expect(JSON.stringify([pointer, version])).not.toContain('org-other9/src-form-1/sample')
+        expect(pointer.role_defaults).toEqual([])
+        expect(version.role_defaults).toEqual([])
+        expect(JSON.stringify([pointer, version])).not.toContain('employee@other.test')
+      })
+
+      it('needs the same number of pages', async () => {
+        withSource()
+        const res = await POST(req({ ...copyBody, pageCount: 2 }), params)
+        expect(res.status).toBe(400)
+        expect((await res.json()).error).toMatch(/same pages as the form being copied \(3 pages/)
+        expect(mockDdbSend.mock.calls.some(([c]) => c.__type === 'Tx')).toBe(false)
+      })
+
+      it('needs the same page size, within a small tolerance', async () => {
+        withSource()
+        expect((await POST(req({ ...copyBody, pageWidth: 612, pageHeight: 792 }), params)).status).toBe(400)   // Letter, not A4
+        withSource()
+        expect((await POST(req({ ...copyBody, pageWidth: 596.5, pageHeight: 842.5 }), params)).status).toBe(201)   // a different PDF tool
+      })
+
+      it.each([
+        ['is missing', null],
+        ['is archived', { form_status: 'ARCHIVED', current_version: 4 }],
+      ])('says so when the form to copy %s', async (_l, pointer) => {
+        withSource(pointer)
+        const res = await POST(req(copyBody), params)
+        expect(res.status).toBe(404)
+        expect((await res.json()).error).toBe('The form to copy was not found.')
+      })
+
+      it.each([
+        ['a bad org id', { orgId: '../x', formId: 'f' }],
+        ['a bad form id', { orgId: 'o', formId: 'a/b' }],
+        ['nothing', null],
+      ])('rejects %s', async (_l, copyFrom) => {
+        const res = await POST(req({ ...goodBody, copyFrom }), params)
+        expect(res.status).toBe(400)
+        expect(mockDdbSend.mock.calls.some(([c]) => c.__type === 'Tx')).toBe(false)
+      })
+
+      it('can duplicate a form within the same customer', async () => {
+        withSource({ form_status: 'ACTIVE', current_version: 4 })
+        mockDdbSend.mockImplementation(async (cmd: { __type: string; input: { Key?: { PK: string; SK: string } } }) => {
+          if (cmd.__type === 'Get') {
+            const key = cmd.input.Key!
+            if (key.SK === 'PROFILE') return { Item: { orgId: 'org-abc123' } }
+            if (key.SK === 'SIGNFORM#src-form-1') return { Item: { form_status: 'ACTIVE', current_version: 4 } }
+            if (key.SK === 'SIGNFORMV#src-form-1#0004') return { Item: sourceVersion }
+          }
+          return {}
+        })
+        const res = await POST(req({ ...copyBody, copyFrom: { orgId: 'org-abc123', formId: 'src-form-1' } }), params)
+        expect(res.status).toBe(201)
+      })
     })
   })
 })
