@@ -219,7 +219,10 @@ export default function SendFormPage() {
 
   return (
     <div className="max-w-xl">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-400 mb-1">TheoFlow Sign</p>
+      <Link href="/sign" className="text-[12px] font-medium text-gray-400 hover:text-black">
+        &larr; Back to signing sessions
+      </Link>
+      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-400 mt-4 mb-1">TheoFlow Sign</p>
       <h1 className="font-display text-[2.1rem] leading-tight text-black mb-6">Send a form</h1>
 
       {formsError && (
@@ -239,6 +242,20 @@ export default function SendFormPage() {
 
       {forms && forms.length > 0 && (
         <>
+          <div className="mb-6">
+            <p className="text-[12px] font-medium text-gray-500 mb-2">Forms set up for you</p>
+            <ul className="space-y-1.5">
+              {forms.map(f => (
+                <li key={f.formId} className="rounded-xl bg-gray-50 px-4 py-2.5">
+                  <span className="text-[14px] font-semibold text-black">{f.name}</span>
+                  <span className="block text-[12px] text-gray-400">
+                    {f.pageCount} page{f.pageCount !== 1 ? 's' : ''} &middot; signed by {f.roles.join(', ')}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
           <p className="text-[13px] font-semibold text-black mb-2">1. The document</p>
           <div
             onDragOver={e => e.preventDefault()}
