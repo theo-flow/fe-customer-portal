@@ -141,4 +141,16 @@ describe('GET /api/sign/sessions', () => {
     expect(sessions[0].signers[0]).toMatchObject({ status: 'DECLINED', declineReason: 'Wrong amount', declinedAt: '2026-01-02T00:00:00.000Z' })
     expect(sessions[0].signers[1]).toMatchObject({ declineReason: null, declinedAt: null })
   })
+
+  it('says whether a session\'s documents were deleted', async () => {
+    const live = { session_id: 'a', status: 'SIGNED', created_at: 'c', updated_at: 'u', metadata: {}, signers: [] }
+    const gone = { session_id: 'b', status: 'SIGNED', created_at: 'c', updated_at: 'u', metadata: { documents_deleted_at: '2026-02-01T00:00:00.000Z' }, signers: [] }
+    mockDdbSend.mockImplementation(async (cmd: { __type: string; input: { Key?: { PK: string } } }) => {
+      if (cmd.__type === 'Query') return { Items: [{ sessionId: 'a' }, { sessionId: 'b' }] }
+      if (cmd.__type === 'Get') return { Item: cmd.input.Key!.PK === 'SESSION#a' ? live : gone }
+      return {}
+    })
+    const { sessions } = await (await GET({} as unknown as NextRequest)).json()
+    expect(sessions.map((x: { documentsDeleted: boolean }) => x.documentsDeleted)).toEqual([false, true])
+  })
 })

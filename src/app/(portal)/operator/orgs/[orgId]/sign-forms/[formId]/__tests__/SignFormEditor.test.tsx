@@ -394,4 +394,40 @@ describe('SignFormEditor', () => {
     render(<SignFormEditor orgId="org-1" formId="f1" initial={initial({ roles: [] })} />)
     expect(screen.getByRole('button', { name: 'Place on the page' })).toBeDisabled()
   })
+  describe('deleting the form', () => {
+    let assign: ReturnType<typeof vi.fn>
+    beforeEach(() => {
+      assign = vi.fn()
+      vi.stubGlobal('location', { ...window.location, assign })
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+    })
+
+    it('warns that it cannot be undone, deletes, and returns to the list', async () => {
+      const fetchMock = vi.fn(async () => jsonResponse({ ok: true }))
+      vi.stubGlobal('fetch', fetchMock)
+      render(<SignFormEditor orgId="org-1" formId="f1" initial={initial()} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Delete this form' }))
+      expect(window.confirm).toHaveBeenCalledWith(expect.stringMatching(/cannot be undone.*already sent from it are not affected/))
+      await waitFor(() => expect(assign).toHaveBeenCalledWith('/operator/orgs/org-1/sign-forms'))
+      expect(fetchMock).toHaveBeenCalledWith('/api/operator/orgs/org-1/sign-forms/f1', { method: 'DELETE' })
+    })
+
+    it('does nothing when the confirmation is declined', () => {
+      vi.spyOn(window, 'confirm').mockReturnValue(false)
+      const fetchMock = vi.fn()
+      vi.stubGlobal('fetch', fetchMock)
+      render(<SignFormEditor orgId="org-1" formId="f1" initial={initial()} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Delete this form' }))
+      expect(fetchMock).not.toHaveBeenCalled()
+      expect(assign).not.toHaveBeenCalled()
+    })
+
+    it('shows the server\'s message and stays put when it fails', async () => {
+      vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ error: 'Could not delete the form. Please try again.' }, false, 500)))
+      render(<SignFormEditor orgId="org-1" formId="f1" initial={initial()} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Delete this form' }))
+      await screen.findByText('Could not delete the form. Please try again.')
+      expect(assign).not.toHaveBeenCalled()
+    })
+  })
 })

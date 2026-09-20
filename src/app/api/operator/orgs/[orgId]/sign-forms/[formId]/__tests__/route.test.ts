@@ -2,29 +2,32 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { NextRequest } from 'next/server'
 import type { FormLayout } from '@/lib/sign-form'
 
-const { mockCookieGet, mockDdbSend, mockPresign } = vi.hoisted(() => {
+const { mockCookieGet, mockDdbSend, mockPresign, mockS3Send } = vi.hoisted(() => {
   process.env.OPERATOR_EMAILS = 'ops@theoflow.test'
-  return { mockCookieGet: vi.fn(), mockDdbSend: vi.fn(), mockPresign: vi.fn() }
+  return { mockCookieGet: vi.fn(), mockDdbSend: vi.fn(), mockPresign: vi.fn(), mockS3Send: vi.fn() }
 })
 
 vi.mock('next/headers', () => ({ cookies: () => ({ get: mockCookieGet }) }))
 vi.mock('@/lib/aws', () => ({
   ddbDocClient: () => ({ send: mockDdbSend }),
-  s3Client: () => ({}),
+  s3Client: () => ({ send: mockS3Send }),
   TABLE: 'daai-insure-orgs', BUCKET: 'daai-insure-intake',
 }))
 vi.mock('@/lib/token', () => ({ verifyJwtClaims: vi.fn() }))
 vi.mock('@aws-sdk/lib-dynamodb', () => ({
   GetCommand:           vi.fn(function (this: unknown, input: unknown) { return { __type: 'Get', input } }),
   TransactWriteCommand: vi.fn(function (this: unknown, input: unknown) { return { __type: 'Tx', input } }),
+  QueryCommand:         vi.fn(function (this: unknown, input: unknown) { return { __type: 'Query', input } }),
+  DeleteCommand:        vi.fn(function (this: unknown, input: unknown) { return { __type: 'Delete', input } }),
 }))
 vi.mock('@aws-sdk/client-s3', () => ({
   GetObjectCommand: vi.fn(function (this: unknown, input: unknown) { return { __type: 'S3Get', input } }),
+  DeleteObjectCommand: vi.fn(function (this: unknown, input: unknown) { return { __type: 'S3Delete', input } }),
 }))
 vi.mock('@aws-sdk/s3-request-presigner', () => ({ getSignedUrl: mockPresign }))
 
 import { verifyJwtClaims } from '@/lib/token'
-import { GET, PUT } from '../route'
+import { DELETE, GET, PUT } from '../route'
 
 const FORM_ID = '11111111-2222-3333-4444-555555555555'
 const params = { params: { orgId: 'org-abc123', formId: FORM_ID } }
@@ -243,5 +246,78 @@ describe('operator sign-form (one form)', () => {
       const tx = mockDdbSend.mock.calls.map(([c]) => c).find(c => c.__type === 'Tx')
       expect(tx.input.TransactItems[0].Put.Item.fields[0].instruction).toBe('Sign - here')
     })
+  })
+})
+
+describe('DELETE /api/operator/orgs/[orgId]/sign-forms/[formId]', () => {
+  const VERSIONS = [`SIGNFORMV#${FORM_ID}#0001`, `SIGNFORMV#${FORM_ID}#0002`]
+  const deletes = () => mockDdbSend.mock.calls.map(([c]) => c).filter(c => c.__type === 'Delete').map(c => c.input.Key)
+
+  function world(opts: { pointer?: boolean; queryError?: unknown } = {}) {
+    mockDdbSend.mockImplementation(async (cmd: { __type: string; input: { Key?: { SK: string } } }) => {
+      if (cmd.__type === 'Get') return opts.pointer === false ? {} : { Item: { form_id: FORM_ID } }
+      if (cmd.__type === 'Query') {
+        if (opts.queryError) throw opts.queryError
+        return { Items: VERSIONS.map(SK => ({ PK: 'ORG#org-abc123', SK })) }
+      }
+      return {}
+    })
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockCookieGet.mockReturnValue({ value: 't' })
+    vi.mocked(verifyJwtClaims).mockResolvedValue({ sub: 'u', email: 'ops@theoflow.test', exp: 9999999999 })
+    mockS3Send.mockResolvedValue({})
+    world()
+  })
+
+  it.each([
+    ['no cookie', () => mockCookieGet.mockReturnValue(undefined), 401],
+    ['not an operator', () => vi.mocked(verifyJwtClaims).mockResolvedValue({ sub: 'u', email: 'c@example.com', exp: 9999999999 }), 403],
+  ])('is refused for %s and deletes nothing', async (_l, arrange, status) => {
+    arrange()
+    expect((await DELETE({} as NextRequest, params)).status).toBe(status)
+    expect(mockS3Send).not.toHaveBeenCalled()
+    expect(deletes()).toHaveLength(0)
+  })
+
+  it('rejects unsafe ids', async () => {
+    expect((await DELETE({} as NextRequest, { params: { orgId: '../x', formId: FORM_ID } })).status).toBe(400)
+    expect((await DELETE({} as NextRequest, { params: { orgId: 'org-abc123', formId: 'a/b' } })).status).toBe(400)
+  })
+
+  it('404s for a form that does not exist', async () => {
+    world({ pointer: false })
+    expect((await DELETE({} as NextRequest, params)).status).toBe(404)
+    expect(mockS3Send).not.toHaveBeenCalled()
+  })
+
+  it('deletes the sample, every version, then the form itself last', async () => {
+    const res = await DELETE({} as NextRequest, params)
+    expect(res.status).toBe(200)
+    expect(mockS3Send.mock.calls[0][0].input).toEqual({ Bucket: 'daai-insure-intake', Key: SAMPLE })   // key derived from the ids
+    const query = mockDdbSend.mock.calls.map(([c]) => c).find(c => c.__type === 'Query')
+    expect(query.input.ExpressionAttributeValues).toEqual({ ':pk': 'ORG#org-abc123', ':prefix': `SIGNFORMV#${FORM_ID}#` })
+    expect(deletes()).toEqual([
+      { PK: 'ORG#org-abc123', SK: VERSIONS[0] }, { PK: 'ORG#org-abc123', SK: VERSIONS[1] },
+      { PK: 'ORG#org-abc123', SK: `SIGNFORM#${FORM_ID}` },
+    ])
+  })
+
+  it('changes nothing else if the sample cannot be deleted, so it can be retried', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    mockS3Send.mockRejectedValue(new Error('denied'))
+    const res = await DELETE({} as NextRequest, params)
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe('Could not delete the form. Please try again.')
+    expect(deletes()).toHaveLength(0)
+  })
+
+  it('keeps the form listed if it fails part way, so it can be deleted again', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    world({ queryError: new Error('boom') })
+    expect((await DELETE({} as NextRequest, params)).status).toBe(500)
+    expect(deletes().some(k => k.SK === `SIGNFORM#${FORM_ID}`)).toBe(false)
   })
 })

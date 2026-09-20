@@ -57,6 +57,7 @@ export default function SignFormEditor({ orgId, formId, initial }: { orgId: stri
   const [fields, setFields]     = useState<FormField[]>(initial.layout.fields)
   const [anchors, setAnchors]   = useState<FormAnchor[]>(initial.layout.anchors ?? [])
   const [suggesting, setSuggesting] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [roleDefaults, setRoleDefaults] = useState<RoleDefault[]>(initial.layout.role_defaults ?? [])
   const [version, setVersion]   = useState(initial.version)
   const [valid, setValid]       = useState(initial.valid)
@@ -237,6 +238,24 @@ export default function SignFormEditor({ orgId, formId, initial }: { orgId: stri
     }
   }
 
+  // ---- delete the whole form ----
+  async function deleteForm() {
+    if (!window.confirm('Permanently delete this form, its sample document and every saved version? This cannot be undone. Documents already sent from it are not affected.')) return
+    setDeleting(true)
+    setNotice(null)
+    try {
+      const res = await fetch(`/api/operator/orgs/${orgId}/sign-forms/${formId}`, { method: 'DELETE' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { setNotice({ kind: 'error', text: data.error ?? 'Could not delete the form.' }); return }
+      setDirty(false)
+      window.location.assign(`/operator/orgs/${orgId}/sign-forms`)
+    } catch {
+      setNotice({ kind: 'error', text: 'Could not delete the form. Please try again.' })
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   function setDefault(role: string, patch: Partial<RoleDefault>) {
     setRoleDefaults(ds => {
       const existing = ds.find(d => d.role === role)
@@ -387,6 +406,10 @@ export default function SignFormEditor({ orgId, formId, initial }: { orgId: stri
               )}
             </div>
           )}
+          <button type="button" onClick={deleteForm} disabled={deleting}
+                  className="mt-3 text-[12px] font-medium text-red-500 hover:text-red-700 disabled:opacity-50">
+            {deleting ? 'Deleting…' : 'Delete this form'}
+          </button>
         </section>
 
         <section className="rounded-2xl border border-black/[0.08] px-4 py-4">

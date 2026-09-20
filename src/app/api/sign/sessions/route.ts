@@ -9,6 +9,7 @@ import { verifyJwtClaims } from '@/lib/token'
 import { validateEmail } from '@/lib/validators'
 import { generateToken, hashToken, tokenExpiryIso, type SignSession, type Signer } from '@/lib/sign'
 import { hasPdfHeader, lookupOrgName } from '@/lib/sign-server'
+import { isPurged } from '@/lib/sign-purge'
 
 const SQS_SIGN_URL = process.env.SQS_SIGN_URL
 
@@ -58,6 +59,7 @@ export async function GET(req: NextRequest) {
         submissionId:  (session.metadata as { submission_id?: string } | null)?.submission_id ?? null,
         completedKey:  session.completed_document?.s3_key ?? null,
         completedSha256: session.completed_document?.sha256 ?? null,
+        documentsDeleted: isPurged(session),
         signers: session.signers.map(s => ({
           signerId: s.signer_id, name: s.name, email: s.email, status: s.status,
           declineReason: s.decline_reason ?? null, declinedAt: s.declined_at ?? null,

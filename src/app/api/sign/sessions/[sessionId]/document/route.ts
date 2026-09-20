@@ -6,6 +6,7 @@ import { cookies } from 'next/headers'
 import { ddbDocClient, s3Client, TABLE, BUCKET } from '@/lib/aws'
 import { verifyJwtClaims } from '@/lib/token'
 import type { SignSession } from '@/lib/sign'
+import { isPurged } from '@/lib/sign-purge'
 
 const URL_EXPIRY_SECONDS = 300
 
@@ -54,6 +55,10 @@ export async function GET(
   } catch (err) {
     console.error('[sign/sessions/document] DynamoDB GetCommand failed', { sessionId, error: err })
     return NextResponse.json({ error: 'Failed to load signing session' }, { status: 500 })
+  }
+
+  if (isPurged(session)) {
+    return NextResponse.json({ error: 'The documents for this session were deleted.' }, { status: 410 })
   }
 
   const key = session.completed_document?.s3_key ?? session.source_document.s3_key

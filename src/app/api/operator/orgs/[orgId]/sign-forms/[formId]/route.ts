@@ -1,12 +1,12 @@
-import { GetObjectCommand } from '@aws-sdk/client-s3'
+import { DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
-import { GetCommand, TransactWriteCommand } from '@aws-sdk/lib-dynamodb'
+import { DeleteCommand, GetCommand, QueryCommand, TransactWriteCommand } from '@aws-sdk/lib-dynamodb'
 import { NextRequest, NextResponse } from 'next/server'
 import { ddbDocClient, s3Client, TABLE, BUCKET } from '@/lib/aws'
 import { isReadType, validateLayout } from '@/lib/sign-form'
 import type { FormField } from '@/lib/sign-form'
 import {
-  requireOperator, orgExists, isSafeId, pointerKey, versionKey, isTransactionConflict,
+  requireOperator, orgExists, isSafeId, pointerKey, versionKey, sampleKey, isTransactionConflict,
 } from '@/lib/sign-forms-server'
 
 // Where on the form the recipient's details are printed, in the shape the send
@@ -173,4 +173,42 @@ export async function PUT(req: NextRequest, { params }: Params) {
   }
 
   return NextResponse.json({ version: next, valid: checked.valid, warnings: checked.warnings })
+}
+
+// Permanently deletes a form: its sample PDF (which may still hold a real
+// person's details) and every saved version of its layout (the versions hold
+// the fixed default signers' names and emails). Sessions already sent from it
+// are not affected, they carry their own copy of the boxes. The sample goes
+// first: if that fails nothing else changes and it can be retried. The pointer
+// goes last, so a form that is half deleted is still listed and can be deleted
+// again.
+export async function DELETE(_req: NextRequest, { params }: Params) {
+  const auth = await requireOperator()
+  if (!auth.ok) return auth.response
+
+  const { orgId, formId } = params
+  if (!isSafeId(orgId) || !isSafeId(formId)) return NextResponse.json({ error: 'Invalid id' }, { status: 400 })
+
+  const db = ddbDocClient()
+  try {
+    const pointer = (await db.send(new GetCommand({ TableName: TABLE, Key: pointerKey(orgId, formId) }))).Item
+    if (!pointer) return NextResponse.json({ error: 'Form not found' }, { status: 404 })
+
+    await s3Client().send(new DeleteObjectCommand({ Bucket: BUCKET, Key: sampleKey(orgId, formId) }))
+
+    const versions = await db.send(new QueryCommand({
+      TableName: TABLE,
+      KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
+      ExpressionAttributeValues: { ':pk': `ORG#${orgId}`, ':prefix': `SIGNFORMV#${formId}#` },
+      ProjectionExpression: 'PK, SK',
+    }))
+    for (const item of versions.Items ?? []) {
+      await db.send(new DeleteCommand({ TableName: TABLE, Key: { PK: item.PK, SK: item.SK } }))
+    }
+    await db.send(new DeleteCommand({ TableName: TABLE, Key: pointerKey(orgId, formId) }))
+  } catch (err) {
+    console.error('[operator/sign-forms/:id] Delete failed', { orgId, formId, error: err })
+    return NextResponse.json({ error: 'Could not delete the form. Please try again.' }, { status: 500 })
+  }
+  return NextResponse.json({ ok: true })
 }

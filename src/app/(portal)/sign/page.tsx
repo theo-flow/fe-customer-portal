@@ -20,6 +20,7 @@ interface SessionSummary {
   submissionId: string | null
   completedKey: string | null
   completedSha256: string | null
+  documentsDeleted?: boolean
   signers:      SessionSigner[]
 }
 
@@ -49,7 +50,9 @@ function SessionRow({ session }: { session: SessionSummary }) {
   const [busy, setBusy]       = useState<string | null>(null)
   const [notice, setNotice]   = useState<string | null>(null)
 
-  const isOpen = session.status === 'PENDING' || session.status === 'IN_PROGRESS' || session.status === 'EXPIRED'
+  const gone = !!session.documentsDeleted
+  const isOpen = !gone && (session.status === 'PENDING' || session.status === 'IN_PROGRESS' || session.status === 'EXPIRED')
+  const canDelete = !gone && ['SIGNED', 'CANCELLED', 'EXPIRED', 'DECLINED', 'FAILED'].includes(session.status)
 
   async function cancelSession() {
     if (!window.confirm('Cancel this signing session? Signers will no longer be able to sign.')) return
@@ -61,6 +64,24 @@ function SessionRow({ session }: { session: SessionSummary }) {
       setNotice(res.ok ? 'Session cancelled.' : (data.error ?? 'Could not cancel this session.'))
     } catch {
       setNotice('Could not cancel this session. Please try again.')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function deleteDocuments() {
+    const warning = session.status === 'SIGNED'
+      ? 'Permanently delete the signed document and the details of the people who signed it? This cannot be undone. Download the signed copy first if you need it.'
+      : 'Permanently delete this document and the details of the people it was sent to? This cannot be undone.'
+    if (!window.confirm(warning)) return
+    setBusy('delete')
+    setNotice(null)
+    try {
+      const res = await fetch(`/api/sign/sessions/${session.sessionId}/documents`, { method: 'DELETE' })
+      const data = await res.json().catch(() => ({}))
+      setNotice(res.ok ? 'Documents deleted.' : (data.error ?? 'Could not delete the documents.'))
+    } catch {
+      setNotice('Could not delete the documents. Please try again.')
     } finally {
       setBusy(null)
     }
@@ -132,7 +153,7 @@ function SessionRow({ session }: { session: SessionSummary }) {
         <div className="flex flex-wrap gap-x-4 gap-y-1">
           {session.signers.map(s => (
             <span key={s.signerId} className="text-[12px] text-gray-500">
-              {s.name}{' '}
+              {s.name || 'Signer'}{' '}
               <span className={s.status === 'SIGNED' ? 'text-green-600' : s.status === 'EXPIRED' ? 'text-amber-600' : s.status === 'DECLINED' ? 'text-red-600' : 'text-gray-300'}>
                 {s.status === 'SIGNED' ? '✓' : s.status === 'EXPIRED' ? 'link expired' : s.status === 'DECLINED' ? 'declined' : '·'}
               </span>
@@ -157,13 +178,26 @@ function SessionRow({ session }: { session: SessionSummary }) {
             {busy === 'cancel' ? 'Cancelling…' : 'Cancel'}
           </button>
         )}
-        <button
-          type="button"
-          onClick={viewDocument}
-          disabled={opening}
-          className="text-[12px] font-medium text-indigo-500 hover:text-indigo-700 transition-colors disabled:opacity-50 whitespace-nowrap">
-          {opening ? 'Opening…' : session.completedKey ? 'View signed document' : 'View document'}
-        </button>
+        {canDelete && (
+          <button
+            type="button"
+            onClick={deleteDocuments}
+            disabled={busy !== null}
+            className="text-[12px] font-medium text-red-500 hover:text-red-700 transition-colors disabled:opacity-50 whitespace-nowrap">
+            {busy === 'delete' ? 'Deleting…' : 'Delete documents'}
+          </button>
+        )}
+        {gone ? (
+          <span className="text-[12px] text-gray-400 whitespace-nowrap">Documents deleted</span>
+        ) : (
+          <button
+            type="button"
+            onClick={viewDocument}
+            disabled={opening}
+            className="text-[12px] font-medium text-indigo-500 hover:text-indigo-700 transition-colors disabled:opacity-50 whitespace-nowrap">
+            {opening ? 'Opening…' : session.completedKey ? 'View signed document' : 'View document'}
+          </button>
+        )}
       </div>
       {notice && <p className="mt-2 text-[12px] text-gray-500" role="status">{notice}</p>}
       {declined.map(d => (

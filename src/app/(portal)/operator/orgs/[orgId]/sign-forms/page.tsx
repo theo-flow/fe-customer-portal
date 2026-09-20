@@ -155,7 +155,7 @@ export default function SignFormsPage() {
       <div className="rounded-2xl border border-black/[0.08] px-5 py-5">
         <h2 className="text-[15px] font-semibold text-black mb-1">Add a form</h2>
         <p className="text-[12px] text-gray-400 mb-4">
-          Upload the company's document as it normally looks. It is only used so you can see the pages while you set it up.
+          Upload a blank copy of the company's document, with no real person's details on it. It is stored only so you can see the pages while you set the form up, and it is deleted with the form.
         </p>
 
         {error && (
