@@ -15,6 +15,9 @@ vi.mock('react-signature-canvas', async () => {
       isEmpty: () => !drawn.has(label),
       toDataURL: () => `data:image/png;base64,DRAWN-${label}`,
       clear: () => { drawn.delete(label) },
+      getCanvas: () => document.createElement('canvas'),
+      toData: () => [],
+      fromData: () => {},
     }))
     return <canvas aria-label={label} />
   })
@@ -79,6 +82,13 @@ const customerDoc = { detectedFields: CUSTOMER, signerName: 'Thandi Nkosi', sign
 const mount = () => render(<SignCapture sessionId="sess-1" signerId="signer-1" token="tok" />)
 const primary = (name: RegExp | string) => fireEvent.click(screen.getByRole('button', { name }))
 const agree = () => fireEvent.click(screen.getByRole('checkbox', { name: CONSENT_TEXT }))
+// Nothing can be sent until the whole document has been looked through.
+async function reviewIt() {
+  primary('Preview my signed document')
+  await screen.findByText('Check your signed document')
+  primary('This is correct')
+  await screen.findByText('That is everything')
+}
 const boxText = (id: string) => screen.getByTestId(`box-${id}`).textContent
 const submittedBody = (fetchMock: ReturnType<typeof serve>) =>
   JSON.parse((fetchMock.mock.calls.find(c => String(c[0]).endsWith('/submit'))![1] as unknown as RequestInit).body as string)
@@ -247,13 +257,14 @@ describe('SignCapture: the signer works on the document', () => {
       primary('Use this date')
       fireEvent.change(screen.getByLabelText('Where are you signing?'), { target: { value: 'Cape Town' } })
       primary('Use this place')
-      await screen.findByText('That is everything')
+      await screen.findByText('Preview before you send')
       return fetchMock
     }
 
     it('submits everything, including the date they chose and where they signed', async () => {
       const fetchMock = serve(customerDoc)
       await throughToFinish(fetchMock)
+      await reviewIt()
       agree(); primary('Submit and finish')
       await screen.findByText('Signed')
       expect(screen.getByText('Thank you, your signature has been recorded.')).toBeInTheDocument()
@@ -269,6 +280,7 @@ describe('SignCapture: the signer works on the document', () => {
     it('cannot be submitted until they agree to sign electronically', async () => {
       const fetchMock = serve(customerDoc)
       await throughToFinish(fetchMock)
+      await reviewIt()
       expect(screen.getByRole('button', { name: 'Submit and finish' })).toBeDisabled()
       agree()
       expect(screen.getByRole('button', { name: 'Submit and finish' })).toBeEnabled()
@@ -304,9 +316,65 @@ describe('SignCapture: the signer works on the document', () => {
       expect(boxText('d1')).toBe(formatChosenDate(yesterday(), 'day_month'))
     })
 
+    describe('the preview before sending', () => {
+      it('offers only the preview at first: no agreement box and no way to send', async () => {
+        const fetchMock = serve(customerDoc)
+        await throughToFinish(fetchMock)
+        expect(screen.getByRole('button', { name: 'Preview my signed document' })).toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: 'Submit and finish' })).not.toBeInTheDocument()
+        expect(screen.queryByRole('checkbox', { name: CONSENT_TEXT })).not.toBeInTheDocument()
+        expect(fetchMock.mock.calls.some(c => String(c[0]).endsWith('/submit'))).toBe(false)
+      })
+
+      it('shows the document with their details, and a summary of them, to check', async () => {
+        const fetchMock = serve(customerDoc)
+        await throughToFinish(fetchMock)
+        primary('Preview my signed document')
+        await screen.findByText('Check your signed document')
+        expect(screen.getByTestId('preview')).toBeInTheDocument()
+        expect(boxText('p1')).toBe('Cape Town')
+        expect(boxText('s1')).toBe('data:image/png;base64,DRAWN-Draw your signature')
+        const summary = screen.getByText('Name').closest('dl') as HTMLElement
+        expect(summary).toHaveTextContent('Thandi Nkosi')
+        expect(summary).toHaveTextContent('Cape Town')
+        expect(summary).toHaveTextContent('TN')
+      })
+
+      it('"Change something" goes back without counting as checked', async () => {
+        const fetchMock = serve(customerDoc)
+        await throughToFinish(fetchMock)
+        primary('Preview my signed document')
+        primary('Change something')
+        await screen.findByText('Preview before you send')
+        expect(screen.queryByRole('button', { name: 'Submit and finish' })).not.toBeInTheDocument()
+      })
+
+      it('"This is correct" opens the agreement and the send button', async () => {
+        const fetchMock = serve(customerDoc)
+        await throughToFinish(fetchMock)
+        await reviewIt()
+        expect(screen.getByRole('button', { name: 'Submit and finish' })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Preview again' })).toBeInTheDocument()
+      })
+
+      it('changing an answer after checking means checking again', async () => {
+        const fetchMock = serve(customerDoc)
+        await throughToFinish(fetchMock)
+        await reviewIt()
+        fireEvent.click(screen.getByTestId('box-i1'))
+        fireEvent.change(screen.getByLabelText('Type your initials'), { target: { value: 'T.N' } })
+        primary('Use these initials')
+        primary('Use this date')
+        primary('Use this place')
+        await screen.findByText('Preview before you send')
+        expect(screen.queryByRole('button', { name: 'Submit and finish' })).not.toBeInTheDocument()
+      })
+    })
+
     it('shows the server\'s message and stays on the last step when submitting fails', async () => {
       const fetchMock = serve(customerDoc, json({ error: 'This signing link has expired or already been used' }, false, 403))
       await throughToFinish(fetchMock)
+      await reviewIt()
       agree(); primary('Submit and finish')
       await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('expired or already been used'))
       expect(screen.queryByText('Signed')).not.toBeInTheDocument()
@@ -324,7 +392,7 @@ describe('SignCapture: the signer works on the document', () => {
       expect(screen.getByText('Step 1 of 1')).toBeInTheDocument()
       expect(screen.queryByLabelText('Choose the date')).not.toBeInTheDocument()
       drawn.add('Draw your signature'); primary('Use this signature')
-      await screen.findByText('That is everything')
+      await screen.findByText('Preview before you send')
     })
 
     it('a typed signature works and is what gets sent', async () => {
@@ -335,6 +403,7 @@ describe('SignCapture: the signer works on the document', () => {
       fireEvent.click(screen.getByRole('tab', { name: 'Type' }))
       fireEvent.change(screen.getByLabelText('Type your full name'), { target: { value: '  Sipho Dlamini ' } })
       primary('Use this signature')
+      await reviewIt()
       agree(); primary('Submit and finish')
       await screen.findByText('Signed')
       expect(submittedBody(fetchMock)).toMatchObject({ signatureType: 'TYPED', signatureData: 'Sipho Dlamini' })

@@ -51,6 +51,9 @@ export default function SignCapture({
   const [submitting, setSubmitting] = useState(false)
   const [done, setDone]             = useState(false)
   const [consent, setConsent]       = useState(false)
+  // Before anything can be sent they must look through the whole document with their details on it.
+  const [reviewed, setReviewed]       = useState(false)
+  const [previewOpen, setPreviewOpen] = useState(false)
   const [declineOpen, setDeclineOpen]   = useState(false)
   const [declineReason, setDeclineReason] = useState('')
   const [declining, setDeclining]       = useState(false)
@@ -90,6 +93,8 @@ export default function SignCapture({
   const fields = useMemo(() => data?.fields ?? [], [data])
   const groups = useMemo(() => buildGroups(fields), [fields])
   const hasBoxes = fields.length > 0
+  // Nothing to review on an older session with no boxes, or when the pages cannot be shown at all.
+  const needsReview = hasBoxes && !previewFailed
   // intro (only when there are boxes to explain), one step per kind of task, then the final check
   const steps = useMemo(() => [...(hasBoxes ? ['intro'] : []), ...groups, 'finish'] as (GroupId | 'intro' | 'finish')[], [hasBoxes, groups])
   const step = steps[Math.min(stepIndex, steps.length - 1)]
@@ -152,6 +157,7 @@ export default function SignCapture({
       setPlaceApplied(text)
     }
     setError(null)
+    setReviewed(false)
     setStepIndex(i => Math.min(i + 1, steps.length - 1))
   }
 
@@ -183,6 +189,7 @@ export default function SignCapture({
 
   async function submit() {
     setError(null)
+    if (needsReview && !reviewed) { setError('Please preview the document before you send it.'); return }
     if (!consent) { setError('Please confirm that you agree to sign electronically.'); return }
     const submission = buildSubmission()
     const problem = validateSubmission(fields, submission)
@@ -276,6 +283,52 @@ export default function SignCapture({
   const isLast = step === 'finish'
 
   const enter = (e: React.KeyboardEvent) => { if (e.key === 'Enter') { e.preventDefault(); applyAndContinue() } }
+  const gateOpen = isLast && needsReview && !reviewed
+
+  if (previewOpen) {
+    const dateText = dateApplied
+      ? new Date(`${dateApplied}T12:00:00`).toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric' })
+      : ''
+    const markView = (m: Mark | null) => {
+      if (!m) return null
+      // eslint-disable-next-line @next/next/no-img-element
+      return m.type === 'DRAWN' ? <img src={m.data} alt="Your drawn mark" className="h-8 inline-block" /> : <span className="italic">{m.data}</span>
+    }
+    const rows: [string, React.ReactNode][] = [
+      ['Name', data.signerName],
+      ['Signature', markView(sigApplied)],
+      ['Initials', markView(iniApplied)],
+      ['Date', dateText],
+      ['Place', placeApplied ?? ''],
+    ]
+    return (
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-[16px] font-semibold text-black mb-0.5">Check your signed document</h2>
+          <p className="text-[13px] text-gray-500">This is how the document will look with your details on it. Look through every page.</p>
+        </div>
+        <DocumentPreview url={data.url} fields={fields} values={values} activeType={null} review
+                         onError={() => { setPreviewFailed(true); setPreviewOpen(false) }} />
+        <div className="sticky bottom-3 z-10 rounded-2xl border border-black/[0.1] bg-white shadow-lg px-5 py-4 space-y-3">
+          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[13px]">
+            {rows.filter(([, v]) => v).map(([k, v]) => (
+              <div key={k} className="contents"><dt className="text-gray-500">{k}</dt><dd className="text-black">{v}</dd></div>
+            ))}
+          </dl>
+          <div className="flex gap-3">
+            <button type="button" onClick={() => setPreviewOpen(false)}
+                    className="px-5 py-3 rounded-xl border border-black/[0.15] text-[14px] font-semibold text-black">
+              Change something
+            </button>
+            <button type="button" onClick={() => { setReviewed(true); setPreviewOpen(false) }}
+                    className="flex-1 py-3 rounded-xl bg-black text-white text-[14px] font-semibold hover:bg-gray-800 active:bg-gray-900 transition-colors">
+              This is correct
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-4">
@@ -359,14 +412,14 @@ export default function SignCapture({
         {groups.includes('signature') && (
           <div hidden={group !== 'signature'}>
             <AdoptMark label="signature" mode={sigMode} onMode={setSigMode} canvasRef={sigRef} typed={sigTyped} onTyped={setSigTyped}
-                       typedLabel="Type your full name" typedPlaceholder="Your full name" typedClass={bigTyped} visible />
+                       typedLabel="Type your full name" typedPlaceholder="Your full name" typedClass={bigTyped} visible={group === 'signature'} />
           </div>
         )}
         {groups.includes('initials') && (
           <div hidden={group !== 'initials'}>
             <AdoptMark label="initials" mode={iniMode} onMode={setIniMode} canvasRef={iniRef} typed={iniTyped}
                        onTyped={v => { setIniTouched(true); setIniTyped(v) }}
-                       typedLabel="Type your initials" typedPlaceholder="For example TN" typedClass={bigTyped} visible />
+                       typedLabel="Type your initials" typedPlaceholder="For example TN" typedClass={bigTyped} visible={group === 'initials'} />
           </div>
         )}
         {group === 'date' && (
@@ -387,10 +440,24 @@ export default function SignCapture({
           </div>
         )}
 
-        {isLast && (
+        {gateOpen && (
+          <div>
+            <h2 className="text-[16px] font-semibold text-black mb-1">Preview before you send</h2>
+            <p className="text-[13px] text-gray-500">
+              Look through the whole document with your details on it. You can only send it once you have checked it.
+              If something is wrong, go Back or tap that box on the document to change it.
+            </p>
+          </div>
+        )}
+        {isLast && !gateOpen && (
           <div>
             <h2 className="text-[16px] font-semibold text-black mb-1">That is everything</h2>
-            <p className="text-[13px] text-gray-500 mb-3">Check the document above. If something is wrong, tap that box to change it. Then agree and submit.</p>
+            <p className="text-[13px] text-gray-500 mb-3">
+              You have checked the document. Agree below and send it.
+              {needsReview && (
+                <> <button type="button" onClick={() => setPreviewOpen(true)} className="underline underline-offset-2 hover:text-black">Preview again</button></>
+              )}
+            </p>
             <label className="flex items-start gap-2.5 text-[13px] text-black cursor-pointer">
               <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} className="mt-0.5" />
               <span>{CONSENT_TEXT}</span>
@@ -410,7 +477,12 @@ export default function SignCapture({
                 Back
               </button>
             )}
-            {isLast ? (
+            {gateOpen ? (
+              <button type="button" onClick={() => setPreviewOpen(true)}
+                      className="flex-1 py-3 rounded-xl bg-black text-white text-[14px] font-semibold hover:bg-gray-800 active:bg-gray-900 transition-colors">
+                Preview my signed document
+              </button>
+            ) : isLast ? (
               <button type="button" onClick={submit} disabled={submitting || !consent}
                       className="flex-1 py-3 rounded-xl bg-black text-white text-[14px] font-semibold hover:bg-gray-800
                                  active:bg-gray-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
