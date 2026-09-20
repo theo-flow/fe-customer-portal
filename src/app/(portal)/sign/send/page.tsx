@@ -1,8 +1,8 @@
 'use client'
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useOrg } from '@/lib/org-context'
-import { suggestForm, type FormSummary, type UploadInfo, type MatchResult } from '@/lib/sign-form-match'
+import type { FormSummary, UploadInfo } from '@/lib/sign-form-match'
 import { readRecipients, suggestPeople, type Source } from '@/lib/sign-recipients'
 
 // Send one of the organisation's saved Sign forms to one set of people.
@@ -23,12 +23,6 @@ async function sha256Hex(file: File): Promise<string> {
 
 const looksLikeEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim())
 
-const STATUS_LABEL: Record<MatchResult['status'], string> = {
-  match: 'looks right',
-  unsure: 'check needed',
-  mismatch: 'does not fit this document',
-}
-
 export default function SendFormPage() {
   const { loading: orgLoading } = useOrg()
   const inputRef = useRef<HTMLInputElement>(null)
@@ -42,7 +36,6 @@ export default function SendFormPage() {
   const [fileError, setFileError] = useState('')
 
   const [selectedId, setSelectedId] = useState('')
-  const [confirmed, setConfirmed]   = useState(false)
   const [people, setPeople]         = useState<Record<string, Person>>({})
   // where each pre-filled value came from, so the agent knows what to check
   const [sources, setSources]       = useState<Record<string, { name: Source; email: Source }>>({})
@@ -59,9 +52,7 @@ export default function SendFormPage() {
       .catch(() => setFormsError(true))
   }, [])
 
-  const matching = useMemo(() => (info && forms ? suggestForm(info, forms) : null), [info, forms])
   const selected = forms?.find(f => f.formId === selectedId) ?? null
-  const selectedResult = selected && matching ? matching.results[selected.formId] : null
 
   // Fills the people from what the form says about who it is for: read from the
   // uploaded document first, then the form's fixed default person for a role.
@@ -85,7 +76,7 @@ export default function SendFormPage() {
   }
 
   async function pickFile(f: File) {
-    setFileError(''); setError(''); setConfirmed(false); setInfo(null); setSelectedId(''); setPeople({}); setSources({})
+    setFileError(''); setError(''); setInfo(null); setPeople({}); setSources({})
     if (f.type !== 'application/pdf') { setFileError('Only PDF documents can be sent for signature.'); return }
     if (f.size > MAX_BYTES) { setFileError(`File too large. Max ${MAX_MB} MB.`); return }
     setFile(f)
@@ -94,13 +85,8 @@ export default function SendFormPage() {
       const { readUploadInfo } = await import('./pdf-read')
       const read = await readUploadInfo(f)
       setInfo(read)
-      if (forms) {
-        const { suggested } = suggestForm(read, forms)
-        // one clear match is pre-selected; a lone form is pre-selected too (its check still shows)
-        const chosen = suggested ?? (forms.length === 1 ? forms[0] : undefined)
-        setSelectedId(chosen?.formId ?? '')
-        prefill(chosen, read, {})
-      }
+      // the form was chosen first: read who it is for from this document
+      prefill(forms?.find(f => f.formId === selectedId), read, {})
     } catch {
       setFile(null)
       setFileError('That PDF could not be read. Is it damaged or password protected?')
@@ -110,7 +96,7 @@ export default function SendFormPage() {
   }
 
   function chooseForm(id: string) {
-    setSelectedId(id); setConfirmed(false); setError('')
+    setSelectedId(id); setError('')
     const form = forms?.find(f => f.formId === id)
     // keep anything already typed for roles the new form also has
     prefill(form, info, people)
@@ -136,8 +122,7 @@ export default function SendFormPage() {
     const p = people[r]
     return p && p.name.trim() && looksLikeEmail(p.email)
   })
-  const fits = !!selectedResult && selectedResult.status !== 'mismatch' && (selectedResult.status !== 'unsure' || confirmed)
-  const canSend = !!file && !!info && !!selected && fits && peopleComplete && !sending
+  const canSend = !!file && !!info && !!selected && peopleComplete && !sending
 
   async function send() {
     if (!canSend || !file || !selected) return
@@ -172,7 +157,7 @@ export default function SendFormPage() {
   }
 
   function reset() {
-    setFile(null); setInfo(null); setSelectedId(''); setConfirmed(false); setPeople({}); setSources({})
+    setFile(null); setInfo(null); setSelectedId(''); setPeople({}); setSources({})
     setResult(null); setError(''); setFileError('')
   }
 
@@ -242,102 +227,75 @@ export default function SendFormPage() {
 
       {forms && forms.length > 0 && (
         <>
-          <div className="mb-6">
-            <p className="text-[12px] font-medium text-gray-500 mb-2">Forms set up for you</p>
-            <ul className="space-y-1.5">
-              {forms.map(f => (
-                <li key={f.formId} className="rounded-xl bg-gray-50 px-4 py-2.5">
-                  <span className="text-[14px] font-semibold text-black">{f.name}</span>
+          <p className="text-[13px] font-semibold text-black mb-2">1. Click the form you are sending</p>
+          <div role="radiogroup" aria-label="The form you are sending" className="space-y-2 mb-2">
+            {forms.map(f => (
+              <label key={f.formId}
+                     className={`flex items-start gap-3 rounded-2xl border px-4 py-3 cursor-pointer transition-colors ${
+                       selectedId === f.formId ? 'border-black bg-gray-50' : 'border-black/[0.12] hover:border-black/30'}`}>
+                <input type="radio" name="sign-form" value={f.formId} checked={selectedId === f.formId}
+                       onChange={() => chooseForm(f.formId)} className="mt-1" />
+                <span className="min-w-0">
+                  <span className="block text-[14px] font-semibold text-black">{f.name}</span>
                   <span className="block text-[12px] text-gray-400">
                     {f.pageCount} page{f.pageCount !== 1 ? 's' : ''} &middot; signed by {f.roles.join(', ')}
                   </span>
-                </li>
-              ))}
-            </ul>
+                </span>
+              </label>
+            ))}
           </div>
 
-          <p className="text-[13px] font-semibold text-black mb-2">1. The document</p>
-          <div
-            onDragOver={e => e.preventDefault()}
-            onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) pickFile(f) }}
-            onClick={() => inputRef.current?.click()}
-            className="rounded-2xl border-2 border-dashed border-black/[0.12] p-8 text-center cursor-pointer hover:border-black/25 transition-colors mb-2">
-            <input ref={inputRef} type="file" accept="application/pdf" className="hidden" aria-label="Choose the PDF"
-                   onChange={e => { const f = e.target.files?.[0]; if (f) pickFile(f) }} />
-            {file ? (
-              <p className="text-[14px] font-medium text-black">{file.name}</p>
-            ) : (
-              <>
-                <p className="text-[14px] font-medium text-black mb-1">Drop this person's PDF here, or click to choose</p>
-                <p className="text-[12px] text-gray-400">Max {MAX_MB} MB</p>
-              </>
-            )}
-          </div>
-          {reading && <p className="text-[12px] text-gray-400 mb-2" role="status">Reading the document…</p>}
-          {fileError && <p role="alert" className="text-[12px] text-red-500 mb-2">{fileError}</p>}
-
-          {info && (
+          {selected && (
             <>
-              <p className="text-[13px] font-semibold text-black mt-6 mb-2">2. Which form is this?</p>
-              {matching?.suggested && selectedId === matching.suggested.formId && (
-                <p className="text-[13px] text-green-700 mb-2" role="status">This looks like {matching.suggested.name}.</p>
-              )}
-              <select aria-label="Which form is this?" value={selectedId} onChange={e => chooseForm(e.target.value)}
-                      className="w-full rounded-lg border border-black/[0.12] px-3 py-2.5 text-[13px] mb-2">
-                <option value="">Choose a form</option>
-                {forms.map(f => (
-                  <option key={f.formId} value={f.formId}>
-                    {f.name} ({matching ? STATUS_LABEL[matching.results[f.formId].status] : ''})
-                  </option>
-                ))}
-              </select>
+              <p className="text-[13px] font-semibold text-black mt-6 mb-2">2. Add this person's document</p>
+              <div
+                onDragOver={e => e.preventDefault()}
+                onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) pickFile(f) }}
+                onClick={() => inputRef.current?.click()}
+                className="rounded-2xl border-2 border-dashed border-black/[0.12] p-8 text-center cursor-pointer hover:border-black/25 transition-colors mb-2">
+                <input ref={inputRef} type="file" accept="application/pdf" className="hidden" aria-label="Choose the PDF"
+                       onChange={e => { const f = e.target.files?.[0]; if (f) pickFile(f) }} />
+                {file ? (
+                  <p className="text-[14px] font-medium text-black">{file.name}</p>
+                ) : (
+                  <>
+                    <p className="text-[14px] font-medium text-black mb-1">Drop this person's PDF here, or click to choose</p>
+                    <p className="text-[12px] text-gray-400">Max {MAX_MB} MB</p>
+                  </>
+                )}
+              </div>
+              {reading && <p className="text-[12px] text-gray-400 mb-2" role="status">Reading the document…</p>}
+              {fileError && <p role="alert" className="text-[12px] text-red-500 mb-2">{fileError}</p>}
 
-              {selectedResult && selectedResult.status === 'match' && (
-                <p className="text-[12px] text-green-700 mb-2">This document matches {selected!.name}.</p>
-              )}
-              {selectedResult && selectedResult.status !== 'match' && (
-                <div role="alert" className={`rounded-xl px-4 py-3 text-[12px] mb-2 ${
-                  selectedResult.status === 'mismatch' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-800'}`}>
-                  <p className="font-semibold mb-1">
-                    {selectedResult.status === 'mismatch'
-                      ? `This document does not fit ${selected!.name}, so it cannot be sent as that form.`
-                      : `We could not be sure this is ${selected!.name}.`}
-                  </p>
-                  <ul className="list-disc pl-4">{selectedResult.problems.map(p => <li key={p}>{p}</li>)}</ul>
-                  {selectedResult.status === 'unsure' && (
-                    <label className="flex items-center gap-2 mt-2">
-                      <input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} />
-                      I have checked that this is the right form
-                    </label>
-                  )}
-                </div>
-              )}
-
-              {selected && (
+              {info && (
                 <>
-                  <p className="text-[13px] font-semibold text-black mt-6 mb-1">3. Who signs</p>
-                  <p className="text-[12px] text-gray-400 mb-3">Each person gets their own link and only sees what they need to do.</p>
-                  {Object.values(sources).some(s => s.name === 'document' || s.email === 'document') && (
-                    <p role="status" className="text-[12px] text-green-700 bg-green-50 rounded-xl px-3 py-2 mb-3">
-                      We filled in the people we could from the document. Please check every name and email before you send.
-                    </p>
-                  )}
-                  <div className="space-y-3">
-                    {selected.roles.map(role => (
-                      <div key={role}>
-                        <p className="text-[12px] font-medium text-gray-500 mb-1">{role}</p>
-                        <div className="flex gap-2">
-                          <input type="text" placeholder="Full name" aria-label={`Name for ${role}`}
-                                 value={people[role]?.name ?? ''} onChange={e => setPerson(role, { name: e.target.value })}
-                                 className="flex-1 px-3 py-2.5 rounded-lg border border-black/[0.12] text-[13px] outline-none focus:border-black/40" />
-                          <input type="email" placeholder="Email" aria-label={`Email for ${role}`}
-                                 value={people[role]?.email ?? ''} onChange={e => setPerson(role, { email: e.target.value })}
-                                 className="flex-1 px-3 py-2.5 rounded-lg border border-black/[0.12] text-[13px] outline-none focus:border-black/40" />
-                        </div>
-                        {hintFor(role) && <p className="text-[11px] text-gray-400 mt-1">{hintFor(role)}</p>}
+                  {selected && (
+                    <>
+                      <p className="text-[13px] font-semibold text-black mt-6 mb-1">3. Who signs</p>
+                      <p className="text-[12px] text-gray-400 mb-3">Each person gets their own link and only sees what they need to do.</p>
+                      {Object.values(sources).some(s => s.name === 'document' || s.email === 'document') && (
+                        <p role="status" className="text-[12px] text-green-700 bg-green-50 rounded-xl px-3 py-2 mb-3">
+                          We filled in the people we could from the document. Please check every name and email before you send.
+                        </p>
+                      )}
+                      <div className="space-y-3">
+                        {selected.roles.map(role => (
+                          <div key={role}>
+                            <p className="text-[12px] font-medium text-gray-500 mb-1">{role}</p>
+                            <div className="flex gap-2">
+                              <input type="text" placeholder="Full name" aria-label={`Name for ${role}`}
+                                     value={people[role]?.name ?? ''} onChange={e => setPerson(role, { name: e.target.value })}
+                                     className="flex-1 px-3 py-2.5 rounded-lg border border-black/[0.12] text-[13px] outline-none focus:border-black/40" />
+                              <input type="email" placeholder="Email" aria-label={`Email for ${role}`}
+                                     value={people[role]?.email ?? ''} onChange={e => setPerson(role, { email: e.target.value })}
+                                     className="flex-1 px-3 py-2.5 rounded-lg border border-black/[0.12] text-[13px] outline-none focus:border-black/40" />
+                            </div>
+                            {hintFor(role) && <p className="text-[11px] text-gray-400 mt-1">{hintFor(role)}</p>}
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
+                    </>
+                  )}
                 </>
               )}
             </>
