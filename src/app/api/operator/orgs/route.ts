@@ -23,20 +23,28 @@ export async function GET() {
 
   const db = ddbDocClient()
 
-  const profiles = await db.send(new ScanCommand({
-    TableName: TABLE,
-    FilterExpression: 'SK = :sk',
-    ExpressionAttributeValues: { ':sk': 'PROFILE' },
-  })).catch(err => {
+  // A Scan returns one page (up to 1 MB read) at a time, so follow it to the end. Reading
+  // only the first page would quietly leave orgs out of the list as the table grows.
+  let profiles: Record<string, unknown>[]
+  try {
+    profiles = []
+    let startKey: Record<string, unknown> | undefined
+    do {
+      const page = await db.send(new ScanCommand({
+        TableName: TABLE,
+        FilterExpression: 'SK = :sk',
+        ExpressionAttributeValues: { ':sk': 'PROFILE' },
+        ExclusiveStartKey: startKey,
+      }))
+      profiles.push(...(page.Items ?? []))
+      startKey = page.LastEvaluatedKey
+    } while (startKey)
+  } catch (err) {
     console.error('[operator/orgs] Profile scan failed', err)
-    return null
-  })
-
-  if (!profiles) {
     return NextResponse.json({ error: 'Failed to load orgs' }, { status: 500 })
   }
 
-  const orgs = await Promise.all((profiles.Items ?? []).map(async (profile) => {
+  const orgs = await Promise.all(profiles.map(async (profile) => {
     const orgId = profile.orgId as string
 
     const subResult = await db.send(new GetCommand({
