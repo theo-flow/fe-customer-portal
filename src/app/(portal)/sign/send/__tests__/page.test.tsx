@@ -48,6 +48,8 @@ const everyone = {
   Seller: { name: 'Anele Bank', email: 'anele@bank.example' },
 }
 
+const pickForm = (name: string) => fireEvent.click(screen.getByRole('radio', { name: new RegExp(name) }))
+const DOT = String.fromCharCode(0xb7)
 const sendBtn = () => screen.getByRole('button', { name: /Send for signature|Sending/ })
 
 describe('SendFormPage', () => {
@@ -79,41 +81,69 @@ describe('SendFormPage', () => {
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('could not be loaded'))
   })
 
-  it('reads the upload and picks the right one of two same-shaped forms by itself', async () => {
+  it('shows every saved form up front, before any document is added', async () => {
+    withForms([consent, aoa])
+    render(<SendFormPage />)
+    await waitFor(() => expect(screen.getByRole('radio', { name: /New AOA/ })).toBeInTheDocument())
+    expect(screen.getByRole('radio', { name: /Consent/ })).toBeInTheDocument()
+    expect(screen.getByText(`3 pages ${DOT} signed by Customer, Witness 1, Seller`)).toBeInTheDocument()
+    expect(screen.queryByLabelText('Choose the PDF')).not.toBeInTheDocument()
+    expect(screen.getByText(/Choose the form first/)).toBeInTheDocument()
+  })
+
+  it('has a way back to the signing sessions', async () => {
+    withForms([aoa])
+    render(<SendFormPage />)
+    const back = await screen.findByRole('link', { name: /Back to signing sessions/ })
+    expect(back).toHaveAttribute('href', '/sign')
+  })
+
+  it('a lone form is already chosen, so the document can be added straight away', async () => {
+    withForms([aoa])
+    render(<SendFormPage />)
+    await waitFor(() => expect(screen.getByLabelText('Choose the PDF')).toBeInTheDocument())
+    expect((screen.getByRole('radio', { name: /New AOA/ }) as HTMLInputElement).checked).toBe(true)
+  })
+
+  it('choosing a form lets you add the document, which is then checked against that form', async () => {
     withForms([consent, aoa])
     vi.mocked(readUploadInfo).mockResolvedValue(aoaUpload)
     render(<SendFormPage />)
-    await waitFor(() => expect(screen.getByLabelText('Choose the PDF')).toBeInTheDocument())
+    await waitFor(() => screen.getByRole('radio', { name: /New AOA/ }))
+    pickForm('New AOA')
+    await waitFor(() => screen.getByLabelText('Choose the PDF'))
     await chooseFile(pdfFile())
 
-    await waitFor(() => expect(screen.getByText('This looks like New AOA.')).toBeInTheDocument())
-    expect((screen.getByLabelText('Which form is this?') as HTMLSelectElement).value).toBe('aoa')
-    expect(screen.getByText('This document matches New AOA.')).toBeInTheDocument()
-    // one row per role appears
+    await waitFor(() => expect(screen.getByText('This document matches New AOA.')).toBeInTheDocument())
     for (const role of ['Customer', 'Witness 1', 'Seller']) expect(screen.getByLabelText(`Name for ${role}`)).toBeInTheDocument()
   })
 
-  it('labels every form with how well the document fits it', async () => {
+  it('offers to switch when the document looks like a different form than the one chosen', async () => {
     withForms([consent, aoa])
     vi.mocked(readUploadInfo).mockResolvedValue(aoaUpload)
     render(<SendFormPage />)
+    await waitFor(() => screen.getByRole('radio', { name: /Consent/ }))
+    pickForm('Consent')
     await waitFor(() => screen.getByLabelText('Choose the PDF'))
     await chooseFile(pdfFile())
-    await waitFor(() => expect(screen.getByRole('option', { name: 'New AOA (looks right)' })).toBeInTheDocument())
-    expect(screen.getByRole('option', { name: 'Consent (does not fit this document)' })).toBeInTheDocument()
+
+    await waitFor(() => expect(screen.getByText(/This document looks like New AOA/)).toBeInTheDocument())
+    expect(screen.getByRole('alert')).toHaveTextContent('does not fit Consent')
+    fireEvent.click(screen.getByRole('button', { name: 'Use New AOA instead' }))
+    expect((screen.getByRole('radio', { name: /New AOA/ }) as HTMLInputElement).checked).toBe(true)
+    expect(screen.getByText('This document matches New AOA.')).toBeInTheDocument()
   })
 
-  it('does not choose for the person when nothing matches, and blocks sending a form that cannot fit', async () => {
+  it('blocks sending a document that cannot fit the chosen form', async () => {
     withForms([consent, aoa])
     vi.mocked(readUploadInfo).mockResolvedValue({ ...aoaUpload, pageCount: 4, pageTexts: ['a', 'b', 'c', 'd'] })
     render(<SendFormPage />)
+    await waitFor(() => screen.getByRole('radio', { name: /New AOA/ }))
+    pickForm('New AOA')
     await waitFor(() => screen.getByLabelText('Choose the PDF'))
     await chooseFile(pdfFile())
-    await waitFor(() => screen.getByLabelText('Which form is this?'))
-    expect((screen.getByLabelText('Which form is this?') as HTMLSelectElement).value).toBe('')
 
-    fireEvent.change(screen.getByLabelText('Which form is this?'), { target: { value: 'aoa' } })
-    expect(screen.getByRole('alert')).toHaveTextContent('does not fit New AOA')
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('does not fit New AOA'))
     expect(screen.getByText('This document has 4 pages, but New AOA has 3.')).toBeInTheDocument()
     fillPeople(everyone)
     expect(sendBtn()).toBeDisabled()
@@ -362,12 +392,14 @@ describe('SendFormPage', () => {
       withForms([readingForm, { ...consent, roles: ['Customer'], reads: [], roleDefaults: [] }])
       vi.mocked(readUploadInfo).mockResolvedValue(upload())
       render(<SendFormPage />)
+      await waitFor(() => screen.getByRole('radio', { name: /New AOA/ }))
+      pickForm('New AOA')
       await waitFor(() => screen.getByLabelText('Choose the PDF'))
       await chooseFile(pdfFile())
       await waitFor(() => screen.getByLabelText('Name for Customer'))
       fireEvent.change(screen.getByLabelText('Email for Customer'), { target: { value: 'thandi@example.com' } })
 
-      fireEvent.change(screen.getByLabelText('Which form is this?'), { target: { value: 'consent' } })
+      pickForm('Consent')
       expect((screen.getByLabelText('Email for Customer') as HTMLInputElement).value).toBe('thandi@example.com')
       expect((screen.getByLabelText('Name for Customer') as HTMLInputElement).value).toBe('Thandi Nkosi')
     })

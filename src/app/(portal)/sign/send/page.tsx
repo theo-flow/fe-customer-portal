@@ -7,8 +7,8 @@ import { readRecipients, suggestPeople, type Source } from '@/lib/sign-recipient
 
 // Send one of the organisation's saved Sign forms to one set of people.
 // The operator has already set up where each person initials, signs and dates;
-// here the customer's staff just upload THIS person's PDF, check it is the
-// right form, and say who signs each role.
+// here the customer's staff choose the form, upload THIS person's PDF (which is
+// checked against that form), and say who signs each role.
 
 const MAX_MB = 50
 const MAX_BYTES = MAX_MB * 1024 * 1024
@@ -55,7 +55,12 @@ export default function SendFormPage() {
   useEffect(() => {
     fetch('/api/sign/forms')
       .then(r => (r.ok ? r.json() : Promise.reject()))
-      .then(d => setForms(d.forms as FormSummary[]))
+      .then(d => {
+        const list = d.forms as FormSummary[]
+        setForms(list)
+        // a lone form is simply the one to send
+        if (list.length === 1) setSelectedId(list[0].formId)
+      })
       .catch(() => setFormsError(true))
   }, [])
 
@@ -85,7 +90,7 @@ export default function SendFormPage() {
   }
 
   async function pickFile(f: File) {
-    setFileError(''); setError(''); setConfirmed(false); setInfo(null); setSelectedId(''); setPeople({}); setSources({})
+    setFileError(''); setError(''); setConfirmed(false); setInfo(null); setPeople({}); setSources({})
     if (f.type !== 'application/pdf') { setFileError('Only PDF documents can be sent for signature.'); return }
     if (f.size > MAX_BYTES) { setFileError(`File too large. Max ${MAX_MB} MB.`); return }
     setFile(f)
@@ -94,13 +99,8 @@ export default function SendFormPage() {
       const { readUploadInfo } = await import('./pdf-read')
       const read = await readUploadInfo(f)
       setInfo(read)
-      if (forms) {
-        const { suggested } = suggestForm(read, forms)
-        // one clear match is pre-selected; a lone form is pre-selected too (its check still shows)
-        const chosen = suggested ?? (forms.length === 1 ? forms[0] : undefined)
-        setSelectedId(chosen?.formId ?? '')
-        prefill(chosen, read, {})
-      }
+      // the form was chosen first; read who it is for from this document
+      prefill(forms?.find(f => f.formId === selectedId), read, {})
     } catch {
       setFile(null)
       setFileError('That PDF could not be read. Is it damaged or password protected?')
@@ -172,7 +172,7 @@ export default function SendFormPage() {
   }
 
   function reset() {
-    setFile(null); setInfo(null); setSelectedId(''); setConfirmed(false); setPeople({}); setSources({})
+    setFile(null); setInfo(null); setSelectedId(forms && forms.length === 1 ? forms[0].formId : ''); setConfirmed(false); setPeople({}); setSources({})
     setResult(null); setError(''); setFileError('')
   }
 
@@ -219,7 +219,10 @@ export default function SendFormPage() {
 
   return (
     <div className="max-w-xl">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-400 mb-1">TheoFlow Sign</p>
+      <Link href="/sign" className="text-[12px] font-medium text-gray-400 hover:text-black">
+        &larr; Back to signing sessions
+      </Link>
+      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-400 mt-4 mb-1">TheoFlow Sign</p>
       <h1 className="font-display text-[2.1rem] leading-tight text-black mb-6">Send a form</h1>
 
       {formsError && (
@@ -239,88 +242,109 @@ export default function SendFormPage() {
 
       {forms && forms.length > 0 && (
         <>
-          <p className="text-[13px] font-semibold text-black mb-2">1. The document</p>
-          <div
-            onDragOver={e => e.preventDefault()}
-            onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) pickFile(f) }}
-            onClick={() => inputRef.current?.click()}
-            className="rounded-2xl border-2 border-dashed border-black/[0.12] p-8 text-center cursor-pointer hover:border-black/25 transition-colors mb-2">
-            <input ref={inputRef} type="file" accept="application/pdf" className="hidden" aria-label="Choose the PDF"
-                   onChange={e => { const f = e.target.files?.[0]; if (f) pickFile(f) }} />
-            {file ? (
-              <p className="text-[14px] font-medium text-black">{file.name}</p>
-            ) : (
-              <>
-                <p className="text-[14px] font-medium text-black mb-1">Drop this person's PDF here, or click to choose</p>
-                <p className="text-[12px] text-gray-400">Max {MAX_MB} MB</p>
-              </>
-            )}
+          <p className="text-[13px] font-semibold text-black mb-2">1. Which form are you sending?</p>
+          <div role="radiogroup" aria-label="Which form are you sending?" className="space-y-2 mb-2">
+            {forms.map(f => (
+              <label key={f.formId}
+                     className={`flex items-start gap-3 rounded-2xl border px-4 py-3 cursor-pointer transition-colors ${
+                       selectedId === f.formId ? 'border-black bg-gray-50' : 'border-black/[0.12] hover:border-black/30'}`}>
+                <input type="radio" name="sign-form" value={f.formId} checked={selectedId === f.formId}
+                       onChange={() => chooseForm(f.formId)} className="mt-1" />
+                <span className="min-w-0">
+                  <span className="block text-[14px] font-semibold text-black">{f.name}</span>
+                  <span className="block text-[12px] text-gray-400">
+                    {f.pageCount} page{f.pageCount !== 1 ? 's' : ''} &middot; signed by {f.roles.join(', ')}
+                  </span>
+                </span>
+              </label>
+            ))}
           </div>
-          {reading && <p className="text-[12px] text-gray-400 mb-2" role="status">Reading the document…</p>}
-          {fileError && <p role="alert" className="text-[12px] text-red-500 mb-2">{fileError}</p>}
 
-          {info && (
+          {!selected && (
+            <p className="text-[12px] text-gray-400 mt-4">Choose the form first, then add this person's document.</p>
+          )}
+
+          {selected && (
             <>
-              <p className="text-[13px] font-semibold text-black mt-6 mb-2">2. Which form is this?</p>
-              {matching?.suggested && selectedId === matching.suggested.formId && (
-                <p className="text-[13px] text-green-700 mb-2" role="status">This looks like {matching.suggested.name}.</p>
-              )}
-              <select aria-label="Which form is this?" value={selectedId} onChange={e => chooseForm(e.target.value)}
-                      className="w-full rounded-lg border border-black/[0.12] px-3 py-2.5 text-[13px] mb-2">
-                <option value="">Choose a form</option>
-                {forms.map(f => (
-                  <option key={f.formId} value={f.formId}>
-                    {f.name} ({matching ? STATUS_LABEL[matching.results[f.formId].status] : ''})
-                  </option>
-                ))}
-              </select>
+              <p className="text-[13px] font-semibold text-black mt-6 mb-2">2. This person's document</p>
+              <div
+                onDragOver={e => e.preventDefault()}
+                onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) pickFile(f) }}
+                onClick={() => inputRef.current?.click()}
+                className="rounded-2xl border-2 border-dashed border-black/[0.12] p-8 text-center cursor-pointer hover:border-black/25 transition-colors mb-2">
+                <input ref={inputRef} type="file" accept="application/pdf" className="hidden" aria-label="Choose the PDF"
+                       onChange={e => { const f = e.target.files?.[0]; if (f) pickFile(f) }} />
+                {file ? (
+                  <p className="text-[14px] font-medium text-black">{file.name}</p>
+                ) : (
+                  <>
+                    <p className="text-[14px] font-medium text-black mb-1">Drop this person's PDF here, or click to choose</p>
+                    <p className="text-[12px] text-gray-400">Max {MAX_MB} MB. It is checked against {selected.name}.</p>
+                  </>
+                )}
+              </div>
+              {reading && <p className="text-[12px] text-gray-400 mb-2" role="status">Reading the document…</p>}
+              {fileError && <p role="alert" className="text-[12px] text-red-500 mb-2">{fileError}</p>}
 
-              {selectedResult && selectedResult.status === 'match' && (
-                <p className="text-[12px] text-green-700 mb-2">This document matches {selected!.name}.</p>
-              )}
-              {selectedResult && selectedResult.status !== 'match' && (
-                <div role="alert" className={`rounded-xl px-4 py-3 text-[12px] mb-2 ${
-                  selectedResult.status === 'mismatch' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-800'}`}>
-                  <p className="font-semibold mb-1">
-                    {selectedResult.status === 'mismatch'
-                      ? `This document does not fit ${selected!.name}, so it cannot be sent as that form.`
-                      : `We could not be sure this is ${selected!.name}.`}
-                  </p>
-                  <ul className="list-disc pl-4">{selectedResult.problems.map(p => <li key={p}>{p}</li>)}</ul>
-                  {selectedResult.status === 'unsure' && (
-                    <label className="flex items-center gap-2 mt-2">
-                      <input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} />
-                      I have checked that this is the right form
-                    </label>
-                  )}
-                </div>
-              )}
-
-              {selected && (
+              {info && (
                 <>
-                  <p className="text-[13px] font-semibold text-black mt-6 mb-1">3. Who signs</p>
-                  <p className="text-[12px] text-gray-400 mb-3">Each person gets their own link and only sees what they need to do.</p>
-                  {Object.values(sources).some(s => s.name === 'document' || s.email === 'document') && (
-                    <p role="status" className="text-[12px] text-green-700 bg-green-50 rounded-xl px-3 py-2 mb-3">
-                      We filled in the people we could from the document. Please check every name and email before you send.
+                  {matching?.suggested && matching.suggested.formId !== selectedId && (
+                    <p className="text-[12px] text-amber-800 bg-amber-50 rounded-xl px-3 py-2 mb-2" role="status">
+                      This document looks like {matching.suggested.name}.{' '}
+                      <button type="button" onClick={() => chooseForm(matching.suggested!.formId)} className="font-semibold underline">
+                        Use {matching.suggested.name} instead
+                      </button>
                     </p>
                   )}
-                  <div className="space-y-3">
-                    {selected.roles.map(role => (
-                      <div key={role}>
-                        <p className="text-[12px] font-medium text-gray-500 mb-1">{role}</p>
-                        <div className="flex gap-2">
-                          <input type="text" placeholder="Full name" aria-label={`Name for ${role}`}
-                                 value={people[role]?.name ?? ''} onChange={e => setPerson(role, { name: e.target.value })}
-                                 className="flex-1 px-3 py-2.5 rounded-lg border border-black/[0.12] text-[13px] outline-none focus:border-black/40" />
-                          <input type="email" placeholder="Email" aria-label={`Email for ${role}`}
-                                 value={people[role]?.email ?? ''} onChange={e => setPerson(role, { email: e.target.value })}
-                                 className="flex-1 px-3 py-2.5 rounded-lg border border-black/[0.12] text-[13px] outline-none focus:border-black/40" />
-                        </div>
-                        {hintFor(role) && <p className="text-[11px] text-gray-400 mt-1">{hintFor(role)}</p>}
+
+                  {selectedResult && selectedResult.status === 'match' && (
+                    <p className="text-[12px] text-green-700 mb-2">This document matches {selected.name}.</p>
+                  )}
+                  {selectedResult && selectedResult.status !== 'match' && (
+                    <div role="alert" className={`rounded-xl px-4 py-3 text-[12px] mb-2 ${
+                      selectedResult.status === 'mismatch' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-800'}`}>
+                      <p className="font-semibold mb-1">
+                        {selectedResult.status === 'mismatch'
+                          ? `This document does not fit ${selected.name}, so it cannot be sent as that form.`
+                          : `We could not be sure this is ${selected.name}.`}
+                      </p>
+                      <ul className="list-disc pl-4">{selectedResult.problems.map(p => <li key={p}>{p}</li>)}</ul>
+                      {selectedResult.status === 'unsure' && (
+                        <label className="flex items-center gap-2 mt-2">
+                          <input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} />
+                          I have checked that this is the right form
+                        </label>
+                      )}
+                    </div>
+                  )}
+
+                  {selected && (
+                    <>
+                      <p className="text-[13px] font-semibold text-black mt-6 mb-1">3. Who signs</p>
+                      <p className="text-[12px] text-gray-400 mb-3">Each person gets their own link and only sees what they need to do.</p>
+                      {Object.values(sources).some(s => s.name === 'document' || s.email === 'document') && (
+                        <p role="status" className="text-[12px] text-green-700 bg-green-50 rounded-xl px-3 py-2 mb-3">
+                          We filled in the people we could from the document. Please check every name and email before you send.
+                        </p>
+                      )}
+                      <div className="space-y-3">
+                        {selected.roles.map(role => (
+                          <div key={role}>
+                            <p className="text-[12px] font-medium text-gray-500 mb-1">{role}</p>
+                            <div className="flex gap-2">
+                              <input type="text" placeholder="Full name" aria-label={`Name for ${role}`}
+                                     value={people[role]?.name ?? ''} onChange={e => setPerson(role, { name: e.target.value })}
+                                     className="flex-1 px-3 py-2.5 rounded-lg border border-black/[0.12] text-[13px] outline-none focus:border-black/40" />
+                              <input type="email" placeholder="Email" aria-label={`Email for ${role}`}
+                                     value={people[role]?.email ?? ''} onChange={e => setPerson(role, { email: e.target.value })}
+                                     className="flex-1 px-3 py-2.5 rounded-lg border border-black/[0.12] text-[13px] outline-none focus:border-black/40" />
+                            </div>
+                            {hintFor(role) && <p className="text-[11px] text-gray-400 mt-1">{hintFor(role)}</p>}
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
+                    </>
+                  )}
                 </>
               )}
             </>
