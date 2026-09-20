@@ -359,14 +359,14 @@ export default function SignCapture({
         {groups.includes('signature') && (
           <div hidden={group !== 'signature'}>
             <AdoptMark label="signature" mode={sigMode} onMode={setSigMode} canvasRef={sigRef} typed={sigTyped} onTyped={setSigTyped}
-                       typedLabel="Type your full name" typedPlaceholder="Your full name" typedClass={bigTyped} visible />
+                       typedLabel="Type your full name" typedPlaceholder="Your full name" typedClass={bigTyped} visible={group === 'signature'} />
           </div>
         )}
         {groups.includes('initials') && (
           <div hidden={group !== 'initials'}>
             <AdoptMark label="initials" mode={iniMode} onMode={setIniMode} canvasRef={iniRef} typed={iniTyped}
                        onTyped={v => { setIniTouched(true); setIniTyped(v) }}
-                       typedLabel="Type your initials" typedPlaceholder="For example TN" typedClass={bigTyped} visible />
+                       typedLabel="Type your initials" typedPlaceholder="For example TN" typedClass={bigTyped} visible={group === 'initials'} />
           </div>
         )}
         {group === 'date' && (
