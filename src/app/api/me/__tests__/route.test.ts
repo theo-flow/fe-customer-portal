@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 const { mockCookieGet, mockSend, mockAccess } = vi.hoisted(() => ({
   mockCookieGet: vi.fn(),
@@ -79,5 +79,32 @@ describe('GET /api/me', () => {
     const { 'custom:role': _omit, ...noRole } = claims
     vi.mocked(verifyJwtClaims).mockResolvedValue(noRole)
     expect((await (await GET()).json()).role).toBe('agent')
+  })
+})
+
+describe('GET /api/me isOperator', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockCookieGet.mockReturnValue({ value: 'valid-token' })
+    mockSend.mockResolvedValue({ Item: { orgName: 'Acme' } })
+    mockAccess.mockResolvedValue({ state: 'active', trialEndsAt: null, daysLeft: null })
+    process.env.OPERATOR_EMAILS = 'ops@theoflow.example, other@theoflow.example'
+  })
+  afterEach(() => { delete process.env.OPERATOR_EMAILS })
+
+  it('is true for an allowlisted operator, whatever the letter case', async () => {
+    vi.mocked(verifyJwtClaims).mockResolvedValue({ ...claims, email: 'OPS@theoflow.example' })
+    expect((await (await GET()).json()).isOperator).toBe(true)
+  })
+
+  it('is false for everyone else, including an org admin', async () => {
+    vi.mocked(verifyJwtClaims).mockResolvedValue(claims)
+    expect((await (await GET()).json()).isOperator).toBe(false)
+  })
+
+  it('is false for all when no operators are configured', async () => {
+    process.env.OPERATOR_EMAILS = ''
+    vi.mocked(verifyJwtClaims).mockResolvedValue({ ...claims, email: 'ops@theoflow.example' })
+    expect((await (await GET()).json()).isOperator).toBe(false)
   })
 })

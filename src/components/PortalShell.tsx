@@ -15,8 +15,8 @@ import { isNavItemActive, navGroupsFor } from '@/lib/portal-nav'
 export function PortalShell({ children }: { children: React.ReactNode }) {
   const path   = usePathname()
   const router = useRouter()
-  const { name, email, initials, orgName, role, access, subscribedProducts, loading } = useOrg()
-  const groups = navGroupsFor(loading ? [] : subscribedProducts, role)
+  const { name, email, initials, orgName, role, isOperator, access, subscribedProducts, loading } = useOrg()
+  const groups = navGroupsFor(loading ? [] : subscribedProducts, role, isOperator)
 
   // A locked org (its pilot was cancelled) can still sign in and reach Billing, where
   // it restarts on the paid plan. Everything else shows the lock screen.

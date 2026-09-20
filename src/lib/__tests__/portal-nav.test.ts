@@ -26,6 +26,29 @@ describe('navGroupsFor', () => {
   })
 })
 
+describe('operator entry', () => {
+  const opHrefs = (isOperator?: boolean) => navGroupsFor(['forge'], 'admin', isOperator).flatMap(g => g.items.map(i => i.href))
+
+  it('is only for platform operators', () => {
+    expect(opHrefs(true)).toContain('/operator')
+    expect(opHrefs(false)).not.toContain('/operator')
+    expect(opHrefs(undefined)).not.toContain('/operator')
+    expect(navGroupsFor(['forge']).flatMap(g => g.items.map(i => i.href))).not.toContain('/operator')
+  })
+
+  it('sits last, in its own Platform group, apart from the customer workspace', () => {
+    const groups = navGroupsFor(['forge', 'sign'], 'admin', true)
+    expect(groups.at(-1)).toMatchObject({ label: 'Platform', items: [{ href: '/operator', label: 'Operator console' }] })
+  })
+
+  it('stays active on the workspace pages beneath it', () => {
+    const item = navGroupsFor([], 'agent', true).at(-1)!.items[0]
+    expect(isNavItemActive(item, '/operator')).toBe(true)
+    expect(isNavItemActive(item, '/operator/orgs/org-1')).toBe(true)
+    expect(isNavItemActive(item, '/dashboard')).toBe(false)
+  })
+})
+
 describe('isNavItemActive', () => {
   const item = (href: string, alsoActive?: string[]): NavItem => ({ href, label: href, icon: (() => null) as never, alsoActive })
 

@@ -17,6 +17,8 @@ export interface OrgData {
   initials:           string
   // 'agent' until /api/me says otherwise, so admin-only UI never flashes.
   role:               'admin' | 'agent'
+  // A platform operator (see lib/operator.ts): gets the Operator entry in the sidebar.
+  isOperator:         boolean
   // 'active' until /api/me says otherwise, so a slow load never flashes a lock screen.
   access:             OrgAccessInfo
   subscribedProducts: string[]
@@ -27,7 +29,7 @@ export interface OrgData {
 
 const OrgContext = createContext<OrgData>({
   name: '', email: '', orgId: '', orgName: '',
-  initials: '··', role: 'agent', access: { state: 'active', daysLeft: null, trialEndsAt: null },
+  initials: '··', role: 'agent', isOperator: false, access: { state: 'active', daysLeft: null, trialEndsAt: null },
   subscribedProducts: [], formGroups: [],
   loading: true, refetch: () => {},
 })
@@ -35,7 +37,7 @@ const OrgContext = createContext<OrgData>({
 export function OrgProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<Omit<OrgData, 'refetch'>>({
     name: '', email: '', orgId: '', orgName: '',
-    initials: '··', role: 'agent', access: { state: 'active', daysLeft: null, trialEndsAt: null },
+    initials: '··', role: 'agent', isOperator: false, access: { state: 'active', daysLeft: null, trialEndsAt: null },
     subscribedProducts: [], formGroups: [],
     loading: true,
   })

@@ -48,6 +48,20 @@ describe('PortalShell', () => {
     expect(screen.getByText('page body')).toBeInTheDocument()
   })
 
+  it('shows the Operator console link to platform operators only', () => {
+    mockOrg.current = org({ isOperator: true })
+    const { unmount } = render(<PortalShell><p/></PortalShell>)
+    expect(within(mainNav()).getByRole('link', { name: 'Operator console' })).toHaveAttribute('href', '/operator')
+    unmount()
+
+    for (const isOperator of [false, undefined]) {
+      mockOrg.current = org({ isOperator, role: 'admin' })         // an org admin is still not an operator
+      const r = render(<PortalShell><p/></PortalShell>)
+      expect(within(mainNav()).queryByRole('link', { name: 'Operator console' })).not.toBeInTheDocument()
+      r.unmount()
+    }
+  })
+
   it('shows the Team link to admins only', () => {
     mockOrg.current = org({ role: 'admin' })
     const { unmount } = render(<PortalShell><p/></PortalShell>)

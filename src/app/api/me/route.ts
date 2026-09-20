@@ -5,6 +5,7 @@ import { verifyJwtClaims, initialsFromName } from '@/lib/token'
 import { roleOf } from '@/lib/roles'
 import { ddbDocClient, TABLE } from '@/lib/aws'
 import { orgAccess, productsFor, type OrgAccess } from '@/lib/org-access'
+import { isOperatorEmail } from '@/lib/operator'
 
 export async function GET() {
   const token = cookies().get('tf_token')?.value
@@ -50,6 +51,9 @@ export async function GET() {
 
   return NextResponse.json({
     name, email, orgId, orgName, initials, role: roleOf(claims),
+    // Only decides whether the sidebar shows the Operator link. Every operator route
+    // still checks the allowlist itself.
+    isOperator: isOperatorEmail(email),
     subscribedProducts: productsFor({ state }),
     formGroups,
     access: { state, daysLeft: access?.daysLeft ?? null, trialEndsAt: access?.trialEndsAt ?? null },
