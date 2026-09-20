@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
+import { GateKeepErasure } from './GateKeepErasure'
 
 // Platform-wide, gated the same way as /operator (see src/lib/operator.ts).
 // The one write action in the operator console: lets an operator turn
@@ -151,6 +152,8 @@ export default function ManageOrgPage() {
         </button>
         {saved && <span className="text-[12px] text-green-600 font-medium">Saved</span>}
       </div>
+
+      <GateKeepErasure orgId={orgId} />
     </div>
   )
 }

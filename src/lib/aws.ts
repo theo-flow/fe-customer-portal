@@ -4,6 +4,7 @@ import { S3Client } from '@aws-sdk/client-s3'
 import { SQSClient } from '@aws-sdk/client-sqs'
 import { EventBridgeClient } from '@aws-sdk/client-eventbridge'
 import { CognitoIdentityProviderClient } from '@aws-sdk/client-cognito-identity-provider'
+import { STSClient } from '@aws-sdk/client-sts'
 import { fromIni } from '@aws-sdk/credential-providers'
 
 const REGION = process.env.AWS_REGION ?? 'af-south-1'
@@ -37,6 +38,10 @@ export function cognitoClient() {
   return new CognitoIdentityProviderClient({ region: REGION, credentials: credentials() })
 }
 
+export function stsClient() {
+  return new STSClient({ region: REGION, credentials: credentials() })
+}
+
 export const USER_POOL_ID = process.env.NEXT_PUBLIC_COGNITO_USER_POOL_ID ?? ''
 
 export const TABLE         = process.env.DYNAMODB_TABLE_ORGS    ?? 'daai-insure-orgs'
@@ -49,3 +54,10 @@ export const CONTACT_TABLE = process.env.DYNAMODB_TABLE_CONTACT ?? 'daai-insure-
 // Defaults are the real names, so no Lambda environment change is needed.
 export const GATE_KEEP_BUCKET = process.env.S3_GATE_KEEP_BUCKET     ?? 'theoflow-gate-keep-archive'
 export const GATE_KEEP_TABLE  = process.env.DYNAMODB_TABLE_GATE_KEEP ?? 'daai-insure-gate-keep'
+
+// Operator-run erasure (infrastructure/terraform/gate-keep/erasure.tf). The portal role
+// cannot touch the archive directly: it assumes this role, tagged with one workspace.
+export const GATE_KEEP_ERASURE_ROLE_ARN =
+  process.env.GATE_KEEP_ERASURE_ROLE_ARN ?? 'arn:aws:iam::922318569961:role/theoflow-gate-keep-erasure'
+export const GATE_KEEP_ERASURE_LOG_TABLE =
+  process.env.DYNAMODB_TABLE_GATE_KEEP_ERASURES ?? 'daai-insure-gate-keep-erasures'
