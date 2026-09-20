@@ -25,13 +25,13 @@ describe('loadTeam', () => {
   beforeEach(() => vi.clearAllMocks())
 
   it('adds the caller to the list and writes their listing item when it is missing', async () => {
-    mockSend.mockResolvedValueOnce({ Items: [] }).mockResolvedValueOnce({})
+    mockSend.mockResolvedValueOnce({ Items: [] }).mockResolvedValueOnce({ Item: {} }).mockResolvedValueOnce({})
 
     const members = await loadTeam('org-1', admin)
 
     expect(members).toHaveLength(1)
     expect(members[0]).toMatchObject({ sub: 'admin-1', role: 'admin', status: 'active' })
-    const put = mockSend.mock.calls[1][0].input
+    const put = mockSend.mock.calls[2][0].input
     expect(put.Item).toMatchObject({ PK: 'ORG#org-1', SK: 'MEMBER#admin-1' })
     expect(put.ConditionExpression).toBe('attribute_not_exists(PK)')
   })
@@ -43,13 +43,30 @@ describe('loadTeam', () => {
   })
 
   it('survives losing a race to create the listing item', async () => {
-    mockSend.mockResolvedValueOnce({ Items: [] })
+    mockSend.mockResolvedValueOnce({ Items: [] }).mockResolvedValueOnce({ Item: {} })
       .mockRejectedValueOnce(Object.assign(new Error('x'), { name: 'ConditionalCheckFailedException' }))
     await expect(loadTeam('org-1', admin)).resolves.toHaveLength(1)
   })
 
+  it('dates the original admin from when the org registered, not from first opening Team', async () => {
+    mockSend.mockResolvedValueOnce({ Items: [] })
+      .mockResolvedValueOnce({ Item: { createdAt: '2026-07-13T14:14:50.480Z' } })
+      .mockResolvedValueOnce({})
+
+    const [me] = await loadTeam('org-1', admin)
+
+    expect(me.createdAt).toBe('2026-07-13T14:14:50.480Z')
+    expect(mockSend.mock.calls[1][0].input.Key).toEqual({ PK: 'ORG#org-1', SK: 'PROFILE' })
+  })
+
+  it('falls back to now when the org has no date or the lookup fails', async () => {
+    mockSend.mockResolvedValueOnce({ Items: [] }).mockRejectedValueOnce(new Error('ddb')).mockResolvedValueOnce({})
+    const [me] = await loadTeam('org-1', admin)
+    expect(Date.now() - new Date(me.createdAt).getTime()).toBeLessThan(5000)
+  })
+
   it('only ever queries the caller\'s own org partition', async () => {
-    mockSend.mockResolvedValueOnce({ Items: [] }).mockResolvedValueOnce({})
+    mockSend.mockResolvedValueOnce({ Items: [] }).mockResolvedValueOnce({ Item: {} }).mockResolvedValueOnce({})
     await loadTeam('org-1', admin)
     expect(mockSend.mock.calls[0][0].input.ExpressionAttributeValues[':pk']).toBe('ORG#org-1')
   })
