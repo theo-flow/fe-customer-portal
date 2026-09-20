@@ -89,10 +89,23 @@ export default function ManageOrgPage() {
     )
   }
 
+  // No profile to manage (the list failed to load, or the account was closed and its profile
+  // removed). Erasing that workspace's Gate-Keep data must still be possible, since a closed
+  // account is exactly when a data-erasure request arrives, so it does not depend on the profile.
   if (!org) {
     return (
-      <div className="rounded-2xl border border-black/[0.06] py-20 text-center">
-        <p className="text-[13px] text-gray-400">Org not found.</p>
+      <div className="max-w-lg">
+        <Link href="/operator" className="text-[12px] font-medium text-gray-400 hover:text-black">
+          ← Back to operator console
+        </Link>
+        <div className="mt-4 mb-2">
+          <h1 className="font-display text-[2.1rem] leading-tight text-black">Workspace</h1>
+          <p className="text-[13px] text-gray-400 mt-1 font-mono">{orgId}</p>
+        </div>
+        <p role="status" className="text-[13px] text-gray-500">
+          No organisation profile could be loaded for this workspace, so its products cannot be managed here.
+        </p>
+        <GateKeepErasure orgId={orgId} />
       </div>
     )
   }
