@@ -48,9 +48,11 @@ async function uploadOne(folderId: string, entry: FileEntry, onProgress: (pct: n
   await api('POST', `/api/gate-keep/files/${fileId}/confirm`)
 }
 
-export function UploadPanel({ folderId, folderLabel, onUploaded }: {
+export function UploadPanel({ folderId, folderLabel, note, onUploaded }: {
   folderId:    string
   folderLabel: string
+  // Shown under the destination, for example that what is added here belongs to the organisation.
+  note?: string
   onUploaded:  () => void
 }) {
   const [entries, setEntries] = useState<FileEntry[]>([])
@@ -106,6 +108,7 @@ export function UploadPanel({ folderId, folderLabel, onUploaded }: {
         <p className="text-[12px] font-medium text-gray-500">Drop files here</p>
         <p className="mt-1 text-[11px] text-gray-300">or click to browse · max {MAX_MB} MB per file</p>
         <p className="mt-1 text-[11px] text-gray-400">Uploading to: {folderLabel}</p>
+        {note && <p role="note" className="mt-1 text-[11px] font-medium text-amber-700">{note}</p>}
       </div>
 
       {entries.length > 0 && (

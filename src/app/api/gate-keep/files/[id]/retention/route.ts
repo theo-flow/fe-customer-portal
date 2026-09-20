@@ -3,7 +3,8 @@ import { PutObjectRetentionCommand } from '@aws-sdk/client-s3'
 import { GATE_KEEP_BUCKET } from '@/lib/aws'
 import { writeAudit } from '@/lib/audit'
 import { gateKeep, HttpError, notFound, readJson } from '@/lib/gate-keep-route'
-import { getFile, setRetention } from '@/lib/gate-keep-store'
+import { getFile, listFolders, setRetention } from '@/lib/gate-keep-store'
+import { canManage, canSee, deniedMessage } from '@/lib/gate-keep-access'
 import { s3KeyFor, toPublicFile, validateRetention } from '@/lib/gate-keep-catalog'
 
 type Ctx = { params: { id: string } }
@@ -13,9 +14,13 @@ type Ctx = { params: { id: string } }
 // be extended. The user's own credentials do this, so AWS enforces the same limits as this
 // route does: Governance mode only, at most ten years, and no bypass permission anywhere.
 export async function POST(req: NextRequest, { params }: Ctx) {
-  return gateKeep('files/retention', async ({ ws, claims, s3, db }) => {
+  return gateKeep('files/retention', async ({ ws, claims, viewer, s3, db }) => {
     const file = await getFile(db, ws, params.id)
     if (!file || file.status !== 'READY') throw notFound()
+    const folders = await listFolders(db, ws)
+    if (!canSee(viewer, file.folderId, folders)) throw notFound()
+    // You may only protect what you could delete.
+    if (!canManage(viewer, file.folderId, folders)) throw new HttpError(403, 'forbidden', deniedMessage(file.folderId, folders))
     if (!file.versionId) throw new Error(`File ${file.fileId} has no recorded version`)
 
     const body = await readJson<{ retainUntil: string }>(req)

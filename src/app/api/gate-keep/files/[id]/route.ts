@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { DeleteObjectCommand } from '@aws-sdk/client-s3'
 import { GATE_KEEP_BUCKET } from '@/lib/aws'
 import { gateKeep, HttpError, notFound, readJson } from '@/lib/gate-keep-route'
-import { deleteFile, getFile, getFolder, updateFile } from '@/lib/gate-keep-store'
+import { deleteFile, getFile, getFolder, listFolders, updateFile } from '@/lib/gate-keep-store'
+import { canManage, canMoveFile, canSee, deniedMessage } from '@/lib/gate-keep-access'
 import { ROOT_FOLDER_ID, isProtected, s3KeyFor, toPublicFile, validateName } from '@/lib/gate-keep-catalog'
 
 type Ctx = { params: { id: string } }
@@ -18,9 +19,12 @@ const lockedError = (until?: string | null) => new HttpError(
 
 // Rename and/or move a file. A catalogue change only: the bytes never move.
 export async function PATCH(req: NextRequest, { params }: Ctx) {
-  return gateKeep('files/update', async ({ ws, db }) => {
+  return gateKeep('files/update', async ({ ws, viewer, db }) => {
     const file = await getFile(db, ws, params.id)
     if (!file || file.status !== 'READY') throw notFound()
+    const folders = await listFolders(db, ws)
+    if (!canSee(viewer, file.folderId, folders)) throw notFound()
+    if (!canManage(viewer, file.folderId, folders)) throw new HttpError(403, 'forbidden', deniedMessage(file.folderId, folders))
 
     const body = await readJson<{ name: string; folderId: string }>(req)
 
@@ -34,6 +38,10 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     const folderId = body.folderId ?? file.folderId
     if (folderId !== file.folderId && folderId !== ROOT_FOLDER_ID && !(await getFolder(db, ws, folderId))) {
       throw new HttpError(404, 'not_found', 'That destination no longer exists.')
+    }
+
+    if (folderId !== file.folderId && !canMoveFile(viewer, file.folderId, folderId, folders)) {
+      throw new HttpError(403, 'forbidden', 'You can only move your own files between your own folders.')
     }
 
     if (name === file.name && folderId === file.folderId) {
@@ -51,9 +59,12 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
 // S3 first, so a retry after a failed catalogue step simply finishes the job
 // (deleting an already-gone version succeeds).
 export async function DELETE(_req: NextRequest, { params }: Ctx) {
-  return gateKeep('files/delete', async ({ ws, s3, db }) => {
+  return gateKeep('files/delete', async ({ ws, viewer, s3, db }) => {
     const file = await getFile(db, ws, params.id)
     if (!file || file.status !== 'READY') throw notFound()
+    const folders = await listFolders(db, ws)
+    if (!canSee(viewer, file.folderId, folders)) throw notFound()
+    if (!canManage(viewer, file.folderId, folders)) throw new HttpError(403, 'forbidden', deniedMessage(file.folderId, folders))
     if (!file.versionId) throw new Error(`File ${file.fileId} has no recorded version`)
     if (isProtected(file)) throw lockedError(file.retainUntil)
 

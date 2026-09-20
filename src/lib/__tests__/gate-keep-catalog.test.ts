@@ -223,3 +223,16 @@ describe('isProtected / toPublicFile', () => {
     expect(toPublicFile(base).retainUntil).toBeNull()
   })
 })
+
+describe('toPublicFile end-of-life date', () => {
+  const base = { fileId: 'f', folderId: 'root', name: 'a.pdf', size: 1, contentType: 'application/pdf', createdAt: 'x' }
+
+  it('shows members when a file will be deleted, only for a stored file with an agreed end of life', () => {
+    expect(toPublicFile({ ...base, status: 'READY', purgeAt: 1_950_000_000 } as never).deletesOn).toBe(new Date(1_950_000_000 * 1000).toISOString())
+    expect(toPublicFile({ ...base, status: 'READY' } as never).deletesOn).toBeNull()
+  })
+
+  it('an upload still in progress shows nothing (its TTL is only the abandoned-upload clean-up)', () => {
+    expect(toPublicFile({ ...base, status: 'PENDING', purgeAt: 1_950_000_000 } as never).deletesOn).toBeNull()
+  })
+})

@@ -21,6 +21,8 @@ interface OrgRow {
   orgId:              string
   orgName:            string
   subscribedProducts: string[]
+  // The end-of-life period agreed with the organisation (5, 6 or 7 years), or null if none.
+  retentionYears?:    number | null
 }
 
 export default function ManageOrgPage() {
@@ -29,6 +31,7 @@ export default function ManageOrgPage() {
 
   const [org, setOrg]           = useState<OrgRow | null>(null)
   const [selected, setSelected] = useState<string[]>([])
+  const [retention, setRetention] = useState<number | null>(null)
   const [loading, setLoading]   = useState(true)
   const [forbidden, setForbidden] = useState(false)
   const [saving, setSaving]     = useState(false)
@@ -43,7 +46,7 @@ export default function ManageOrgPage() {
       })
       .then(d => {
         const match = (d?.orgs as OrgRow[] | undefined)?.find(o => o.orgId === orgId)
-        if (match) { setOrg(match); setSelected(match.subscribedProducts) }
+        if (match) { setOrg(match); setSelected(match.subscribedProducts); setRetention(match.retentionYears ?? null) }
       })
       .catch(() => {})
       .finally(() => setLoading(false))
@@ -62,7 +65,7 @@ export default function ManageOrgPage() {
       const res = await fetch(`/api/operator/orgs/${orgId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subscribedProducts: selected }),
+        body: JSON.stringify({ subscribedProducts: selected, retentionYears: retention }),
       })
       if (!res.ok) {
         const { error: msg } = await res.json().catch(() => ({ error: 'Server error' }))
@@ -164,6 +167,21 @@ export default function ManageOrgPage() {
             </button>
           )
         })}
+      </div>
+
+      <div className="mb-6 rounded-xl border border-black/[0.08] px-5 py-4">
+        <label htmlFor="eol-period" className="block text-[14px] font-semibold text-black">Gate-Keep end of life</label>
+        <p className="mt-0.5 text-[12px] text-gray-400">
+          The period agreed with this organisation. Files added from now on are deleted completely this long
+          after they were added. Files already stored are not affected. With no agreement, files are never
+          deleted automatically.
+        </p>
+        <select id="eol-period" value={retention === null ? '' : String(retention)}
+          onChange={e => { setSaved(false); setRetention(e.target.value === '' ? null : Number(e.target.value)) }}
+          className="mt-3 rounded-lg border border-black/[0.12] bg-white px-3 py-2 text-[13px] outline-none focus:border-black/40">
+          <option value="">No agreement (never deleted automatically)</option>
+          {[5, 6, 7].map(y => <option key={y} value={y}>{y} years</option>)}
+        </select>
       </div>
 
       <div className="flex items-center gap-4">

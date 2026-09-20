@@ -21,6 +21,7 @@ export type AuditAction =
   | 'sign.session_started'
   | 'gate_keep.erased'
   | 'gate_keep.protected'
+  | 'gate_keep.eol_set'
 
 export interface AuditEntry {
   auditId:    string
@@ -49,4 +50,5 @@ export const AUDIT_LABELS: Record<AuditAction, string> = {
   'sign.session_started': 'Sent a document for signing',
   'gate_keep.erased':     'A TheoFlow operator erased your Gate-Keep files at your request',
   'gate_keep.protected':  'Protected a Gate-Keep file from deletion',
+  'gate_keep.eol_set':    'A TheoFlow operator recorded the end-of-life period agreed for your files',
 }

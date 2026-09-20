@@ -227,3 +227,40 @@ describe('setRetention', () => {
     await expect(setRetention(db, WS, readyFile(), until)).rejects.toThrow('ddb down')
   })
 })
+
+describe('an agreed end-of-life period', () => {
+  const pending = () => buildPendingFile(WS, { id: 'f1', folderId: 'root', name: 'a.pdf', contentType: 'application/pdf', size: 5, by: 'u', now: NOW })
+  const EOL = 1_950_000_000
+
+  it('gives the confirmed file AND its name lock the same TTL, and drops the abandoned-upload TTL', async () => {
+    await confirmFile(db, WS, pending(), { folderId: 'root', versionId: 'v9', size: 7, purgeAt: EOL })
+
+    const [upd, lock] = lastTransact()
+    expect(upd.Update.UpdateExpression).toContain(', purgeAt = :eol')
+    expect(upd.Update.UpdateExpression).not.toContain('REMOVE purgeAt')
+    expect(upd.Update.ExpressionAttributeValues[':eol']).toBe(EOL)
+    expect(lock.Put.Item.purgeAt).toBe(EOL)
+  })
+
+  it('with NO agreement the file keeps no TTL at all (it is never expired)', async () => {
+    await confirmFile(db, WS, pending(), { folderId: 'root', versionId: 'v9', size: 7 })
+
+    const [upd, lock] = lastTransact()
+    expect(upd.Update.UpdateExpression).toContain('REMOVE purgeAt')
+    expect(upd.Update.UpdateExpression).not.toContain(':eol')
+    expect(upd.Update.ExpressionAttributeValues).not.toHaveProperty(':eol')
+    expect(lock.Put.Item).not.toHaveProperty('purgeAt')
+  })
+
+  it('a rename or move keeps the end-of-life time on the file\'s new name lock', async () => {
+    await updateFile(db, WS, readyFile({ purgeAt: EOL }), { name: 'b.pdf', folderId: 'p2' })
+    const ops = lastTransact()
+    expect(ops[1].Put.Item).toMatchObject({ SK: 'NAME#p2#b.pdf', purgeAt: EOL })
+  })
+
+  it('a file with no agreement gets a plain name lock when renamed', async () => {
+    // a confirmed file has no TTL at all (confirming removes the abandoned-upload one)
+    await updateFile(db, WS, readyFile({ purgeAt: undefined }), { name: 'b.pdf', folderId: 'p2' })
+    expect(lastTransact()[1].Put.Item).not.toHaveProperty('purgeAt')
+  })
+})

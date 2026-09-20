@@ -1,7 +1,9 @@
 // Types and the tiny fetch helper shared by the Gate-Keep screens.
 
-export interface FolderRow { id: string; name: string; parentId: string; createdAt: string }
-export interface FileRow   { id: string; name: string; folderId: string; size: number; contentType: string; createdAt: string; retainUntil?: string | null }
+// shared: belongs to the organisation. canManage: this person may rename, move or delete it.
+// Both are absent in older responses, which are treated as "allowed".
+export interface FolderRow { id: string; name: string; parentId: string; createdAt: string; shared?: boolean; canManage?: boolean }
+export interface FileRow   { id: string; name: string; folderId: string; size: number; contentType: string; createdAt: string; retainUntil?: string | null; canManage?: boolean; deletesOn?: string | null }
 export interface TreeNode  { id: string; parentId: string; name: string }
 
 export interface ListResponse {
@@ -10,6 +12,8 @@ export interface ListResponse {
   folders:    FolderRow[]
   files:      FileRow[]
   tree:       TreeNode[]
+  // What this person may do in the folder on screen.
+  access?:    { isAdmin: boolean; sharedHere: boolean; canManageHere: boolean; canCreateFolder: boolean }
 }
 
 export class ApiError extends Error {

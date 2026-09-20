@@ -85,6 +85,9 @@ export interface FolderItem {
   PK: string; SK: string; type: 'FOLDER'
   folderId: string; parentId: string; name: string
   createdAt: string; createdBy: string
+  // Set only on a TOP-LEVEL folder made by a member: it is that member's own. Absent = the
+  // organisation's (shared). Everything beneath takes the owner of its top-level ancestor.
+  ownerId?: string
   GSI1PK: string; GSI1SK: string
 }
 
@@ -108,12 +111,13 @@ export function folderIndexKeys(ws: string, parentId: string, name: string, kind
 }
 
 export function buildFolderItem(
-  ws: string, a: { id: string; parentId: string; name: string; by: string; now: number },
+  ws: string, a: { id: string; parentId: string; name: string; by: string; now: number; ownerId?: string },
 ): FolderItem {
   return {
     PK: wsPk(ws), SK: folderSk(a.id), type: 'FOLDER',
     folderId: a.id, parentId: a.parentId, name: a.name,
     createdAt: new Date(a.now).toISOString(), createdBy: a.by,
+    ...(a.ownerId ? { ownerId: a.ownerId } : {}),
     ...folderIndexKeys(ws, a.parentId, a.name, 'folder', a.id),
   }
 }
@@ -220,9 +224,14 @@ export function checkMove(folderId: string, targetParentId: string, nodes: Folde
 
 // ── What the browser sees (never the raw keys) ──────────────────────────────
 
-export const toPublicFolder = (f: FolderItem) => ({ id: f.folderId, name: f.name, parentId: f.parentId, createdAt: f.createdAt })
+// `access` carries what the viewer may do (computed on the server, never trusted from the browser).
+export const toPublicFolder = (f: FolderItem, access?: { shared: boolean; canManage: boolean }) =>
+  ({ id: f.folderId, name: f.name, parentId: f.parentId, createdAt: f.createdAt, ...(access ?? {}) })
 
-export const toPublicFile = (f: FileItem) => ({
+export const toPublicFile = (f: FileItem, access?: { canManage: boolean }) => ({
   id: f.fileId, name: f.name, folderId: f.folderId, size: f.size, contentType: f.contentType, createdAt: f.createdAt,
   retainUntil: f.retainUntil ?? null,
+  // When the file is deleted automatically under the end-of-life period agreed with the organisation.
+  deletesOn: f.status === 'READY' && f.purgeAt ? new Date(f.purgeAt * 1000).toISOString() : null,
+  ...(access ?? {}),
 })

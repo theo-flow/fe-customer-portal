@@ -471,7 +471,8 @@ describe('FileBrowser', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Protect' }))
 
     expect(await screen.findByText('1 file could not be protected', {}, { timeout: 5000 })).toBeInTheDocument()
-    expect(screen.getByText(/never shortened\. 1 other file protected\./)).toBeInTheDocument()
+    // a toast is also announced to screen readers, so its text can appear more than once
+    expect((await screen.findAllByText(/never shortened\. 1 other file protected\./)).length).toBeGreaterThan(0)
     expect(server.state.files.find(f => f.id === 'a2')!.retainUntil).toBeTruthy()
     expect(server.state.files.find(f => f.id === 'a1')!.retainUntil).toBe(later)     // untouched
   })

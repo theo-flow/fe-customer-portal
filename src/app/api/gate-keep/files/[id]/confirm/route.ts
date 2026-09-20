@@ -1,16 +1,24 @@
-import { DeleteObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3'
+import { DeleteObjectCommand, HeadObjectCommand, PutObjectTaggingCommand } from '@aws-sdk/client-s3'
 import { NextResponse } from 'next/server'
 import { GATE_KEEP_BUCKET } from '@/lib/aws'
 import { gateKeep, HttpError, notFound } from '@/lib/gate-keep-route'
-import { confirmFile, getFile, getFolder } from '@/lib/gate-keep-store'
+import { confirmFile, getFile, getFolder, listFolders } from '@/lib/gate-keep-store'
+import { canSee } from '@/lib/gate-keep-access'
+import { EOL_TAG_KEY, eolDate, eolTagValue } from '@/lib/gate-keep-eol'
+import { getOrgRetentionYears } from '@/lib/org-retention'
 import { MAX_UPLOAD_BYTES, ROOT_FOLDER_ID, s3KeyFor, toPublicFile } from '@/lib/gate-keep-catalog'
 
 // Step 2 of an upload: check the bytes really arrived, then list the file in its
 // folder. Safe to call twice: an already-confirmed file is returned as it is.
 export async function POST(_req: Request, { params }: { params: { id: string } }) {
-  return gateKeep('files/confirm', async ({ ws, s3, db }) => {
+  return gateKeep('files/confirm', async ({ ws, viewer, s3, db }) => {
     const file = await getFile(db, ws, params.id)
     if (!file) throw notFound()
+    const folders = await listFolders(db, ws)
+    const folderGone = file.folderId !== ROOT_FOLDER_ID && !folders.some(f => f.folderId === file.folderId)
+    if (!(file.createdBy === viewer.userId || viewer.isAdmin) || !(folderGone || canSee(viewer, file.folderId, folders))) {
+      throw notFound()
+    }
     if (file.status === 'READY') return NextResponse.json({ file: toPublicFile(file) })
 
     const key = s3KeyFor(ws, file.fileId)
@@ -34,7 +42,21 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
     // If the folder was deleted while the upload ran, the file lands in the root.
     const folderId = file.folderId === ROOT_FOLDER_ID || (await getFolder(db, ws, file.folderId)) ? file.folderId : ROOT_FOLDER_ID
 
-    const { name } = await confirmFile(db, ws, file, { folderId, versionId: head.VersionId, size })
+    // An organisation with an agreed end-of-life period: tag the file with it FIRST, so the
+    // lifecycle rules will act on it, and give the catalogue rows the same date. Tagging before
+    // listing means a failure here leaves nothing half done: the upload can simply be retried.
+    // (If the agreement cannot be read this throws, rather than adding a file that would outlive it.)
+    const years = await getOrgRetentionYears(ws)
+    let purgeAt: number | undefined
+    if (years) {
+      await s3.send(new PutObjectTaggingCommand({
+        Bucket: GATE_KEEP_BUCKET, Key: key, VersionId: head.VersionId,
+        Tagging: { TagSet: [{ Key: EOL_TAG_KEY, Value: eolTagValue(years) }] },
+      }))
+      purgeAt = Math.floor(eolDate(Date.now(), years).getTime() / 1000)
+    }
+
+    const { name } = await confirmFile(db, ws, file, { folderId, versionId: head.VersionId, size, purgeAt })
     return NextResponse.json({ file: toPublicFile({ ...file, name, folderId, size, status: 'READY' }) })
   })
 }

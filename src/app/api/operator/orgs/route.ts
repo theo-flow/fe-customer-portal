@@ -68,6 +68,7 @@ export async function GET() {
       orgName: (profile.orgName ?? '') as string,
       status: (profile.status ?? 'unknown') as string,
       subscribedProducts: (profile.subscribed_products ?? []) as string[],
+      retentionYears: (profile.retention_years ?? null) as number | null,
       subscription: sub ? {
         planId: sub.plan_id as string,
         planName: plan?.name ?? sub.plan_id,
