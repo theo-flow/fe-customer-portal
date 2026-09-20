@@ -155,7 +155,7 @@ export default function ProductPage() {
             <div className="rounded-2xl border border-black p-6 flex flex-col">
               <h3 className="text-[16px] font-semibold text-black">Starter</h3>
               <p className="font-display text-[2rem] leading-none text-black mt-3">
-                From R{seatBandRows()[0].priceZar.toLocaleString('en-ZA')}
+                From R{seatBandRows()[0].priceZar.toLocaleString('en-US')}
                 <span className="text-[12px] font-sans text-gray-400"> a seat / month</span>
               </p>
               <ul className="mt-5 space-y-2.5">
@@ -173,7 +173,7 @@ export default function ProductPage() {
                     <tr key={row.label}>
                       <td className="py-2 text-gray-600">{row.label}</td>
                       <td className="py-2 text-right font-medium text-black">
-                        R{row.priceZar.toLocaleString('en-ZA')} each
+                        R{row.priceZar.toLocaleString('en-US')} each
                       </td>
                     </tr>
                   ))}
@@ -182,7 +182,7 @@ export default function ProductPage() {
               <p className="mt-3 text-[12px] text-gray-400 leading-relaxed flex-1">
                 Each seat is priced by its own position, so the more people you add, the less each
                 extra seat costs. For example {[1, 5, 10, 20]
-                  .map(n => `${n} seat${n > 1 ? 's' : ''} is R${computeSeatCharge(n).totalZar.toLocaleString('en-ZA')}`)
+                  .map(n => `${n} seat${n > 1 ? 's' : ''} is R${computeSeatCharge(n).totalZar.toLocaleString('en-US')}`)
                   .join(', ')} a month.
                 {' '}Each seat includes {DOCS_PER_SEAT} documents a month.
               </p>

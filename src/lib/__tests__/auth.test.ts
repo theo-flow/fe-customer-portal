@@ -181,7 +181,7 @@ describe('signUp', () => {
   it('rejects when email already exists (UsernameExistsException)', async () => {
     const err = { code: 'UsernameExistsException' }
     mocks.signUp.mockImplementation(
-      (_u: string, _p: string, _a: unknown[], _v: unknown[], cb: (err: typeof err) => void) => cb(err)
+      (_u: string, _p: string, _a: unknown[], _v: unknown[], cb: (e: typeof err) => void) => cb(err)
     )
     await expect(signUp('existing@example.com', 'Pass12!Upper', 'Test User', 'org-abc123'))
       .rejects.toMatchObject({ code: 'UsernameExistsException' })
@@ -190,7 +190,7 @@ describe('signUp', () => {
   it('rejects when password is too weak (InvalidPasswordException)', async () => {
     const err = { code: 'InvalidPasswordException' }
     mocks.signUp.mockImplementation(
-      (_u: string, _p: string, _a: unknown[], _v: unknown[], cb: (err: typeof err) => void) => cb(err)
+      (_u: string, _p: string, _a: unknown[], _v: unknown[], cb: (e: typeof err) => void) => cb(err)
     )
     await expect(signUp('user@example.com', 'weak', 'Test User', 'org-abc123'))
       .rejects.toMatchObject({ code: 'InvalidPasswordException' })
@@ -208,13 +208,13 @@ describe('confirmSignUp', () => {
 
   it('rejects on wrong code (CodeMismatchException)', async () => {
     const err = { code: 'CodeMismatchException' }
-    mocks.confirmRegistration.mockImplementation((_code: string, _force: boolean, cb: (err: typeof err) => void) => cb(err))
+    mocks.confirmRegistration.mockImplementation((_code: string, _force: boolean, cb: (e: typeof err) => void) => cb(err))
     await expect(confirmSignUp('user@example.com', '000000')).rejects.toMatchObject({ code: 'CodeMismatchException' })
   })
 
   it('rejects on expired code (ExpiredCodeException)', async () => {
     const err = { code: 'ExpiredCodeException' }
-    mocks.confirmRegistration.mockImplementation((_code: string, _force: boolean, cb: (err: typeof err) => void) => cb(err))
+    mocks.confirmRegistration.mockImplementation((_code: string, _force: boolean, cb: (e: typeof err) => void) => cb(err))
     await expect(confirmSignUp('user@example.com', '111111')).rejects.toMatchObject({ code: 'ExpiredCodeException' })
   })
 })
@@ -280,7 +280,7 @@ describe('resendCode', () => {
 
   it('rejects on rate limit (LimitExceededException)', async () => {
     const err = { code: 'LimitExceededException' }
-    mocks.resendConfirmationCode.mockImplementation((cb: (err: typeof err) => void) => cb(err))
+    mocks.resendConfirmationCode.mockImplementation((cb: (e: typeof err) => void) => cb(err))
     await expect(resendCode('user@example.com')).rejects.toMatchObject({ code: 'LimitExceededException' })
   })
 })

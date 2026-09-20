@@ -17,7 +17,7 @@ interface PlanState {
 }
 
 function zar(n: number): string {
-  return `R${n.toLocaleString('en-ZA', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
+  return `R${n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
 }
 
 export default function ChooseSeatsPage() {
