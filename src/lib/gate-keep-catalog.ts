@@ -12,6 +12,15 @@ export const MAX_FOLDER_DEPTH = 8
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024   // matches the platform-wide presigned-upload ceiling
 export const PENDING_UPLOAD_TTL_SECONDS = 24 * 3600
 
+// Retention (S3 Object Lock, Governance mode). A protected file cannot be deleted by anyone
+// until its date, and the date can be extended but never shortened or removed. The ceiling is
+// also enforced by IAM (s3:object-lock-remaining-retention-days in the cognito stack), so
+// a mistake cannot lock a file away for a lifetime.
+export const MIN_RETENTION_DAYS = 1
+export const MAX_RETENTION_YEARS = 10
+export const MAX_RETENTION_DAYS = 3660   // ten years, with room for the leap days in them
+const RETENTION_DAY_MS = 24 * 3600 * 1000
+
 export const ALLOWED_CONTENT_TYPES = [
   'application/pdf',
   'image/jpeg', 'image/png', 'image/gif', 'image/tiff', 'image/webp',
@@ -87,6 +96,7 @@ export interface FileItem {
   versionId?: string
   GSI1PK?: string; GSI1SK?: string
   purgeAt?: number   // TTL for an abandoned upload only; cleared when the file is confirmed
+  retainUntil?: string   // ISO date the file is protected until (mirrors the S3 Object Lock date)
 }
 
 export function folderIndexKeys(ws: string, parentId: string, name: string, kind: 'folder' | 'file', id: string) {
@@ -121,6 +131,30 @@ export function buildPendingFile(
     purgeAt: Math.floor((a.now + PENDING_UPLOAD_TTL_SECONDS * 1000) / 1000),
   }
 }
+
+export type RetentionCheck =
+  | { ok: true; until: Date }
+  | { ok: false; code: 'invalid_date' | 'too_soon' | 'too_far' | 'cannot_shorten'; error: string }
+
+// Whether a file may be protected until `raw`. `current` is its existing protection date, if any.
+export function validateRetention(raw: unknown, now: number, current?: string | null): RetentionCheck {
+  const until = typeof raw === 'string' ? new Date(raw) : null
+  if (!until || Number.isNaN(until.getTime())) return { ok: false, code: 'invalid_date', error: 'Choose a valid date.' }
+  if (until.getTime() < now + MIN_RETENTION_DAYS * RETENTION_DAY_MS) {
+    return { ok: false, code: 'too_soon', error: `Protection must run for at least ${MIN_RETENTION_DAYS} day.` }
+  }
+  if (until.getTime() > now + MAX_RETENTION_DAYS * RETENTION_DAY_MS) {
+    return { ok: false, code: 'too_far', error: `Protection can be for at most ${MAX_RETENTION_YEARS} years.` }
+  }
+  if (current && until.getTime() <= new Date(current).getTime()) {
+    return { ok: false, code: 'cannot_shorten', error: 'Protection can only be extended, never shortened.' }
+  }
+  return { ok: true, until }
+}
+
+// True while the file is still protected.
+export const isProtected = (f: { retainUntil?: string | null }, now: number = Date.now()) =>
+  !!f.retainUntil && new Date(f.retainUntil).getTime() > now
 
 // Content-Disposition for a download: an ASCII-safe fallback plus the real
 // UTF-8 name (RFC 6266 / 5987). Nothing from the name can break out of the header.
@@ -190,4 +224,5 @@ export const toPublicFolder = (f: FolderItem) => ({ id: f.folderId, name: f.name
 
 export const toPublicFile = (f: FileItem) => ({
   id: f.fileId, name: f.name, folderId: f.folderId, size: f.size, contentType: f.contentType, createdAt: f.createdAt,
+  retainUntil: f.retainUntil ?? null,
 })

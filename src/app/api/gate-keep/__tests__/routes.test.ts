@@ -3,25 +3,28 @@ import { NextRequest } from 'next/server'
 import fs from 'node:fs'
 import path from 'node:path'
 
-const { mockCtx, s3Send, presign, store } = vi.hoisted(() => ({
+const { mockCtx, s3Send, presign, store, audit } = vi.hoisted(() => ({
   mockCtx: vi.fn(),
+  audit:   vi.fn(),
   s3Send:  vi.fn(),
   presign: vi.fn(),
   store: {
     listFolders: vi.fn(), getFolder: vi.fn(), getFile: vi.fn(), listFolderContents: vi.fn(),
     createFolder: vi.fn(), updateFolder: vi.fn(), deleteFolderIfEmpty: vi.fn(),
     createPendingFile: vi.fn(), confirmFile: vi.fn(), updateFile: vi.fn(),
-    deleteFile: vi.fn(),
+    deleteFile: vi.fn(), setRetention: vi.fn(),
   },
 }))
 
 vi.mock('@/lib/gate-keep-context',     () => ({ getGateKeepContext: mockCtx }))
+vi.mock('@/lib/audit', () => ({ writeAudit: audit }))
 vi.mock('@/lib/gate-keep-credentials', () => ({ getScopedClients: async () => ({ s3: { send: s3Send }, db: { tag: 'db' } }) }))
 vi.mock('@/lib/aws', () => ({ GATE_KEEP_BUCKET: 'bkt', GATE_KEEP_TABLE: 'tbl' }))
 vi.mock('@aws-sdk/s3-request-presigner', () => ({ getSignedUrl: presign }))
 vi.mock('@aws-sdk/client-s3', () => ({
   HeadObjectCommand:   vi.fn(function (this: unknown, input: unknown) { return { __type: 'Head',   input } }),
   DeleteObjectCommand: vi.fn(function (this: unknown, input: unknown) { return { __type: 'Delete', input } }),
+  PutObjectRetentionCommand: vi.fn(function (this: unknown, input: unknown) { return { __type: 'Retain', input } }),
   PutObjectCommand:    vi.fn(function (this: unknown, input: unknown) { return { __type: 'Put',    input } }),
   GetObjectCommand:    vi.fn(function (this: unknown, input: unknown) { return { __type: 'Get',    input } }),
 }))
@@ -36,6 +39,7 @@ import { POST as filesPOST }               from '../files/route'
 import { PATCH as filePATCH, DELETE as fileDELETE }     from '../files/[id]/route'
 import { POST as confirmPOST }             from '../files/[id]/confirm/route'
 import { GET as downloadGET }              from '../files/[id]/download/route'
+import { POST as retentionPOST }           from '../files/[id]/retention/route'
 
 const WS = 'org-1'
 const USER = 'user-1'
@@ -57,7 +61,7 @@ const s3Types = () => s3Send.mock.calls.map(c => c[0])
 
 beforeEach(() => {
   vi.clearAllMocks()
-  mockCtx.mockResolvedValue({ token: 't', orgId: WS, userId: USER })
+  mockCtx.mockResolvedValue({ token: 't', orgId: WS, userId: USER, claims: { sub: USER, email: 'u@example.com' } })
   presign.mockResolvedValue('https://signed.example/url')
   s3Send.mockResolvedValue({})
   store.listFolders.mockResolvedValue([])
@@ -79,6 +83,7 @@ describe('every route', () => {
       () => fileDELETE(req('DELETE', '/x'), p('f1')),
       () => confirmPOST(req('POST', '/x'), p('f1')),
       () => downloadGET(req('GET', '/x'), p('f1')),
+      () => retentionPOST(req('POST', '/x', { retainUntil: '2030-01-01' }), p('f1')),
     ]
     for (const call of calls) expect((await call()).status).toBe(401)
     expect(s3Send).not.toHaveBeenCalled()
@@ -398,5 +403,115 @@ describe('the system never deletes on its own', () => {
     for (const gone of ['../files/[id]/restore/route', '../files/[id]/permanent/route', '../trash/route']) {
       expect(fs.existsSync(path.join(__dirname, `${gone}.ts`))).toBe(false)
     }
+  })
+})
+
+describe('DELETE /files/[id] on a protected file', () => {
+  const inDays = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString()
+
+  it('is refused with the date, without touching S3, and the row stays', async () => {
+    store.getFile.mockResolvedValue(file({ retainUntil: '2099-03-05T00:00:00.000Z' }))
+    const res = await fileDELETE(req('DELETE', '/x'), p('f1'))
+
+    expect(res.status).toBe(409)
+    const body = await res.json()
+    expect(body.error).toBe('locked')
+    expect(body.message).toBe('This file is protected and cannot be deleted until 5 March 2099.')
+    expect(s3Send).not.toHaveBeenCalled()
+    expect(store.deleteFile).not.toHaveBeenCalled()
+  })
+
+  it('S3 refusing (a lock we did not know about) is reported with the same date', async () => {
+    store.getFile.mockResolvedValue(file({ retainUntil: inDays(-1) }))          // our record says expired
+    s3Send.mockRejectedValue(Object.assign(new Error('locked'), { name: 'AccessDenied', $metadata: { httpStatusCode: 403 } }))
+    const res = await fileDELETE(req('DELETE', '/x'), p('f1'))
+    expect(res.status).toBe(409)
+    expect((await res.json()).error).toBe('locked')
+    expect(store.deleteFile).not.toHaveBeenCalled()
+  })
+
+  it('once the protection has expired, the owner can delete it again', async () => {
+    store.getFile.mockResolvedValue(file({ retainUntil: inDays(-1) }))
+    expect((await fileDELETE(req('DELETE', '/x'), p('f1'))).status).toBe(200)
+    expect(store.deleteFile).toHaveBeenCalled()
+  })
+})
+
+describe('POST /files/[id]/retention', () => {
+  const inDays = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString()
+
+  it('sets a Governance lock on the file\'s own version, records it, and audits it', async () => {
+    store.getFile.mockResolvedValue(file())
+    const until = inDays(365)
+    const res = await retentionPOST(req('POST', '/x', { retainUntil: until }), p('f1'))
+
+    expect(res.status).toBe(200)
+    expect((await res.json()).file).toMatchObject({ id: 'f1', retainUntil: until })
+    const put = s3Types()[0]
+    expect(put).toMatchObject({ __type: 'Retain', input: { Bucket: 'bkt', Key: 'org-1/f1', VersionId: 'v1' } })
+    expect(put.input.Retention.Mode).toBe('GOVERNANCE')
+    expect(put.input.Retention.RetainUntilDate.toISOString()).toBe(until)
+    expect(store.setRetention.mock.calls[0][3].toISOString()).toBe(until)
+    expect(audit).toHaveBeenCalledWith(WS, { sub: USER, email: 'u@example.com' }, 'gate_keep.protected', expect.stringContaining('a.pdf until '))
+  })
+
+  it('always Governance, never Compliance, whatever the request says', async () => {
+    store.getFile.mockResolvedValue(file())
+    await retentionPOST(req('POST', '/x', { retainUntil: inDays(30), Mode: 'COMPLIANCE', mode: 'COMPLIANCE' }), p('f1'))
+    expect(s3Types()[0].input.Retention.Mode).toBe('GOVERNANCE')
+  })
+
+  it('S3 is changed before the catalogue, so a retry after a failed catalogue step finishes the job', async () => {
+    store.getFile.mockResolvedValue(file())
+    const order: string[] = []
+    s3Send.mockImplementation(async () => { order.push('s3'); return {} })
+    store.setRetention.mockImplementation(async () => { order.push('db') })
+    await retentionPOST(req('POST', '/x', { retainUntil: inDays(30) }), p('f1'))
+    expect(order).toEqual(['s3', 'db'])
+  })
+
+  it.each([
+    ['a date in the past', -5, 'too_soon'], ['less than a day', 0.2, 'too_soon'], ['beyond ten years', 4000, 'too_far'],
+  ])('refuses %s, and changes nothing', async (_l, n, code) => {
+    store.getFile.mockResolvedValue(file())
+    const res = await retentionPOST(req('POST', '/x', { retainUntil: inDays(n as number) }), p('f1'))
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe(code)
+    expect(s3Send).not.toHaveBeenCalled()
+    expect(store.setRetention).not.toHaveBeenCalled()
+  })
+
+  it('cannot shorten an existing protection', async () => {
+    store.getFile.mockResolvedValue(file({ retainUntil: inDays(400) }))
+    const res = await retentionPOST(req('POST', '/x', { retainUntil: inDays(200) }), p('f1'))
+    expect((await res.json()).error).toBe('cannot_shorten')
+    expect(s3Send).not.toHaveBeenCalled()
+  })
+
+  it('can extend an existing protection', async () => {
+    store.getFile.mockResolvedValue(file({ retainUntil: inDays(400) }))
+    expect((await retentionPOST(req('POST', '/x', { retainUntil: inDays(800) }), p('f1'))).status).toBe(200)
+  })
+
+  it.each([['missing (or another workspace\u2019s)', null], ['still uploading', file({ status: 'PENDING' })]])(
+    '404s for a file that is %s, without touching S3', async (_l, row) => {
+      store.getFile.mockResolvedValue(row)
+      expect((await retentionPOST(req('POST', '/x', { retainUntil: inDays(30) }), p('f1'))).status).toBe(404)
+      expect(s3Send).not.toHaveBeenCalled()
+      expect(store.getFile.mock.calls[0][1]).toBe(WS)
+    })
+
+  it('an S3 refusal is a clean error and the catalogue is not touched', async () => {
+    store.getFile.mockResolvedValue(file())
+    s3Send.mockRejectedValue(Object.assign(new Error('denied'), { name: 'AccessDenied', $metadata: { httpStatusCode: 403 } }))
+    const res = await retentionPOST(req('POST', '/x', { retainUntil: inDays(30) }), p('f1'))
+    expect(res.status).toBe(403)
+    expect(store.setRetention).not.toHaveBeenCalled()
+    expect(audit).not.toHaveBeenCalled()
+  })
+
+  it('needs a request body', async () => {
+    store.getFile.mockResolvedValue(file())
+    expect((await retentionPOST(req('POST', '/x'), p('f1'))).status).toBe(400)
   })
 })

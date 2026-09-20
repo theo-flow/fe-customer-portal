@@ -1,5 +1,5 @@
 import {
-  GetCommand, PutCommand, QueryCommand, TransactWriteCommand, type QueryCommandInput,
+  GetCommand, PutCommand, QueryCommand, TransactWriteCommand, UpdateCommand, type QueryCommandInput,
 } from '@aws-sdk/lib-dynamodb'
 import { GATE_KEEP_TABLE } from '@/lib/aws'
 import {
@@ -244,4 +244,22 @@ export async function deleteFile(db: Db, ws: string, file: FileItem): Promise<vo
     },
     lockDelete(ws, file.folderId, file.name),
   ])
+}
+
+// Records the protection date of a file whose Object Lock has already been set in S3.
+// Only ever moves the date later, so a stale or repeated call cannot shorten it.
+export async function setRetention(db: Db, ws: string, file: FileItem, until: Date): Promise<void> {
+  try {
+    await db.send(new UpdateCommand({
+      TableName: T,
+      Key: { PK: wsPk(ws), SK: fileSk(file.fileId) },
+      UpdateExpression: 'SET retainUntil = :u',
+      ConditionExpression: '#st = :ready AND (attribute_not_exists(retainUntil) OR retainUntil < :u)',
+      ExpressionAttributeNames: { '#st': 'status' },
+      ExpressionAttributeValues: { ':u': until.toISOString(), ':ready': 'READY' },
+    }))
+  } catch (err) {
+    if ((err as { name?: string }).name === 'ConditionalCheckFailedException') throw new StaleItemError()
+    throw err
+  }
 }

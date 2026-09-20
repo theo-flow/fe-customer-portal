@@ -5,6 +5,7 @@ import {
   wsPk, folderSk, fileSk, nameLockSk, folderIndexPk, s3KeyFor,
   buildFolderItem, buildPendingFile, contentDisposition,
   pathTo, depthOf, canPlaceFolder, checkMove, type FolderNode,
+  validateRetention, isProtected, toPublicFile, MAX_RETENTION_DAYS, MAX_RETENTION_YEARS,
 } from '../gate-keep-catalog'
 
 const NOW = Date.UTC(2026, 8, 19, 12, 0, 0)   // 2026-09-19T12:00:00Z
@@ -167,5 +168,58 @@ describe('folder graph', () => {
 
   it('checkMove tolerates an unknown target as not-found', () => {
     expect(checkMove('a', 'ghost', nodes)).toBe('not_found')
+  })
+})
+
+describe('validateRetention', () => {
+  const days = (n: number) => new Date(NOW + n * DAY).toISOString()
+
+  it('accepts a date between one day and ten years away', () => {
+    for (const n of [1.5, 30, 365, 5 * 365, 10 * 365 + 3, 3660]) {
+      const r = validateRetention(days(n), NOW)
+      expect(r.ok).toBe(true)
+      if (r.ok) expect(r.until.toISOString()).toBe(days(n))
+    }
+  })
+
+  it.each([[undefined], [null], [''], ['not a date'], [12345], [{}]])('rejects %j as not a date', raw => {
+    expect(validateRetention(raw, NOW)).toMatchObject({ ok: false, code: 'invalid_date' })
+  })
+
+  it('rejects a date in the past, today, or less than a day away', () => {
+    for (const n of [-30, 0, 0.5]) expect(validateRetention(days(n), NOW)).toMatchObject({ ok: false, code: 'too_soon' })
+  })
+
+  it('rejects anything beyond ten years, so a slip cannot lock a file away for a lifetime', () => {
+    expect(MAX_RETENTION_YEARS).toBe(10)
+    expect(MAX_RETENTION_DAYS).toBe(3660)
+    expect(validateRetention(days(3661), NOW)).toMatchObject({ ok: false, code: 'too_far' })
+    expect(validateRetention(days(36500), NOW)).toMatchObject({ ok: false, code: 'too_far' })
+  })
+
+  it('can extend protection but never shorten or repeat it', () => {
+    const current = days(365)
+    expect(validateRetention(days(730), NOW, current).ok).toBe(true)
+    expect(validateRetention(days(200), NOW, current)).toMatchObject({ ok: false, code: 'cannot_shorten' })
+    expect(validateRetention(current, NOW, current)).toMatchObject({ ok: false, code: 'cannot_shorten' })
+  })
+
+  it('an expired earlier protection does not stop a new one', () => {
+    expect(validateRetention(days(30), NOW, days(-10)).ok).toBe(true)
+  })
+})
+
+describe('isProtected / toPublicFile', () => {
+  it('protected only while the date is still ahead', () => {
+    expect(isProtected({ retainUntil: new Date(NOW + DAY).toISOString() }, NOW)).toBe(true)
+    expect(isProtected({ retainUntil: new Date(NOW - DAY).toISOString() }, NOW)).toBe(false)
+    expect(isProtected({}, NOW)).toBe(false)
+    expect(isProtected({ retainUntil: null }, NOW)).toBe(false)
+  })
+
+  it('shows the protection date to the browser, or null', () => {
+    const base = { fileId: 'f', folderId: 'root', name: 'a.pdf', size: 1, contentType: 'application/pdf', createdAt: 'x' } as never
+    expect(toPublicFile({ ...(base as object), retainUntil: '2030-01-01T00:00:00.000Z' } as never).retainUntil).toBe('2030-01-01T00:00:00.000Z')
+    expect(toPublicFile(base).retainUntil).toBeNull()
   })
 })

@@ -12,7 +12,7 @@ beforeAll(() => {
 })
 
 interface Folder { id: string; name: string; parentId: string; createdAt: string }
-interface File   { id: string; name: string; folderId: string; size: number; contentType: string; createdAt: string; locked?: boolean }
+interface File   { id: string; name: string; folderId: string; size: number; contentType: string; createdAt: string; locked?: boolean; retainUntil?: string | null }
 
 const DAY = 24 * 3600 * 1000
 const iso = (msAgo: number) => new Date(Date.now() - msAgo).toISOString()
@@ -72,7 +72,17 @@ function installFakeServer(seed: { folders: Folder[]; files: File[] }) {
     }
     if (parts[0] === 'files') {
       const f = s.files.find(x => x.id === parts[1])
+      if (method === 'POST' && parts[2] === 'retention' && f) {
+        if (f.retainUntil && new Date(body.retainUntil) <= new Date(f.retainUntil)) {
+          return err(400, 'cannot_shorten', 'Protection can only be extended, never shortened.')
+        }
+        f.retainUntil = body.retainUntil
+        return json({ file: f })
+      }
       if (method === 'DELETE' && f) {
+        if (f.retainUntil && new Date(f.retainUntil) > new Date()) {
+          return err(409, 'locked', 'This file is protected and cannot be deleted until later.')
+        }
         if (f.locked) return err(409, 'locked', 'This file is protected by a retention lock and cannot be deleted yet.')
         s.files = s.files.filter(x => x.id !== f.id)
         return json({ ok: true })
@@ -371,6 +381,99 @@ describe('FileBrowser', () => {
     expect(screen.queryByText(/trash/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/restore/i)).not.toBeInTheDocument()
     expect(server.calls.some(c => c.includes('/trash'))).toBe(false)
+  })
+
+  it('protects a file until a chosen date, only after an explicit confirmation', async () => {
+    const user = userEvent.setup()
+    renderBrowser()
+    await screen.findByText('alpha.pdf')
+
+    await openMenu(user, 'alpha.pdf', 'Protect from deletion…')
+    const dialog = await screen.findByRole('dialog')
+    const go = within(dialog).getByRole('button', { name: 'Protect' })
+    expect(within(dialog).getByText(/cannot be deleted by anyone: not you, and not TheoFlow/)).toBeInTheDocument()
+    expect(go).toBeDisabled()                                            // not until it is confirmed
+
+    await user.click(within(dialog).getByRole('radio', { name: '7 years' }))
+    await user.click(within(dialog).getByRole('checkbox'))
+    expect(go).toBeEnabled()
+    await user.click(go)
+
+    expect(await screen.findByText(/alpha\.pdf protected until/)).toBeInTheDocument()
+    const sent = server.state.files.find(f => f.id === 'f1')!.retainUntil!
+    const years = (new Date(sent).getTime() - Date.now()) / (365.25 * 86_400_000)
+    expect(years).toBeGreaterThan(6.9)
+    expect(years).toBeLessThan(7.1)
+    await waitFor(() => expect(within(rowOf('alpha.pdf')).getByText(/Protected until/)).toBeInTheDocument())
+    expect(server.calls).toContain('POST /api/gate-keep/files/f1/retention')
+  })
+
+  it('cancelling the protection dialog changes nothing', async () => {
+    const user = userEvent.setup()
+    renderBrowser()
+    await screen.findByText('alpha.pdf')
+    await openMenu(user, 'alpha.pdf', 'Protect from deletion…')
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(server.calls.some(c => c.includes('/retention'))).toBe(false)
+  })
+
+  it('a protected file shows its date, offers to extend it, and cannot be deleted', async () => {
+    const until = new Date(Date.now() + 400 * DAY).toISOString()
+    server = installFakeServer({ ...SEED(), files: [{ id: 'p1', name: 'contract.pdf', folderId: 'root', size: 100, contentType: 'application/pdf', createdAt: iso(DAY), retainUntil: until }] })
+    const user = userEvent.setup()
+    renderBrowser()
+    await screen.findByText('contract.pdf')
+
+    expect(within(rowOf('contract.pdf')).getByText(/Protected until/)).toBeInTheDocument()
+    await openMenu(user, 'contract.pdf', 'Delete')
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Delete' }))
+
+    expect(await screen.findByText('This file is locked')).toBeInTheDocument()
+    expect(await screen.findByText(/cannot be deleted until/)).toBeInTheDocument()
+    expect(screen.getByText('contract.pdf')).toBeInTheDocument()
+
+    await user.keyboard('{Escape}')
+    await openMenu(user, 'contract.pdf', 'Extend protection…')
+    expect(await screen.findByText('Extend protection?')).toBeInTheDocument()
+  })
+
+  it('protects several selected files at once', async () => {
+    const user = userEvent.setup()
+    renderBrowser()
+    await screen.findByText('alpha.pdf')
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select all files' }))
+    await user.click(screen.getByRole('button', { name: 'Protect' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(/2 files cannot be deleted by anyone/)).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('checkbox'))
+    await user.click(within(dialog).getByRole('button', { name: 'Protect' }))
+
+    expect(await screen.findByText(/2 files protected until/)).toBeInTheDocument()
+    expect(server.state.files.filter(f => f.folderId === 'root').every(f => !!f.retainUntil)).toBe(true)
+  })
+
+  it('reports a file the server refused to protect, and says how many others were protected', async () => {
+    const later = new Date(Date.now() + 3600 * DAY).toISOString()    // already longer than the default five years
+    server = installFakeServer({ ...SEED(), files: [
+      { id: 'a1', name: 'long.pdf',  folderId: 'root', size: 1, contentType: 'application/pdf', createdAt: iso(DAY), retainUntil: later },
+      { id: 'a2', name: 'fresh.pdf', folderId: 'root', size: 1, contentType: 'application/pdf', createdAt: iso(2 * DAY) },
+    ] })
+    const user = userEvent.setup()
+    renderBrowser()
+    await screen.findByText('fresh.pdf')
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select all files' }))
+    await user.click(screen.getByRole('button', { name: 'Protect' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('checkbox'))
+    await user.click(within(dialog).getByRole('button', { name: 'Protect' }))
+
+    expect(await screen.findByText('1 file could not be protected')).toBeInTheDocument()
+    expect(screen.getByText(/never shortened\. 1 other file protected\./)).toBeInTheDocument()
+    expect(server.state.files.find(f => f.id === 'a2')!.retainUntil).toBeTruthy()
+    expect(server.state.files.find(f => f.id === 'a1')!.retainUntil).toBe(later)     // untouched
   })
 
   it('search filters folders and files in the current folder', async () => {

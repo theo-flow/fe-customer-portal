@@ -6,12 +6,13 @@ vi.mock('@aws-sdk/lib-dynamodb', () => ({
   QueryCommand:         vi.fn(function (this: unknown, input: unknown) { return { __type: 'Query',    input } }),
   PutCommand:           vi.fn(function (this: unknown, input: unknown) { return { __type: 'Put',      input } }),
   TransactWriteCommand: vi.fn(function (this: unknown, input: unknown) { return { __type: 'Transact', input } }),
+  UpdateCommand:        vi.fn(function (this: unknown, input: unknown) { return { __type: 'Update',   input } }),
 }))
 
 import {
   NameTakenError, StaleItemError,
   listFolders, listFolderContents, getFile, getFolder, createFolder, updateFolder, deleteFolderIfEmpty,
-  createPendingFile, confirmFile, updateFile, deleteFile,
+  createPendingFile, confirmFile, updateFile, deleteFile, setRetention,
 } from '../gate-keep-store'
 import { buildFolderItem, buildPendingFile, type FileItem } from '../gate-keep-catalog'
 
@@ -200,5 +201,29 @@ describe('delete file', () => {
   it('a row that is gone or not READY is a stale-item error', async () => {
     db.send.mockRejectedValueOnce(cancelled('ConditionalCheckFailed', 'None'))
     await expect(deleteFile(db, WS, readyFile())).rejects.toBeInstanceOf(StaleItemError)
+  })
+})
+
+describe('setRetention', () => {
+  const until = new Date('2033-09-20T00:00:00.000Z')
+
+  it('records the date on the file row, and only ever moves it later', async () => {
+    await setRetention(db, WS, readyFile(), until)
+
+    const u = sent()[0].input
+    expect(u.Key).toEqual({ PK: 'WS#org-1', SK: 'FILE#f1' })
+    expect(u.UpdateExpression).toBe('SET retainUntil = :u')
+    expect(u.ConditionExpression).toBe('#st = :ready AND (attribute_not_exists(retainUntil) OR retainUntil < :u)')
+    expect(u.ExpressionAttributeValues).toEqual({ ':u': '2033-09-20T00:00:00.000Z', ':ready': 'READY' })
+  })
+
+  it('a stale or shorter date is a stale-item error, not a silent overwrite', async () => {
+    db.send.mockRejectedValueOnce(Object.assign(new Error('c'), { name: 'ConditionalCheckFailedException' }))
+    await expect(setRetention(db, WS, readyFile(), until)).rejects.toBeInstanceOf(StaleItemError)
+  })
+
+  it('any other failure is not swallowed', async () => {
+    db.send.mockRejectedValueOnce(new Error('ddb down'))
+    await expect(setRetention(db, WS, readyFile(), until)).rejects.toThrow('ddb down')
   })
 })

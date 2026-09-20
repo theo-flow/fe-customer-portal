@@ -20,6 +20,7 @@ export type AuditAction =
   | 'submission.export'
   | 'sign.session_started'
   | 'gate_keep.erased'
+  | 'gate_keep.protected'
 
 export interface AuditEntry {
   auditId:    string
@@ -47,4 +48,5 @@ export const AUDIT_LABELS: Record<AuditAction, string> = {
   'submission.export':    'Exported a submission',
   'sign.session_started': 'Sent a document for signing',
   'gate_keep.erased':     'A TheoFlow operator erased your Gate-Keep files at your request',
+  'gate_keep.protected':  'Protected a Gate-Keep file from deletion',
 }

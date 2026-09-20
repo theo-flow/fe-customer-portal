@@ -3,9 +3,18 @@ import { DeleteObjectCommand } from '@aws-sdk/client-s3'
 import { GATE_KEEP_BUCKET } from '@/lib/aws'
 import { gateKeep, HttpError, notFound, readJson } from '@/lib/gate-keep-route'
 import { deleteFile, getFile, getFolder, updateFile } from '@/lib/gate-keep-store'
-import { ROOT_FOLDER_ID, s3KeyFor, toPublicFile, validateName } from '@/lib/gate-keep-catalog'
+import { ROOT_FOLDER_ID, isProtected, s3KeyFor, toPublicFile, validateName } from '@/lib/gate-keep-catalog'
 
 type Ctx = { params: { id: string } }
+
+const niceDate = (iso: string) =>
+  new Date(iso).toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })
+const lockedError = (until?: string | null) => new HttpError(
+  409, 'locked',
+  until
+    ? `This file is protected and cannot be deleted until ${niceDate(until)}.`
+    : 'This file is protected by a retention lock and cannot be deleted yet.',
+)
 
 // Rename and/or move a file. A catalogue change only: the bytes never move.
 export async function PATCH(req: NextRequest, { params }: Ctx) {
@@ -46,6 +55,7 @@ export async function DELETE(_req: NextRequest, { params }: Ctx) {
     const file = await getFile(db, ws, params.id)
     if (!file || file.status !== 'READY') throw notFound()
     if (!file.versionId) throw new Error(`File ${file.fileId} has no recorded version`)
+    if (isProtected(file)) throw lockedError(file.retainUntil)
 
     try {
       await s3.send(new DeleteObjectCommand({
@@ -54,7 +64,7 @@ export async function DELETE(_req: NextRequest, { params }: Ctx) {
     } catch (err) {
       const e = err as { name?: string; $metadata?: { httpStatusCode?: number } }
       if (e?.name === 'AccessDenied' || e?.$metadata?.httpStatusCode === 403) {
-        throw new HttpError(409, 'locked', 'This file is protected by a retention lock and cannot be deleted yet.')
+        throw lockedError(file.retainUntil)
       }
       throw err
     }

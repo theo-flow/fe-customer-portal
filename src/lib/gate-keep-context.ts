@@ -1,10 +1,11 @@
 import { cookies } from 'next/headers'
-import { verifyJwtClaims } from '@/lib/token'
+import { verifyJwtClaims, type JwtClaims } from '@/lib/token'
 
 export interface GateKeepContext {
   token:  string
   orgId:  string
   userId: string
+  claims: JwtClaims
 }
 
 // Same identity derivation the existing gate-keep routes inline: orgId falls
@@ -17,5 +18,5 @@ export async function getGateKeepContext(): Promise<GateKeepContext | null> {
   const claims = await verifyJwtClaims(token)
   if (!claims) return null
 
-  return { token, orgId: claims['custom:org_id'] ?? claims.sub, userId: claims.sub }
+  return { token, orgId: claims['custom:org_id'] ?? claims.sub, userId: claims.sub, claims }
 }

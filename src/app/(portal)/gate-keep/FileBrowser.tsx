@@ -1,6 +1,6 @@
 'use client'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronRight, Download, Folder, FolderInput, FolderPlus, Pencil, Search, Trash2 } from 'lucide-react'
+import { ChevronRight, Download, Folder, FolderInput, FolderPlus, Lock, Pencil, Search, Trash2 } from 'lucide-react'
 import { ConfirmDialog } from '@/components/crud/ConfirmDialog'
 import { PromptDialog } from '@/components/crud/PromptDialog'
 import { RowMenu } from '@/components/crud/RowMenu'
@@ -8,6 +8,7 @@ import { toast } from '@/hooks/use-toast'
 import { filterAndSort, formatFileSize, type SortMode, type StoredFile } from '@/lib/gate-keep-view'
 import { ApiError, api, type FileRow, type FolderRow, type ListResponse } from './api'
 import { MoveDialog } from './MoveDialog'
+import { ProtectDialog } from './ProtectDialog'
 import { UploadPanel } from './UploadPanel'
 
 type Target = { kind: 'file' | 'folder'; id: string; name: string; parentId: string }
@@ -21,6 +22,8 @@ const FILE_ICON = (
 
 const fmtDate = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' }) : ''
+
+const isProtectedNow = (f: { retainUntil?: string | null }) => !!f.retainUntil && new Date(f.retainUntil).getTime() > Date.now()
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
 
@@ -42,6 +45,7 @@ export function FileBrowser() {
   const [moveTarget, setMoveTarget]       = useState<Target | null>(null)
   const [deleteFolder, setDeleteFolder]   = useState<Target | null>(null)
   const [deleteFilesTarget, setDeleteFilesTarget] = useState<FileRow[] | null>(null)
+  const [protectTarget, setProtectTarget] = useState<FileRow[] | null>(null)
   const [busy, setBusy] = useState(false)
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
@@ -171,6 +175,29 @@ export function FileBrowser() {
     }
   }, 'Could not delete the file')
 
+  // Protect from deletion until a date. Each file is set independently; anything the server
+  // refuses (for example a shorter date than it already has) is reported and left as it was.
+  const handleProtect = (untilIso: string) => run(async () => {
+    const targets = protectTarget
+    if (!targets) return
+    const results = await Promise.allSettled(targets.map(t => api('POST', `/api/gate-keep/files/${t.id}/retention`, { retainUntil: untilIso })))
+    setProtectTarget(null)
+    await refresh()
+
+    const rejected = results.flatMap(r => (r.status === 'rejected' ? [r.reason] : []))
+    const ok = targets.length - rejected.length
+    // One toast only (the toaster shows one at a time).
+    if (rejected.length > 0) {
+      toast({
+        variant: 'destructive',
+        title: `${plural(rejected.length, 'file')} could not be protected`,
+        description: `${errorMessage(rejected[0])}${ok > 0 ? ` ${plural(ok, 'other file')} protected.` : ''}`,
+      })
+    } else {
+      toast({ title: targets.length === 1 ? `${targets[0].name} protected until ${fmtDate(untilIso)}` : `${plural(ok, 'file')} protected until ${fmtDate(untilIso)}` })
+    }
+  }, 'Could not protect the file')
+
   // ── selection ──────────────────────────────────────────────────────────────
 
   const allSelected = visibleFiles.length > 0 && visibleFiles.every(f => selected.has(f.id))
@@ -203,6 +230,7 @@ export function FileBrowser() {
     { label: 'Download',      icon: <Download className="h-3.5 w-3.5"/>,    onSelect: () => handleDownload(f.id) },
     { label: 'Rename',        icon: <Pencil className="h-3.5 w-3.5"/>,      onSelect: () => setRenameTarget({ kind: 'file', id: f.id, name: f.name, parentId: f.folderId }) },
     { label: 'Move to…',      icon: <FolderInput className="h-3.5 w-3.5"/>, onSelect: () => setMoveTarget({ kind: 'file', id: f.id, name: f.name, parentId: f.folderId }) },
+    { label: isProtectedNow(f) ? 'Extend protection…' : 'Protect from deletion…', icon: <Lock className="h-3.5 w-3.5"/>, onSelect: () => setProtectTarget([f]) },
     { label: 'Delete', danger: true, icon: <Trash2 className="h-3.5 w-3.5"/>, onSelect: () => setDeleteFilesTarget([f]) },
   ]
 
@@ -261,6 +289,10 @@ export function FileBrowser() {
             <p className="text-[13px] font-medium text-gray-700">{selected.size} selected</p>
             <div className="flex items-center gap-3">
               <button onClick={() => setSelected(new Set())} className="text-[12px] text-gray-500 hover:text-gray-900">Clear</button>
+              <button onClick={() => setProtectTarget(files.filter(f => selected.has(f.id)))} disabled={busy}
+                className="rounded-full border border-black/[0.12] px-4 py-1.5 text-[12px] font-medium text-gray-700 hover:border-black/30 disabled:opacity-50">
+                Protect
+              </button>
               <button onClick={() => setDeleteFilesTarget(files.filter(f => selected.has(f.id)))} disabled={busy}
                 className="rounded-full bg-red-600 px-4 py-1.5 text-[12px] font-medium text-white hover:bg-red-700 disabled:opacity-50">
                 Delete
@@ -303,6 +335,11 @@ export function FileBrowser() {
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-[13px] font-medium text-black">{f.name}</p>
                     <p className="text-[11px] text-gray-400">{formatFileSize(f.size)} · {fmtDate(f.createdAt)}</p>
+                    {isProtectedNow(f) && (
+                      <p className="mt-0.5 flex items-center gap-1 text-[11px] font-medium text-gray-600">
+                        <Lock className="h-3 w-3"/> Protected until {fmtDate(f.retainUntil!)}
+                      </p>
+                    )}
                   </div>
                   <button onClick={() => handleDownload(f.id)} disabled={downloadingId === f.id}
                     className="whitespace-nowrap rounded-full border border-black/[0.12] px-3 py-1.5 text-[11px] font-semibold transition-colors hover:border-black/30 disabled:opacity-50">
@@ -331,6 +368,9 @@ export function FileBrowser() {
       <ConfirmDialog open={deleteFolder !== null} onOpenChange={o => { if (!o) setDeleteFolder(null) }}
         title="Delete folder?" description={`"${deleteFolder?.name ?? ''}" will be deleted. It must be empty first.`}
         confirmLabel="Delete folder" destructive busy={busy} onConfirm={handleDeleteFolder}/>
+
+      <ProtectDialog open={protectTarget !== null} onOpenChange={o => { if (!o) setProtectTarget(null) }}
+        files={protectTarget ?? []} busy={busy} onProtect={handleProtect}/>
 
       <ConfirmDialog open={deleteFilesTarget !== null} onOpenChange={o => { if (!o) setDeleteFilesTarget(null) }}
         title="Delete permanently?"

@@ -72,7 +72,7 @@ describe('writeAudit', () => {
   it('gives every action a plain-English label, with no em dashes', () => {
     const actions: AuditAction[] = [
       'team.invite', 'team.joined', 'team.remove', 'team.seats', 'billing.subscribe', 'billing.cancel_pilot',
-      'form.publish', 'form.link_created', 'template.upload', 'submission.view', 'submission.export', 'sign.session_started', 'gate_keep.erased',
+      'form.publish', 'form.link_created', 'template.upload', 'submission.view', 'submission.export', 'sign.session_started', 'gate_keep.erased', 'gate_keep.protected',
     ]
     expect(Object.keys(AUDIT_LABELS).sort()).toEqual([...actions].sort())
     for (const label of Object.values(AUDIT_LABELS)) {
