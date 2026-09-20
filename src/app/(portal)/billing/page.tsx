@@ -48,7 +48,7 @@ interface Invoice {
 // ── Formatting helpers ───────────────────────────────────────────────────────
 
 function zar(n: number): string {
-  return `R${n.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  return `R${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 function fmtDate(iso: string): string {

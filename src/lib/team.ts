@@ -1,4 +1,4 @@
-import { PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb'
+import { GetCommand, PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb'
 import { ddbDocClient, TABLE } from '@/lib/aws'
 import type { JwtClaims } from '@/lib/token'
 import { roleOf, type Role } from '@/lib/roles'
@@ -39,7 +39,9 @@ function toMember(item: Record<string, unknown>): Member {
 /**
  * Members of an org, including the caller. fn-21 does not write the listing
  * item, so an org's original admin has none until they first open Team; this
- * creates it, otherwise the admin would not count toward the seat cap.
+ * creates it, otherwise the admin would not count toward the seat cap. That
+ * original admin joined when the org registered, so the org's date is used
+ * rather than the moment they first opened Team.
  */
 export async function loadTeam(orgId: string, caller: JwtClaims): Promise<Member[]> {
   const db = ddbDocClient()
@@ -58,7 +60,7 @@ export async function loadTeam(orgId: string, caller: JwtClaims): Promise<Member
       role:      roleOf(caller),
       status:    'active',
       invitedBy: null,
-      createdAt: new Date().toISOString(),
+      createdAt: await joinedAt(db, orgId, roleOf(caller)),
     }
     await db.send(new PutCommand({
       TableName:           TABLE,
@@ -71,6 +73,19 @@ export async function loadTeam(orgId: string, caller: JwtClaims): Promise<Member
   }
 
   return members.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+}
+
+async function joinedAt(db: ReturnType<typeof ddbDocClient>, orgId: string, role: Role): Promise<string> {
+  const now = new Date().toISOString()
+  if (role !== 'admin') return now
+  try {
+    const r = await db.send(new GetCommand({
+      TableName: TABLE, Key: { PK: `ORG#${orgId}`, SK: 'PROFILE' }, ProjectionExpression: 'createdAt',
+    }))
+    return (r.Item?.createdAt as string | undefined) || now
+  } catch {
+    return now
+  }
 }
 
 // Removed members free their seat; invited ones hold it until removed.

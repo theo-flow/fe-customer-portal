@@ -4,7 +4,7 @@ import { render, screen, within } from '@testing-library/react'
 import ProductPage from '../page'
 import { computeSeatCharge } from '@/lib/seat-pricing'
 
-const price = (n: number) => `R${n.toLocaleString('en-ZA')}`
+const price = (n: number) => `R${n.toLocaleString('en-US')}`
 
 describe('Products page', () => {
   it('is labelled "Products" in the site navigation, not "Product"', () => {

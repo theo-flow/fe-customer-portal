@@ -163,7 +163,7 @@ describe('Choose your seats page', () => {
   beforeEach(() => { mockRefetch.mockClear(); mockOrg.current = { role: 'admin' } })
   afterEach(() => vi.unstubAllGlobals())
 
-  const zar = (n: number) => `R${n.toLocaleString('en-ZA')}`
+  const zar = (n: number) => `R${n.toLocaleString('en-US')}`
 
   it('shows what each seat costs and starts at one seat', async () => {
     stubFetch({ '/api/billing/plans': planState() })
