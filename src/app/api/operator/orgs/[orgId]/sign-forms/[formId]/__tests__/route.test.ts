@@ -157,8 +157,8 @@ describe('operator sign-form (one form)', () => {
       expect(update.Update.Key).toEqual({ PK: 'ORG#org-abc123', SK: `SIGNFORM#${FORM_ID}` })
       expect(update.Update.ConditionExpression).toBe('current_version = :base')
       expect(update.Update.ExpressionAttributeValues).toMatchObject({ ':next': 3, ':base': 2, ':fc': 2, ':valid': true, ':anchors': [] })
-      // "name" is a DynamoDB reserved word, so it must be aliased
-      expect(update.Update.ExpressionAttributeNames).toEqual({ '#n': 'name' })
+      // "name" and "roles" are DynamoDB reserved words, so they must be aliased
+      expect(update.Update.ExpressionAttributeNames).toEqual({ '#n': 'name', '#roles': 'roles', '#valid': 'valid' })
     })
 
     it('saves an unfinished layout but reports it as not ready, with a reason', async () => {
@@ -245,6 +245,15 @@ describe('operator sign-form (one form)', () => {
       await PUT(req({ baseVersion: 2, layout: dirty }), params)
       const tx = mockDdbSend.mock.calls.map(([c]) => c).find(c => c.__type === 'Tx')
       expect(tx.input.TransactItems[0].Put.Item.fields[0].instruction).toBe('Sign - here')
+    })
+    it('never puts a DynamoDB reserved word into the update expression bare (the real service rejects it)', async () => {
+      await PUT(req({ baseVersion: 2, layout: layout() }), params)
+      const tx = mockDdbSend.mock.calls.map(([c]) => c).find(c => c.__type === 'Tx')
+      const update = tx.input.TransactItems[1].Update
+      // roles is reserved: it must go through an alias
+      expect(update.UpdateExpression).not.toMatch(/(^|[ ,])roles = /)
+      expect(update.UpdateExpression).toContain('#roles = :roles')
+      expect(update.ExpressionAttributeNames).toMatchObject({ '#n': 'name', '#roles': 'roles' })
     })
   })
 })
