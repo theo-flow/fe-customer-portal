@@ -15,6 +15,9 @@ vi.mock('react-signature-canvas', async () => {
       isEmpty: () => !drawn.has(label),
       toDataURL: () => `data:image/png;base64,DRAWN-${label}`,
       clear: () => { drawn.delete(label) },
+      getCanvas: () => document.createElement('canvas'),
+      toData: () => [],
+      fromData: () => {},
     }))
     return <canvas aria-label={label} />
   })

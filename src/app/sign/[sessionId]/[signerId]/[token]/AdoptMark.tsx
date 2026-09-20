@@ -1,5 +1,5 @@
 'use client'
-import type { RefObject } from 'react'
+import { useEffect, type RefObject } from 'react'
 import SignatureCanvas from 'react-signature-canvas'
 
 export type MarkMode = 'draw' | 'type'
@@ -21,6 +21,26 @@ export default function AdoptMark({
   typedClass:       string
   visible:          boolean
 }) {
+  // The pad is mounted while hidden (the signer has not reached this step yet),
+  // and a hidden canvas measures 0 wide, so the library sizes its drawing
+  // surface at 0 x 0 and nothing can be drawn. Size it when it is shown.
+  useEffect(() => {
+    if (!visible || mode !== 'draw') return
+    const pad = canvasRef.current
+    const canvas = pad?.getCanvas()
+    if (!pad || !canvas || !canvas.offsetWidth || !canvas.offsetHeight) return
+    const ratio = Math.max(window.devicePixelRatio || 1, 1)
+    const w = Math.round(canvas.offsetWidth * ratio)
+    const h = Math.round(canvas.offsetHeight * ratio)
+    if (canvas.width === w && canvas.height === h) return
+    const strokes = pad.toData()
+    canvas.width = w
+    canvas.height = h
+    canvas.getContext('2d')?.scale(ratio, ratio)
+    pad.clear()
+    pad.fromData(strokes)
+  }, [visible, mode, canvasRef])
+
   const tab = (m: MarkMode, text: string) => (
     <button
       type="button"
@@ -45,7 +65,7 @@ export default function AdoptMark({
           <SignatureCanvas
             ref={canvasRef}
             penColor="black"
-            canvasProps={{ className: 'w-full h-[150px]', 'aria-label': `Draw your ${label}` } as React.CanvasHTMLAttributes<HTMLCanvasElement>}
+            canvasProps={{ className: 'w-full h-[150px] touch-none', 'aria-label': `Draw your ${label}` } as React.CanvasHTMLAttributes<HTMLCanvasElement>}
           />
         </div>
         <button type="button" onClick={() => canvasRef.current?.clear()}
