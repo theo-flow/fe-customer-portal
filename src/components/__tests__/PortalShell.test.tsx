@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
-const { mockPush, mockSignOut, mockPath, mockOrg } = vi.hoisted(() => ({
+const { mockPush, mockBack, mockSignOut, mockPath, mockOrg } = vi.hoisted(() => ({
   mockPush:    vi.fn(),
+  mockBack:    vi.fn(),
   mockSignOut: vi.fn(),
   mockPath:    { current: '/dashboard' },
   mockOrg:     { current: {} as Record<string, unknown> },
@@ -11,7 +12,7 @@ const { mockPush, mockSignOut, mockPath, mockOrg } = vi.hoisted(() => ({
 
 vi.mock('next/navigation', () => ({
   usePathname: () => mockPath.current,
-  useRouter:   () => ({ push: mockPush }),
+  useRouter:   () => ({ push: mockPush, back: mockBack }),
 }))
 vi.mock('@/lib/org-context', () => ({ useOrg: () => mockOrg.current }))
 vi.mock('@/lib/auth', () => ({ signOut: mockSignOut }))
@@ -212,3 +213,57 @@ describe('PortalShell', () => {
     expect(screen.queryByRole('dialog', { name: 'Menu' })).not.toBeInTheDocument()
   })
 })
+
+describe('PortalShell: Back', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockPath.current = '/dashboard'
+    mockOrg.current  = org()
+  })
+
+  const backButton = () => screen.queryByRole('button', { name: 'Go back' })
+
+  it('has no Back on Home when nothing came before it', () => {
+    render(<PortalShell><p>body</p></PortalShell>)
+    expect(backButton()).not.toBeInTheDocument()
+  })
+
+  it('a page opened directly goes up to its section', async () => {
+    mockPath.current = '/sign/send'
+    render(<PortalShell><p>body</p></PortalShell>)
+    await userEvent.click(backButton()!)
+    expect(mockPush).toHaveBeenCalledWith('/sign')
+    expect(mockBack).not.toHaveBeenCalled()
+  })
+
+  it('a section page opened directly goes Home', async () => {
+    mockPath.current = '/sign'
+    render(<PortalShell><p>body</p></PortalShell>)
+    await userEvent.click(backButton()!)
+    expect(mockPush).toHaveBeenCalledWith('/dashboard')
+  })
+
+  it('after clicking through the portal, Back returns to the page the click came from', async () => {
+    const { rerender } = render(<PortalShell><p>body</p></PortalShell>)
+    expect(backButton()).not.toBeInTheDocument()
+    mockPath.current = '/forms'
+    rerender(<PortalShell><p>body</p></PortalShell>)
+    mockPath.current = '/forms/abc/history'
+    rerender(<PortalShell><p>body</p></PortalShell>)
+    await userEvent.click(backButton()!)
+    expect(mockBack).toHaveBeenCalledTimes(1)
+    expect(mockPush).not.toHaveBeenCalled()
+  })
+
+  it('once the person has gone all the way back, Back stops using the history', async () => {
+    const { rerender } = render(<PortalShell><p>body</p></PortalShell>)
+    mockPath.current = '/sign'
+    rerender(<PortalShell><p>body</p></PortalShell>)
+    // the browser goes back to Home
+    act(() => { window.dispatchEvent(new PopStateEvent('popstate')) })
+    mockPath.current = '/dashboard'
+    rerender(<PortalShell><p>body</p></PortalShell>)
+    expect(backButton()).not.toBeInTheDocument()
+  })
+})
+

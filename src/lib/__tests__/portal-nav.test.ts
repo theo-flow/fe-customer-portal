@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { navGroupsFor, isNavItemActive, type NavItem } from '../portal-nav'
+import { navGroupsFor, parentPathOf, isNavItemActive, type NavItem } from '../portal-nav'
 
 const hrefs = (products: string[]) => navGroupsFor(products).flatMap(g => g.items.map(i => i.href))
 
@@ -48,3 +48,21 @@ describe('isNavItemActive', () => {
     expect(isNavItemActive(item('/forms'), null)).toBe(false)
   })
 })
+
+describe('parentPathOf', () => {
+  const groups = navGroupsFor(['sign', 'decode', 'channel'], 'admin')
+  it('has no parent for Home or an unknown path', () => {
+    expect(parentPathOf('/dashboard', groups)).toBeNull()
+    expect(parentPathOf(null, groups)).toBeNull()
+  })
+  it('a page inside a section goes to that section', () => {
+    expect(parentPathOf('/sign/send', groups)).toBe('/sign')
+    expect(parentPathOf('/forms/abc/history', groups)).toBe('/forms')
+    expect(parentPathOf('/status/123', groups)).toBe('/upload')
+  })
+  it('a section itself, or a page in no section, goes Home', () => {
+    expect(parentPathOf('/sign', groups)).toBe('/dashboard')
+    expect(parentPathOf('/billing/upgrade', groups)).toBe('/dashboard')
+  })
+})
+
