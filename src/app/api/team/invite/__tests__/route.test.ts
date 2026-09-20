@@ -12,6 +12,9 @@ const { mockCookieGet, mockDdbSend, mockCognitoSend, mockLoadTeam, mockSeats } =
 const { mockAudit } = vi.hoisted(() => ({ mockAudit: vi.fn(async () => {}) }))
 vi.mock('@/lib/audit', () => ({ writeAudit: mockAudit }))
 
+const { mockEnqueue } = vi.hoisted(() => ({ mockEnqueue: vi.fn(async (_input: unknown) => true) }))
+vi.mock('@/lib/notify-queue', () => ({ enqueueTeamInviteEmail: mockEnqueue }))
+
 vi.mock('next/headers', () => ({ cookies: () => ({ get: mockCookieGet }) }))
 
 vi.mock('@/lib/aws', () => ({
@@ -30,7 +33,9 @@ vi.mock('@/lib/team', async (orig) => ({
 }))
 
 vi.mock('@aws-sdk/lib-dynamodb', () => ({
-  PutCommand: vi.fn(function (this: unknown, input: unknown) { return { __type: 'Put', input } }),
+  PutCommand:    vi.fn(function (this: unknown, input: unknown) { return { __type: 'Put', input } }),
+  GetCommand:    vi.fn(function (this: unknown, input: unknown) { return { __type: 'Get', input } }),
+  DeleteCommand: vi.fn(function (this: unknown, input: unknown) { return { __type: 'Delete', input } }),
 }))
 
 vi.mock('@aws-sdk/client-cognito-identity-provider', () => ({
@@ -64,7 +69,8 @@ describe('POST /api/team/invite', () => {
     vi.mocked(verifyJwtClaims).mockResolvedValue(admin)
     mockLoadTeam.mockResolvedValue([adminMember])
     mockSeats.mockResolvedValue(allowance())
-    mockDdbSend.mockResolvedValue({})
+    mockDdbSend.mockResolvedValue({ Item: { orgName: 'Onte Ika' } })
+    mockEnqueue.mockResolvedValue(true)
     mockCognitoSend.mockResolvedValue({ User: { Attributes: [{ Name: 'sub', Value: 'new-sub' }] } })
   })
 
@@ -163,6 +169,49 @@ describe('POST /api/team/invite', () => {
     const cleanup = mockCognitoSend.mock.calls[1][0]
     expect(cleanup.__type).toBe('Delete')
     expect(cleanup.input.Username).toBe('jane@org.com')
+    expect(mockEnqueue).not.toHaveBeenCalled()
+  })
+
+  it('suppresses the Cognito email and emails a temporary password from the portal template', async () => {
+    const res = await POST(makeRequest(valid))
+    expect(res.status).toBe(201)
+
+    const create = mockCognitoSend.mock.calls[0][0].input
+    expect(create.MessageAction).toBe('SUPPRESS')
+    expect(create.TemporaryPassword).toMatch(/^(?=.*[A-Z])(?=.*[a-z])(?=.*\d).{12,}$/)
+
+    expect(mockEnqueue).toHaveBeenCalledTimes(1)
+    expect(mockEnqueue).toHaveBeenCalledWith(expect.objectContaining({
+      toEmail:           'jane@org.com',
+      inviteeName:       'Jane Agent',
+      orgName:           'Onte Ika',
+      temporaryPassword: create.TemporaryPassword,
+      signInUrl:         expect.stringMatching(/\/login$/),
+      validDays:         7,
+    }))
+  })
+
+  it('names the inviter by name when the token has one, else by email', async () => {
+    vi.mocked(verifyJwtClaims).mockResolvedValue({ ...admin, name: 'Thabo Lutseke' })
+    await POST(makeRequest(valid))
+    expect(mockEnqueue.mock.calls[0][0]).toMatchObject({ invitedBy: 'Thabo Lutseke' })
+
+    mockEnqueue.mockClear()
+    vi.mocked(verifyJwtClaims).mockResolvedValue(admin)
+    await POST(makeRequest({ ...valid, email: 'other@org.com' }))
+    expect(mockEnqueue.mock.calls[0][0]).toMatchObject({ invitedBy: 'boss@org.com' })
+  })
+
+  it('undoes the whole invite when the email cannot be queued', async () => {
+    mockEnqueue.mockResolvedValueOnce(false)
+    const res = await POST(makeRequest(valid))
+
+    expect(res.status).toBe(502)
+    const deletes = mockDdbSend.mock.calls.map(c => c[0]).filter(c => c.__type === 'Delete').map(c => c.input.Key)
+    expect(deletes).toContainEqual({ PK: 'USER#new-sub', SK: 'ORG_MEMBERSHIP' })
+    expect(deletes).toContainEqual({ PK: `ORG#${ORG_ID}`, SK: 'MEMBER#new-sub' })
+    expect(mockCognitoSend.mock.calls[1][0].__type).toBe('Delete')
+    expect(mockAudit).not.toHaveBeenCalled()
   })
 
 
