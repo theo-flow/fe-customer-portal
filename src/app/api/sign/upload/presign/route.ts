@@ -3,7 +3,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { randomUUID } from 'crypto'
-import { s3Client, BUCKET } from '@/lib/aws'
+import { s3Client, SIGN_BUCKET } from '@/lib/aws'
 import { verifyJwtClaims } from '@/lib/token'
 
 const MAX_CONTENT_LENGTH = 50 * 1024 * 1024  // 50 MB — kept in sync with the frontend constant
@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
   try {
     uploadUrl = await getSignedUrl(
       s3Client(),
-      new PutObjectCommand({ Bucket: BUCKET, Key: key, ContentType: contentType }),
+      new PutObjectCommand({ Bucket: SIGN_BUCKET, Key: key, ContentType: contentType }),
       { expiresIn: 300 }
     )
   } catch (err) {

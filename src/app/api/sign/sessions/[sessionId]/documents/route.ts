@@ -1,7 +1,7 @@
 import { DeleteObjectCommand } from '@aws-sdk/client-s3'
 import { PutCommand } from '@aws-sdk/lib-dynamodb'
 import { NextRequest, NextResponse } from 'next/server'
-import { ddbDocClient, s3Client, TABLE, BUCKET } from '@/lib/aws'
+import { ddbDocClient, s3Client, TABLE, SIGN_BUCKET } from '@/lib/aws'
 import { loadOwnedSession, isConditionalCheckFailure } from '@/lib/sign-server'
 import { DELETABLE_STATUSES, isPurged, purgeableKeys, purgedCopy } from '@/lib/sign-purge'
 
@@ -36,7 +36,7 @@ export async function DELETE(
 
   try {
     const s3 = s3Client()
-    for (const key of keys) await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key }))
+    for (const key of keys) await s3.send(new DeleteObjectCommand({ Bucket: SIGN_BUCKET, Key: key }))
   } catch (err) {
     console.error('[sign/sessions/documents] S3 delete failed', { sessionId, error: err })
     return NextResponse.json({ error: 'Could not delete the documents. Please try again.' }, { status: 500 })

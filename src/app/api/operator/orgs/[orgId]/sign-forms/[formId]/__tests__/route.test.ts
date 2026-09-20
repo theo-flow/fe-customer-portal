@@ -11,7 +11,7 @@ vi.mock('next/headers', () => ({ cookies: () => ({ get: mockCookieGet }) }))
 vi.mock('@/lib/aws', () => ({
   ddbDocClient: () => ({ send: mockDdbSend }),
   s3Client: () => ({ send: mockS3Send }),
-  TABLE: 'daai-insure-orgs', BUCKET: 'daai-insure-intake',
+  TABLE: 'daai-insure-orgs', BUCKET: 'daai-insure-intake', SIGN_BUCKET: 'daai-insure-sign',
 }))
 vi.mock('@/lib/token', () => ({ verifyJwtClaims: vi.fn() }))
 vi.mock('@aws-sdk/lib-dynamodb', () => ({
@@ -296,7 +296,7 @@ describe('DELETE /api/operator/orgs/[orgId]/sign-forms/[formId]', () => {
   it('deletes the sample, every version, then the form itself last', async () => {
     const res = await DELETE({} as NextRequest, params)
     expect(res.status).toBe(200)
-    expect(mockS3Send.mock.calls[0][0].input).toEqual({ Bucket: 'daai-insure-intake', Key: SAMPLE })   // key derived from the ids
+    expect(mockS3Send.mock.calls[0][0].input).toEqual({ Bucket: 'daai-insure-sign', Key: SAMPLE })   // key derived from the ids
     const query = mockDdbSend.mock.calls.map(([c]) => c).find(c => c.__type === 'Query')
     expect(query.input.ExpressionAttributeValues).toEqual({ ':pk': 'ORG#org-abc123', ':prefix': `SIGNFORMV#${FORM_ID}#` })
     expect(deletes()).toEqual([

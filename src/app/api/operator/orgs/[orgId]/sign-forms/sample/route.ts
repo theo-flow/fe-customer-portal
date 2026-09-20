@@ -2,7 +2,7 @@ import { PutObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
-import { s3Client, BUCKET } from '@/lib/aws'
+import { s3Client, SIGN_BUCKET } from '@/lib/aws'
 import { requireOperator, orgExists, isSafeId, sampleKey } from '@/lib/sign-forms-server'
 
 const MAX_CONTENT_LENGTH = 50 * 1024 * 1024
@@ -34,7 +34,7 @@ export async function POST(req: NextRequest, { params }: { params: { orgId: stri
   try {
     const uploadUrl = await getSignedUrl(
       s3Client(),
-      new PutObjectCommand({ Bucket: BUCKET, Key: key, ContentType: 'application/pdf' }),
+      new PutObjectCommand({ Bucket: SIGN_BUCKET, Key: key, ContentType: 'application/pdf' }),
       { expiresIn: 300 },
     )
     return NextResponse.json({ formId, uploadUrl })

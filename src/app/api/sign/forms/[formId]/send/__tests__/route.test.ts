@@ -9,7 +9,7 @@ const { mockCookieGet, mockDdbSend, mockS3Send, mockSqsSend } = vi.hoisted(() =>
 vi.mock('next/headers', () => ({ cookies: () => ({ get: mockCookieGet }) }))
 vi.mock('@/lib/aws', () => ({
   ddbDocClient: () => ({ send: mockDdbSend }), s3Client: () => ({ send: mockS3Send }), sqsClient: () => ({ send: mockSqsSend }),
-  TABLE: 'daai-insure-orgs', BUCKET: 'daai-insure-intake',
+  TABLE: 'daai-insure-orgs', BUCKET: 'daai-insure-intake', SIGN_BUCKET: 'daai-insure-sign',
 }))
 vi.mock('@/lib/token', () => ({ verifyJwtClaims: vi.fn() }))
 vi.mock('@aws-sdk/lib-dynamodb', () => ({

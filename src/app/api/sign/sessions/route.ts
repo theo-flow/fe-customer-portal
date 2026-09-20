@@ -4,7 +4,7 @@ import { SendMessageCommand } from '@aws-sdk/client-sqs'
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { randomUUID, createHash } from 'crypto'
-import { ddbDocClient, s3Client, sqsClient, TABLE, BUCKET } from '@/lib/aws'
+import { ddbDocClient, s3Client, sqsClient, TABLE, BUCKET, SIGN_BUCKET } from '@/lib/aws'
 import { verifyJwtClaims } from '@/lib/token'
 import { validateEmail } from '@/lib/validators'
 import { generateToken, hashToken, tokenExpiryIso, type SignSession, type Signer } from '@/lib/sign'
@@ -151,13 +151,13 @@ export async function POST(req: NextRequest) {
       if (!sourceDocument.sessionId || !sourceDocument.s3Key || !sourceDocument.sha256) {
         return NextResponse.json({ error: 'Incomplete sourceDocument' }, { status: 400 })
       }
-      const head = await s3.send(new HeadObjectCommand({ Bucket: BUCKET, Key: sourceDocument.s3Key }))
+      const head = await s3.send(new HeadObjectCommand({ Bucket: SIGN_BUCKET, Key: sourceDocument.s3Key }))
         .catch(() => null)
       if (!head) {
         return NextResponse.json({ error: 'Uploaded document not found — upload may have failed' }, { status: 400 })
       }
       const firstBytes = await s3.send(new GetObjectCommand({
-        Bucket: BUCKET, Key: sourceDocument.s3Key, Range: 'bytes=0-4',
+        Bucket: SIGN_BUCKET, Key: sourceDocument.s3Key, Range: 'bytes=0-4',
       })).then(r => r.Body!.transformToByteArray()).catch(() => null)
       if (!firstBytes || !hasPdfHeader(firstBytes)) {
         return NextResponse.json({ error: 'Only PDF documents can be sent for signature' }, { status: 400 })
@@ -187,7 +187,7 @@ export async function POST(req: NextRequest) {
       sourceSha256 = createHash('sha256').update(bytes).digest('hex')
 
       await s3.send(new PutObjectCommand({
-        Bucket: BUCKET, Key: sourceKey, Body: bytes, ContentType: 'application/pdf',
+        Bucket: SIGN_BUCKET, Key: sourceKey, Body: bytes, ContentType: 'application/pdf',
       }))
 
       metadata = { ...metadata, submission_id: submissionId }

@@ -34,5 +34,8 @@ export function eventBridgeClient() {
 
 export const TABLE         = process.env.DYNAMODB_TABLE_ORGS    ?? 'daai-insure-orgs'
 export const BUCKET        = process.env.S3_INTAKE_BUCKET       ?? 'daai-insure-intake'
+// TheoFlow Sign keeps its documents in its own bucket (platform repo,
+// infrastructure/terraform/sign-storage), never in the shared intake bucket.
+export const SIGN_BUCKET   = process.env.S3_SIGN_BUCKET         ?? 'daai-insure-sign'
 export const OUTPUT_BUCKET = process.env.S3_OUTPUT_BUCKET       ?? 'daai-insure-output'
 export const CONTACT_TABLE = process.env.DYNAMODB_TABLE_CONTACT ?? 'daai-insure-contact-messages'

@@ -8,7 +8,7 @@ const { mockCookieGet, mockSend, mockPresign } = vi.hoisted(() => ({
 
 vi.mock('next/headers', () => ({ cookies: () => ({ get: mockCookieGet }) }))
 vi.mock('@/lib/aws', () => ({
-  ddbDocClient: () => ({ send: mockSend }), s3Client: () => ({}), TABLE: 'daai-insure-orgs', BUCKET: 'daai-insure-intake',
+  ddbDocClient: () => ({ send: mockSend }), s3Client: () => ({}), TABLE: 'daai-insure-orgs', BUCKET: 'daai-insure-intake', SIGN_BUCKET: 'daai-insure-sign',
 }))
 vi.mock('@/lib/token', () => ({ verifyJwtClaims: vi.fn() }))
 vi.mock('@aws-sdk/lib-dynamodb', () => ({
@@ -38,6 +38,7 @@ describe('GET /api/sign/sessions/[sessionId]/document', () => {
     const res = await GET(req, params)
     expect(await res.json()).toEqual({ url: 'https://s3.example/signed-url', isCompleted: false })
     expect(mockPresign.mock.calls[0][1].input.Key).toBe(`sign/source/${SESSION_ID}/agreement.pdf`)
+    expect(mockPresign.mock.calls[0][1].input.Bucket).toBe('daai-insure-sign')
   })
 
   it('returns 404 for another org\'s session', async () => {

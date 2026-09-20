@@ -3,7 +3,7 @@ import { GetObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
-import { ddbDocClient, s3Client, TABLE, BUCKET } from '@/lib/aws'
+import { ddbDocClient, s3Client, TABLE, SIGN_BUCKET } from '@/lib/aws'
 import { verifyJwtClaims } from '@/lib/token'
 import type { SignSession } from '@/lib/sign'
 import { isPurged } from '@/lib/sign-purge'
@@ -67,7 +67,7 @@ export async function GET(
   try {
     const url = await getSignedUrl(
       s3Client(),
-      new GetObjectCommand({ Bucket: BUCKET, Key: key }),
+      new GetObjectCommand({ Bucket: SIGN_BUCKET, Key: key }),
       { expiresIn: URL_EXPIRY_SECONDS },
     )
     return NextResponse.json({ url, isCompleted })

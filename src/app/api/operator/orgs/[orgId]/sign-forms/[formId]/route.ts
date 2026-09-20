@@ -2,7 +2,7 @@ import { DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { DeleteCommand, GetCommand, QueryCommand, TransactWriteCommand } from '@aws-sdk/lib-dynamodb'
 import { NextRequest, NextResponse } from 'next/server'
-import { ddbDocClient, s3Client, TABLE, BUCKET } from '@/lib/aws'
+import { ddbDocClient, s3Client, TABLE, SIGN_BUCKET } from '@/lib/aws'
 import { isReadType, validateLayout } from '@/lib/sign-form'
 import type { FormField } from '@/lib/sign-form'
 import {
@@ -57,7 +57,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
   try {
     sampleUrl = await getSignedUrl(
       s3Client(),
-      new GetObjectCommand({ Bucket: BUCKET, Key: version.sample_key as string }),
+      new GetObjectCommand({ Bucket: SIGN_BUCKET, Key: version.sample_key as string }),
       { expiresIn: SAMPLE_URL_SECONDS },
     )
   } catch (err) {
@@ -194,7 +194,7 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
     const pointer = (await db.send(new GetCommand({ TableName: TABLE, Key: pointerKey(orgId, formId) }))).Item
     if (!pointer) return NextResponse.json({ error: 'Form not found' }, { status: 404 })
 
-    await s3Client().send(new DeleteObjectCommand({ Bucket: BUCKET, Key: sampleKey(orgId, formId) }))
+    await s3Client().send(new DeleteObjectCommand({ Bucket: SIGN_BUCKET, Key: sampleKey(orgId, formId) }))
 
     const versions = await db.send(new QueryCommand({
       TableName: TABLE,

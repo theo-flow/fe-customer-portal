@@ -13,7 +13,7 @@ vi.mock('@/lib/aws', () => ({
   s3Client:     () => ({ send: mockS3Send }),
   sqsClient:    () => ({ send: mockSqsSend }),
   TABLE: 'daai-insure-orgs',
-  BUCKET: 'daai-insure-intake',
+  BUCKET: 'daai-insure-intake', SIGN_BUCKET: 'daai-insure-sign',
 }))
 vi.mock('@/lib/token', () => ({ verifyJwtClaims: vi.fn() }))
 vi.mock('@aws-sdk/lib-dynamodb', () => ({
@@ -86,6 +86,23 @@ describe('POST /api/sign/sessions', () => {
     expect(res.status).toBe(201)
     const [put] = sessionPuts()
     expect(put.input.Item.metadata).toEqual({ created_by_email: 'owner@example.com', submission_id: 'DAI-1' })
+  })
+
+  it('checks an uploaded document in the Sign bucket, never the intake bucket', async () => {
+    await POST(makeReq({ signers, sourceDocument: standalone }))
+    const buckets = mockS3Send.mock.calls.map(([c]) => c.input.Bucket)
+    expect(buckets.length).toBeGreaterThan(0)
+    expect(buckets.every((b: string) => b === 'daai-insure-sign')).toBe(true)
+  })
+
+  it('reads a Decode document from the intake bucket and puts its copy in the Sign bucket', async () => {
+    const res = await POST(makeReq({ signers, submissionId: 'DAI-1' }))
+    expect(res.status).toBe(201)
+    const get = mockS3Send.mock.calls.map(([c]) => c).find(c => c.__type === 'S3Get')
+    const put = mockS3Send.mock.calls.map(([c]) => c).find(c => c.__type === 'S3Put')
+    expect(get.input.Bucket).toBe('daai-insure-intake')
+    expect(put.input.Bucket).toBe('daai-insure-sign')
+    expect(put.input.Key).toMatch(/^sign\/source\//)
   })
 
   it('rejects an uploaded file that is not really a PDF', async () => {

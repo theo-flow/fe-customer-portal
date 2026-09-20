@@ -10,7 +10,7 @@ const { mockCookieGet, mockSend, mockS3Send } = vi.hoisted(() => ({
 vi.mock('next/headers', () => ({ cookies: () => ({ get: mockCookieGet }) }))
 vi.mock('@/lib/aws', () => ({
   ddbDocClient: () => ({ send: mockSend }), s3Client: () => ({ send: mockS3Send }),
-  TABLE: 'daai-insure-orgs', BUCKET: 'daai-insure-intake',
+  TABLE: 'daai-insure-orgs', BUCKET: 'daai-insure-intake', SIGN_BUCKET: 'daai-insure-sign',
 }))
 vi.mock('@/lib/token', () => ({ verifyJwtClaims: vi.fn() }))
 vi.mock('@aws-sdk/lib-dynamodb', () => ({
@@ -67,6 +67,7 @@ describe('DELETE /api/sign/sessions/[sessionId]/documents', () => {
     const res = await DELETE(req, params)
     expect(res.status).toBe(200)
     expect(deleted()).toEqual([`sign/source/${SESSION_ID}/agreement.pdf`, `sign/completed/${SESSION_ID}/completed.pdf`])
+    expect(mockS3Send.mock.calls.every(([c]) => c.input.Bucket === 'daai-insure-sign')).toBe(true)
 
     const item = puts()[0].input.Item
     expect(item).toMatchObject({ PK: `SESSION#${SESSION_ID}`, SK: 'SESSION', status: 'SIGNED' })

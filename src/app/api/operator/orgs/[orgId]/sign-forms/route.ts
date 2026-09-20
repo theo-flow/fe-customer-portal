@@ -1,7 +1,7 @@
 import { GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3'
 import { QueryCommand, TransactWriteCommand } from '@aws-sdk/lib-dynamodb'
 import { NextRequest, NextResponse } from 'next/server'
-import { ddbDocClient, s3Client, TABLE, BUCKET } from '@/lib/aws'
+import { ddbDocClient, s3Client, TABLE, SIGN_BUCKET } from '@/lib/aws'
 import { hasPdfHeader } from '@/lib/sign-server'
 import { validateLayout } from '@/lib/sign-form'
 import {
@@ -73,9 +73,9 @@ export async function POST(req: NextRequest, { params }: { params: { orgId: stri
   // The sample must really be there, and really be a PDF.
   const key = sampleKey(orgId, formId)
   const s3 = s3Client()
-  const head = await s3.send(new HeadObjectCommand({ Bucket: BUCKET, Key: key })).catch(() => null)
+  const head = await s3.send(new HeadObjectCommand({ Bucket: SIGN_BUCKET, Key: key })).catch(() => null)
   if (!head) return NextResponse.json({ error: 'The sample upload was not found. Please upload it again.' }, { status: 400 })
-  const first = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: key, Range: 'bytes=0-4' }))
+  const first = await s3.send(new GetObjectCommand({ Bucket: SIGN_BUCKET, Key: key, Range: 'bytes=0-4' }))
     .then(r => r.Body!.transformToByteArray()).catch(() => null)
   if (!first || !hasPdfHeader(first)) {
     return NextResponse.json({ error: 'The sample must be a PDF.' }, { status: 400 })

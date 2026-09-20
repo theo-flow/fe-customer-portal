@@ -5,7 +5,7 @@ import type { DetectedField, SignSession, Signer } from '@/lib/sign'
 const { mockDdbSend, mockPresign } = vi.hoisted(() => ({ mockDdbSend: vi.fn(), mockPresign: vi.fn() }))
 
 vi.mock('@/lib/aws', () => ({
-  ddbDocClient: () => ({ send: mockDdbSend }), s3Client: () => ({}), TABLE: 'daai-insure-orgs', BUCKET: 'daai-insure-intake',
+  ddbDocClient: () => ({ send: mockDdbSend }), s3Client: () => ({}), TABLE: 'daai-insure-orgs', BUCKET: 'daai-insure-intake', SIGN_BUCKET: 'daai-insure-sign',
 }))
 vi.mock('@aws-sdk/lib-dynamodb', () => ({
   GetCommand: vi.fn(function (this: unknown, input: unknown) { return { __type: 'Get', input } }),
@@ -47,6 +47,7 @@ describe('GET /api/public/sign/.../document', () => {
     expect(res.status).toBe(200)
     expect(await res.json()).toMatchObject({ url: 'https://s3.example/doc.pdf', signerName: 'Person 1', signerRole: 'Customer', formName: 'New AOA' })
     expect(mockPresign.mock.calls[0][1].input.Key).toBe('sign/source/s1/aoa.pdf')
+    expect(mockPresign.mock.calls[0][1].input.Bucket).toBe('daai-insure-sign')
   })
 
   it('sends only the boxes that belong to this signer, never the other people\'s', async () => {

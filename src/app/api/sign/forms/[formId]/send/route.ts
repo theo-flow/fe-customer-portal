@@ -4,7 +4,7 @@ import { SendMessageCommand } from '@aws-sdk/client-sqs'
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { randomUUID } from 'crypto'
-import { ddbDocClient, s3Client, sqsClient, TABLE, BUCKET } from '@/lib/aws'
+import { ddbDocClient, s3Client, sqsClient, TABLE, SIGN_BUCKET } from '@/lib/aws'
 import { verifyJwtClaims } from '@/lib/token'
 import { validateEmail } from '@/lib/validators'
 import {
@@ -86,9 +86,9 @@ export async function POST(req: NextRequest, { params }: { params: { formId: str
   if (!src?.sessionId || !src.s3Key || !src.sha256 || !isSafeId(src.sessionId)) return bad('Incomplete document')
   if (src.s3Key.split('/').slice(0, 3).join('/') !== `sign/source/${src.sessionId}`) return bad('Invalid document')
   const s3 = s3Client()
-  const head = await s3.send(new HeadObjectCommand({ Bucket: BUCKET, Key: src.s3Key })).catch(() => null)
+  const head = await s3.send(new HeadObjectCommand({ Bucket: SIGN_BUCKET, Key: src.s3Key })).catch(() => null)
   if (!head) return bad('Uploaded document not found. The upload may have failed.')
-  const first = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: src.s3Key, Range: 'bytes=0-4' }))
+  const first = await s3.send(new GetObjectCommand({ Bucket: SIGN_BUCKET, Key: src.s3Key, Range: 'bytes=0-4' }))
     .then(r => r.Body!.transformToByteArray()).catch(() => null)
   if (!first || !hasPdfHeader(first)) return bad('Only PDF documents can be sent for signature.')
 

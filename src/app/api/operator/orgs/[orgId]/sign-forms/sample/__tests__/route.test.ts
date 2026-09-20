@@ -10,7 +10,7 @@ vi.mock('next/headers', () => ({ cookies: () => ({ get: mockCookieGet }) }))
 vi.mock('@/lib/aws', () => ({
   ddbDocClient: () => ({ send: mockDdbSend }),
   s3Client: () => ({}),
-  TABLE: 'daai-insure-orgs', BUCKET: 'daai-insure-intake',
+  TABLE: 'daai-insure-orgs', BUCKET: 'daai-insure-intake', SIGN_BUCKET: 'daai-insure-sign',
 }))
 vi.mock('@/lib/token', () => ({ verifyJwtClaims: vi.fn() }))
 vi.mock('@aws-sdk/lib-dynamodb', () => ({
@@ -72,5 +72,6 @@ describe('POST /api/operator/orgs/[orgId]/sign-forms/sample', () => {
     const cmd = mockPresign.mock.calls[0][1]
     expect(cmd.input.Key).toBe(`sign/forms/org-abc123/${body.formId}/sample.pdf`)
     expect(cmd.input.ContentType).toBe('application/pdf')
+    expect(cmd.input.Bucket).toBe('daai-insure-sign')   // samples live in the Sign bucket
   })
 })
