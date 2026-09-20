@@ -90,6 +90,39 @@ export function signIn(email: string, password: string): Promise<CognitoUserSess
   })
 }
 
+/* ── completeNewPassword ──────────────────────────────────────────
+ * An agent invited by an org admin (AdminCreateUser) signs in the first time
+ * with a temporary password, and Cognito answers with a NEW_PASSWORD_REQUIRED
+ * challenge. signIn() surfaces that as code 'NewPasswordRequired'; this
+ * re-authenticates with the same temporary password and answers the challenge
+ * in one go, so no half-finished challenge has to be held between screens. */
+export function completeNewPassword(
+  email: string, temporaryPassword: string, newPassword: string,
+): Promise<CognitoUserSession> {
+  return new Promise((resolve, reject) => {
+    const authDetails = new AuthenticationDetails({ Username: email, Password: temporaryPassword })
+    const user = makeUser(email)
+
+    user.authenticateUser(authDetails, {
+      onSuccess: (session) => {
+        // Not a first-time sign-in after all -- nothing to change.
+        setAuthCookie(session.getIdToken().getJwtToken())
+        resolve(session)
+      },
+      onFailure: reject,
+      newPasswordRequired: () => {
+        user.completeNewPasswordChallenge(newPassword, {}, {
+          onSuccess: (session) => {
+            setAuthCookie(session.getIdToken().getJwtToken())
+            resolve(session)
+          },
+          onFailure: reject,
+        })
+      },
+    })
+  })
+}
+
 /* ── signUp ───────────────────────────────────────────────────── */
 export function signUp(email: string, password: string, name: string, orgId: string): Promise<void> {
   return new Promise((resolve, reject) => {

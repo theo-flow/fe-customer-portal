@@ -19,6 +19,9 @@ export interface NotificationItem {
   status:         NotificationStatus
   read:           boolean
   createdAt:      string
+  // Set when the submission came from a personal link: only the agent who
+  // sent it (Cognito sub) sees it. Absent = visible to the whole org.
+  targetSub?:     string | null
 }
 
 /**
@@ -27,13 +30,15 @@ export interface NotificationItem {
  * it (on Lambda, an un-awaited promise can be frozen before it completes).
  */
 export async function notifyHarvestSubmission(orgId: string, params: {
-  submissionId: string
-  group:        string
-  groupLabel:   string
+  submissionId:   string
+  group:          string
+  groupLabel:     string
+  targetSub?:     string | null
+  recipientName?: string | null
 }): Promise<void> {
   const createdAt      = new Date().toISOString()
   const notificationId = randomUUID()
-  const item: Omit<NotificationItem, 'status'> & { PK: string; SK: string } = {
+  const item: Omit<NotificationItem, 'status' | 'targetSub'> & { PK: string; SK: string; target_sub?: string } = {
     PK:            `ORG#${orgId}`,
     SK:            `NOTIFICATION#${createdAt}#${notificationId}`,
     notificationId,
@@ -41,9 +46,12 @@ export async function notifyHarvestSubmission(orgId: string, params: {
     submissionId:  params.submissionId,
     group:         params.group,
     groupLabel:    params.groupLabel,
-    message:       `New submission received for ${params.groupLabel}`,
+    message:       params.recipientName
+      ? `${params.recipientName} filled in ${params.groupLabel}`
+      : `New submission received for ${params.groupLabel}`,
     read:          false,
     createdAt,
+    ...(params.targetSub ? { target_sub: params.targetSub } : {}),
   }
 
   try {

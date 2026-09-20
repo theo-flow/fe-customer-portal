@@ -4,6 +4,7 @@ import { ddbDocClient, TABLE } from '@/lib/aws'
 import { validateField } from '@/lib/validators'
 import { notifyHarvestSubmission } from '@/lib/notifications'
 import { randomUUID } from 'crypto'
+import { orgLocked } from '@/lib/org-access'
 
 interface Field {
   key:        string
@@ -18,6 +19,12 @@ export async function POST(
   { params }: { params: { orgId: string; group: string } },
 ) {
   const { orgId, group } = params
+
+  // A locked org's form links stop accepting submissions. Deliberately says nothing
+  // about why: the person filling in the form is not the org's admin.
+  if (await orgLocked(orgId)) {
+    return NextResponse.json({ error: 'Form not available' }, { status: 404 })
+  }
 
   // Fetch the schema
   const schemaResult = await ddbDocClient().send(new GetCommand({

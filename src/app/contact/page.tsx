@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { MarketingNav } from '@/components/MarketingNav'
 import { MarketingFooter } from '@/components/MarketingFooter'
+import { GradientMesh } from '@/components/GradientMesh'
 import { INTEREST_OPTIONS, CONTACT_MESSAGE_MAX as MESSAGE_MAX } from '@/lib/contact-form'
 
 type Status = 'idle' | 'submitting' | 'sent' | 'error'
@@ -47,20 +48,24 @@ export default function ContactPage() {
       <MarketingNav />
       <div className="h-[56px]" />
 
-      <section className="max-w-[560px] mx-auto px-8 pt-8 pb-12">
-        <div className="text-center mb-5">
-          <span className="inline-flex text-[11px] font-semibold text-gray-400 uppercase
-                           tracking-[0.10em] border border-gray-200 rounded-full px-3 py-[5px]">
+      <section className="relative overflow-hidden">
+        <GradientMesh base="#F5EDD8" colorA="#F0B848" colorB="#4E82CC" />
+        <div className="relative max-w-[820px] mx-auto px-4 sm:px-8 pt-10 pb-16">
+        <div className="text-center mb-6">
+          <span className="inline-flex text-[11px] font-semibold text-gray-600 uppercase
+                           tracking-[0.10em] border border-black/[0.12] bg-white/70 rounded-full px-3 py-[5px]">
             Contact
           </span>
-          <p className="mt-3 text-[13px] text-gray-500 leading-relaxed">
+          <p className="mt-3 text-[13px] text-gray-700 leading-relaxed">
             Questions about the product suite, pricing, or onboarding your organisation -
             send a message and we&apos;ll get back to you.
           </p>
         </div>
 
+        <div className="rounded-3xl border border-black/[0.08] bg-white px-5 py-6 sm:px-12 sm:py-10
+                        shadow-[0_24px_60px_-24px_rgba(17,17,17,0.35)]">
         {status === 'sent' ? (
-          <div role="status" className="rounded-2xl border border-gray-100 bg-[#F5F6FA] px-6 py-8 text-center">
+          <div role="status" className="py-6 text-center">
             <p className="text-[14px] font-medium text-black">Message sent.</p>
             <p className="mt-1.5 text-[13px] text-gray-500">We&apos;ll be in touch shortly.</p>
           </div>
@@ -104,7 +109,7 @@ export default function ContactPage() {
             <Field label={`Additional details (optional) - ${message.length}/${MESSAGE_MAX}`}>
               <textarea value={message}
                 onChange={e => setMessage(e.target.value.slice(0, MESSAGE_MAX))}
-                rows={3} maxLength={MESSAGE_MAX} placeholder="Anything else we should know?"
+                rows={4} maxLength={MESSAGE_MAX} placeholder="Anything else we should know?"
                 className="w-full px-4 py-3 rounded-xl text-[14px] text-black border border-gray-200
                            outline-none focus:border-gray-400 transition-colors resize-none" />
             </Field>
@@ -115,6 +120,8 @@ export default function ContactPage() {
             </button>
           </form>
         )}
+        </div>
+        </div>
       </section>
 
       <MarketingFooter />

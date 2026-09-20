@@ -26,7 +26,8 @@ export async function GET() {
     groupLabel:    item.group_label     as string,
     submittedAt:   item.submittedAt     as string,
     status:        item.status          as string,
-    recipientName: (item.recipient_name as string) ?? null,
+    recipientName:  (item.recipient_name  as string) ?? null,
+    recipientEmail: (item.recipient_email as string) ?? null,
   }))
 
   return NextResponse.json({ submissions })

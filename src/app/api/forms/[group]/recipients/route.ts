@@ -7,6 +7,8 @@ import { verifyJwtClaims } from '@/lib/token'
 import { generateToken, hashToken } from '@/lib/sign'
 import { tokenExpiryIso, type RecipientLink } from '@/lib/recipients'
 import { enqueueRecipientInviteEmail } from '@/lib/notify-queue'
+import { orgLocked } from '@/lib/org-access'
+import { writeAudit } from '@/lib/audit'
 
 export async function GET(
   _req: NextRequest,
@@ -52,6 +54,8 @@ export async function POST(
   if (!claims) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const orgId  = claims['custom:org_id']
   if (!orgId) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const locked = await orgLocked(orgId)
+  if (locked) return locked
 
   const { group } = params
 
@@ -92,6 +96,8 @@ export async function POST(
     token_expires_at: tokenExpiryIso(),
     status:           'PENDING',
     submission_id:    null,
+    sent_by_sub:      claims.sub,
+    sent_by_email:    claims.email,
     created_at:       now,
     updated_at:       now,
   }
@@ -122,6 +128,8 @@ export async function POST(
       fillUrl,
     })
   }
+
+  await writeAudit(orgId, claims, 'form.link_created', `${group}: ${name}`)
 
   return NextResponse.json({
     recipientId,

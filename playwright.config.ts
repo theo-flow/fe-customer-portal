@@ -10,7 +10,9 @@ export default defineConfig({
     ['html', { outputFolder: 'playwright-report', open: 'never' }],
   ],
   use: {
-    baseURL: 'http://localhost:3001',
+    // Override with PLAYWRIGHT_BASE_URL to point at a deployed environment
+    // (e.g. production) instead of the local dev server.
+    baseURL: process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:3001',
     headless: true,
     viewport: { width: 1440, height: 900 },
     screenshot: 'on',

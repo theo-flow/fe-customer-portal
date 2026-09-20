@@ -5,6 +5,7 @@ import { cookies } from 'next/headers'
 import { randomUUID } from 'crypto'
 import { s3Client, SIGN_BUCKET } from '@/lib/aws'
 import { verifyJwtClaims } from '@/lib/token'
+import { orgLocked } from '@/lib/org-access'
 
 const MAX_CONTENT_LENGTH = 50 * 1024 * 1024  // 50 MB — kept in sync with the frontend constant
 
@@ -15,6 +16,8 @@ export async function POST(req: NextRequest) {
   const claims = await verifyJwtClaims(token)
   if (!claims) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const orgId  = claims['custom:org_id'] ?? claims.sub
+  const locked = await orgLocked(orgId)
+  if (locked) return locked
 
   let body: { filename?: string; contentType?: string; contentLength?: number }
   try {

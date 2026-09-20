@@ -5,6 +5,8 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { fromIni } from '@aws-sdk/credential-providers'
 import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
+import { TRIAL_DAYS } from '@/lib/plans'
+import { isoUtc } from '@/lib/dates'
 
 const REGION = process.env.AWS_REGION          ?? 'af-south-1'
 const BUCKET = process.env.S3_INTAKE_BUCKET    ?? 'daai-insure-intake'
@@ -94,6 +96,11 @@ export async function POST(req: NextRequest) {
       form_groups:         formGroups ?? [],
       createdAt:           now,
       status:              'pending_verification',
+      // The free pilot: every product for TRIAL_DAYS, one seat. fn-16's daily run
+      // reminds on day 5 and moves the org to the paid plan (with an invoice) on day 8.
+      seats:               1,
+      trial_status:        'active',
+      trial_ends_at:       isoUtc(new Date(Date.now() + TRIAL_DAYS * 24 * 60 * 60 * 1000)),
     },
   }))
 

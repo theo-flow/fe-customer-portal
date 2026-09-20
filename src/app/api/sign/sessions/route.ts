@@ -10,6 +10,8 @@ import { validateEmail } from '@/lib/validators'
 import { generateToken, hashToken, tokenExpiryIso, type SignSession, type Signer } from '@/lib/sign'
 import { hasPdfHeader, lookupOrgName } from '@/lib/sign-server'
 import { isPurged } from '@/lib/sign-purge'
+import { orgLocked } from '@/lib/org-access'
+import { writeAudit } from '@/lib/audit'
 
 const SQS_SIGN_URL = process.env.SQS_SIGN_URL
 
@@ -106,6 +108,8 @@ export async function POST(req: NextRequest) {
   if (!claims) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const orgId  = claims['custom:org_id']
   if (!orgId) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const locked = await orgLocked(orgId)
+  if (locked) return locked
 
   let body: RequestBody
   try {
@@ -299,6 +303,8 @@ export async function POST(req: NextRequest) {
   } else {
     console.error('[sign/sessions] SQS_SIGN_URL not configured -- locate_and_notify not queued', { sessionId })
   }
+
+  await writeAudit(orgId, claims, 'sign.session_started', sessionId)
 
   return NextResponse.json({ sessionId, signers: signerLinks, locateQueued }, { status: 201 })
 }

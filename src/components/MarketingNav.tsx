@@ -4,7 +4,7 @@ import { LogoMark } from '@/components/LogoMark'
 
 const LINKS = [
   { href: '/about',    label: 'About' },
-  { href: '/product',  label: 'Product' },
+  { href: '/product',  label: 'Products' },
   { href: '/features', label: 'Features' },
   { href: '/contact',  label: 'Contact' },
 ]

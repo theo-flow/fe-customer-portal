@@ -79,7 +79,7 @@ const JSON_LD = {
     },
     {
       '@type': 'SiteNavigationElement',
-      name: ['About', 'Product', 'Features', 'Contact'],
+      name: ['About', 'Products', 'Features', 'Contact'],
       url: [
         'https://theoflow.bytheodore.co.za/about',
         'https://theoflow.bytheodore.co.za/product',
