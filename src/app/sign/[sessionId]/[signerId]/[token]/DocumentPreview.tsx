@@ -36,12 +36,14 @@ const PAGE_HORIZONTAL_PADDING = 48
 // Purely presentational: SignCapture owns the fetch and all the answers, and
 // falls back to its plain flow on any load error (see onError below).
 export default function DocumentPreview({
-  url, fields, values = {}, activeType = null, onError, onBoxClick,
+  url, fields, values = {}, activeType = null, review = false, onError, onBoxClick,
 }: {
   url:          string
   fields:       DetectedField[]
   values?:      Record<string, BoxValue>
   activeType?:  DetectedField['field_type'] | null
+  /** The final check: every page, and only what has been entered, as it will be stamped. */
+  review?:      boolean
   onError:      () => void
   onBoxClick?:  (field: DetectedField) => void
 }) {
@@ -57,7 +59,9 @@ export default function DocumentPreview({
 
   const ordered = orderFields(fields)   // the same numbering the checklist uses
   const pagesWithFields = Array.from(new Set(fields.map(f => f.page))).sort((a, b) => a - b)
-  const pagesToShow = pagesWithFields.length > 0 ? pagesWithFields : [1]
+  const pagesToShow = review && numPages > 0
+    ? Array.from({ length: numPages }, (_, i) => i + 1)
+    : pagesWithFields.length > 0 ? pagesWithFields : [1]
 
   // Bring the boxes being asked for into view as the signer moves on.
   useEffect(() => {
@@ -86,7 +90,9 @@ export default function DocumentPreview({
                   const value = field.field_id ? values[field.field_id] : undefined
                   const done = !!value
                   const active = !done && activeType === field.field_type
-                  const tone = done
+                  const tone = review
+                    ? 'border-transparent'
+                    : done
                     ? 'border-green-500 bg-green-500/10'
                     : active
                       ? 'border-indigo-600 bg-indigo-500/20 ring-2 ring-indigo-300 animate-pulse'
@@ -108,9 +114,9 @@ export default function DocumentPreview({
                         height: `${field.height * 100}%`,
                       }}
                     >
-                      <span className={`absolute -top-[1px] -left-[1px] text-[10px] font-semibold text-white px-1.5 py-0.5 rounded-br-md whitespace-nowrap ${done ? 'bg-green-600' : 'bg-indigo-500'}`}>
+                      {!review && <span className={`absolute -top-[1px] -left-[1px] text-[10px] font-semibold text-white px-1.5 py-0.5 rounded-br-md whitespace-nowrap ${done ? 'bg-green-600' : 'bg-indigo-500'}`}>
                         {ordered.indexOf(field) + 1}. {FIELD_TYPE_LABELS[field.field_type]}
-                      </span>
+                      </span>}
                       {value?.kind === 'image' && (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={value.value} alt="" className="w-full h-full object-contain" />
