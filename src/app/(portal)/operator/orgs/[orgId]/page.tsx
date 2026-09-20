@@ -121,6 +121,14 @@ export default function ManageOrgPage() {
         <p className="text-[13px] text-gray-400 mt-1 font-mono">{org.orgId}</p>
       </div>
 
+      {selected.includes('sign') && (
+        <Link href={`/operator/orgs/${orgId}/sign-forms`}
+              className="block rounded-xl border border-black/[0.08] px-5 py-4 mb-6 hover:border-black/[0.25] transition-colors">
+          <p className="text-[14px] font-semibold text-black mb-0.5">Sign forms</p>
+          <p className="text-[12px] text-gray-400">Set up where each of this customer's forms is initialled, signed and dated.</p>
+        </Link>
+      )}
+
       {error && (
         <div role="alert" className="mb-5 px-4 py-3 rounded-xl text-red-600 text-[13px] bg-red-50 border border-red-200">
           {error}

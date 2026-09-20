@@ -4,10 +4,12 @@ import { SendMessageCommand } from '@aws-sdk/client-sqs'
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { randomUUID, createHash } from 'crypto'
-import { ddbDocClient, s3Client, sqsClient, TABLE, BUCKET } from '@/lib/aws'
+import { ddbDocClient, s3Client, sqsClient, TABLE, BUCKET, SIGN_BUCKET } from '@/lib/aws'
 import { verifyJwtClaims } from '@/lib/token'
 import { validateEmail } from '@/lib/validators'
 import { generateToken, hashToken, tokenExpiryIso, type SignSession, type Signer } from '@/lib/sign'
+import { hasPdfHeader, lookupOrgName } from '@/lib/sign-server'
+import { isPurged } from '@/lib/sign-purge'
 import { orgLocked } from '@/lib/org-access'
 import { writeAudit } from '@/lib/audit'
 
@@ -25,6 +27,14 @@ interface RequestBody {
   sourceDocument?: { sessionId?: string; s3Key?: string; sha256?: string; filename?: string }
 }
 
+const PAGE_DEFAULT = 20
+const PAGE_MAX = 50
+
+// A page of the org's sessions, newest first. The org's pointer items are tiny
+// and are all listed in one query, so the order is exact; only the sessions on
+// the page asked for are then read in full (one read each, in parallel), not
+// every session the org has ever sent. `cursor` is the last item of the
+// previous page ("createdAt|sessionId"); `nextCursor` is null on the last page.
 export async function GET(req: NextRequest) {
   const token = cookies().get('tf_token')?.value
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -34,17 +44,36 @@ export async function GET(req: NextRequest) {
   const orgId  = claims['custom:org_id']
   if (!orgId) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
+  const params = req.nextUrl?.searchParams
+  const asked = Number.parseInt(params?.get('limit') ?? '', 10)
+  const limit = Number.isInteger(asked) && asked >= 1 ? Math.min(asked, PAGE_MAX) : PAGE_DEFAULT
+  const cursor = params?.get('cursor') || null
+
   const db = ddbDocClient()
 
-  const index = await db.send(new QueryCommand({
-    TableName:                 TABLE,
-    KeyConditionExpression:    'PK = :pk AND begins_with(SK, :prefix)',
-    ExpressionAttributeValues: { ':pk': `ORG#${orgId}`, ':prefix': 'SESSION#' },
-  }))
+  const pointers: { sessionId: string; createdAt: string }[] = []
+  let startKey: Record<string, unknown> | undefined
+  do {
+    const index = await db.send(new QueryCommand({
+      TableName:                 TABLE,
+      KeyConditionExpression:    'PK = :pk AND begins_with(SK, :prefix)',
+      ExpressionAttributeValues: { ':pk': `ORG#${orgId}`, ':prefix': 'SESSION#' },
+      ProjectionExpression:      'sessionId, createdAt',
+      ExclusiveStartKey:         startKey,
+    }))
+    for (const p of index.Items ?? []) pointers.push({ sessionId: p.sessionId as string, createdAt: (p.createdAt as string) ?? '' })
+    startKey = index.LastEvaluatedKey
+  } while (startKey)
 
-  const pointers = index.Items ?? []
+  const stamp = (p: { sessionId: string; createdAt: string }) => `${p.createdAt}|${p.sessionId}`
+  pointers.sort((a, b) => (stamp(a) < stamp(b) ? 1 : stamp(a) > stamp(b) ? -1 : 0))
+
+  const remaining = cursor ? pointers.filter(p => stamp(p) < cursor) : pointers
+  const page = remaining.slice(0, limit)
+  const nextCursor = remaining.length > limit ? stamp(page[page.length - 1]) : null
+
   const sessions = await Promise.all(
-    pointers.map(async (p) => {
+    page.map(async (p) => {
       const result = await db.send(new GetCommand({
         TableName: TABLE,
         Key:       { PK: `SESSION#${p.sessionId}`, SK: 'SESSION' },
@@ -58,14 +87,17 @@ export async function GET(req: NextRequest) {
         updatedAt:     session.updated_at,
         submissionId:  (session.metadata as { submission_id?: string } | null)?.submission_id ?? null,
         completedKey:  session.completed_document?.s3_key ?? null,
+        completedSha256: session.completed_document?.sha256 ?? null,
+        documentsDeleted: isPurged(session),
         signers: session.signers.map(s => ({
           signerId: s.signer_id, name: s.name, email: s.email, status: s.status,
+          declineReason: s.decline_reason ?? null, declinedAt: s.declined_at ?? null,
         })),
       }
     })
   )
 
-  return NextResponse.json({ sessions: sessions.filter(Boolean) })
+  return NextResponse.json({ sessions: sessions.filter(Boolean), nextCursor })
 }
 
 export async function POST(req: NextRequest) {
@@ -115,7 +147,7 @@ export async function POST(req: NextRequest) {
   let sessionId: string
   let sourceKey: string
   let sourceSha256: string
-  let metadata: Record<string, unknown> | null = null
+  let metadata: Record<string, unknown> = { created_by_email: claims.email }
 
   try {
     if (sourceDocument) {
@@ -123,10 +155,16 @@ export async function POST(req: NextRequest) {
       if (!sourceDocument.sessionId || !sourceDocument.s3Key || !sourceDocument.sha256) {
         return NextResponse.json({ error: 'Incomplete sourceDocument' }, { status: 400 })
       }
-      const head = await s3.send(new HeadObjectCommand({ Bucket: BUCKET, Key: sourceDocument.s3Key }))
+      const head = await s3.send(new HeadObjectCommand({ Bucket: SIGN_BUCKET, Key: sourceDocument.s3Key }))
         .catch(() => null)
       if (!head) {
         return NextResponse.json({ error: 'Uploaded document not found — upload may have failed' }, { status: 400 })
+      }
+      const firstBytes = await s3.send(new GetObjectCommand({
+        Bucket: SIGN_BUCKET, Key: sourceDocument.s3Key, Range: 'bytes=0-4',
+      })).then(r => r.Body!.transformToByteArray()).catch(() => null)
+      if (!firstBytes || !hasPdfHeader(firstBytes)) {
+        return NextResponse.json({ error: 'Only PDF documents can be sent for signature' }, { status: 400 })
       }
       sessionId    = sourceDocument.sessionId
       sourceKey    = sourceDocument.s3Key
@@ -147,13 +185,16 @@ export async function POST(req: NextRequest) {
 
       const original = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: doc.Item.s3Key as string }))
       const bytes = await original.Body!.transformToByteArray()
+      if (!hasPdfHeader(bytes)) {
+        return NextResponse.json({ error: 'Only PDF documents can be sent for signature. Upload the original as a PDF first.' }, { status: 400 })
+      }
       sourceSha256 = createHash('sha256').update(bytes).digest('hex')
 
       await s3.send(new PutObjectCommand({
-        Bucket: BUCKET, Key: sourceKey, Body: bytes, ContentType: 'application/pdf',
+        Bucket: SIGN_BUCKET, Key: sourceKey, Body: bytes, ContentType: 'application/pdf',
       }))
 
-      metadata = { submission_id: submissionId }
+      metadata = { ...metadata, submission_id: submissionId }
     }
   } catch (err) {
     console.error('[sign/sessions] Failed to resolve source document', { orgId, submissionId, error: err })
@@ -193,7 +234,7 @@ export async function POST(req: NextRequest) {
     status:           'PENDING',
     created_at:        now,
     updated_at:        now,
-    ...(metadata ? { metadata } : {}),
+    metadata,
   }
 
   try {
@@ -241,7 +282,7 @@ export async function POST(req: NextRequest) {
   let locateQueued = false
   if (SQS_SIGN_URL) {
     try {
-      const requestedBy = await _lookupOrgName(db, orgId)
+      const requestedBy = await lookupOrgName(orgId)
       await sqsClient().send(new SendMessageCommand({
         QueueUrl: SQS_SIGN_URL,
         MessageBody: JSON.stringify({
@@ -266,18 +307,4 @@ export async function POST(req: NextRequest) {
   await writeAudit(orgId, claims, 'sign.session_started', sessionId)
 
   return NextResponse.json({ sessionId, signers: signerLinks, locateQueued }, { status: 201 })
-}
-
-async function _lookupOrgName(db: ReturnType<typeof ddbDocClient>, orgId: string): Promise<string | null> {
-  try {
-    const result = await db.send(new GetCommand({
-      TableName: TABLE,
-      Key: { PK: `ORG#${orgId}`, SK: 'PROFILE' },
-      ProjectionExpression: 'orgName',
-    }))
-    return (result.Item?.orgName as string | undefined) || null
-  } catch (err) {
-    console.error('[sign/sessions] Org name lookup failed', { orgId, error: err })
-    return null
-  }
 }
