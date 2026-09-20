@@ -62,3 +62,11 @@ export function isNavItemActive(item: NavItem, path: string | null): boolean {
   if (item.href === '/dashboard') return path === '/dashboard'
   return [item.href, ...(item.alsoActive ?? [])].some(p => path === p || path.startsWith(`${p}/`))
 }
+
+// Where Back goes when there is no earlier page inside the portal: up to the section the
+// page belongs to (a page under /sign goes to /sign), or Home. Home itself has no Back.
+export function parentPathOf(path: string | null, groups: NavGroup[]): string | null {
+  if (!path || path === '/dashboard') return null
+  const section = groups.flatMap(g => g.items).find(i => i.href !== '/dashboard' && isNavItemActive(i, path))
+  return section && path !== section.href ? section.href : '/dashboard'
+}

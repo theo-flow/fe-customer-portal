@@ -1,13 +1,13 @@
 'use client'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { useEffect, useState } from 'react'
-import { CreditCard, LogOut, Menu, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { ArrowLeft, CreditCard, LogOut, Menu, X } from 'lucide-react'
 import { LogoMark } from '@/components/LogoMark'
 import NotificationBell from '@/components/NotificationBell'
 import { useOrg } from '@/lib/org-context'
 import { signOut } from '@/lib/auth'
-import { isNavItemActive, navGroupsFor } from '@/lib/portal-nav'
+import { isNavItemActive, navGroupsFor, parentPathOf } from '@/lib/portal-nav'
 
 // Left-sidebar portal shell: a fixed 240px column from lg up, an off-canvas drawer
 // below it. Layout pattern borrowed from likum-logistics' PortalShell; kept
@@ -33,6 +33,30 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [drawerOpen])
+
+  // Back: to the page the person clicked from. `depth` is how many pages they have
+  // moved through inside the portal; with none behind them (a reload, a link opened
+  // from an email) Back goes up to the page's section, or Home.
+  const [depth, setDepth] = useState(0)
+  const lastPath = useRef(path)
+  const poppedBack = useRef(false)
+  useEffect(() => {
+    const onPop = () => { poppedBack.current = true }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
+  useEffect(() => {
+    if (lastPath.current === path) return
+    lastPath.current = path
+    setDepth(d => (poppedBack.current ? Math.max(0, d - 1) : d + 1))
+    poppedBack.current = false
+  }, [path])
+  const fallback = parentPathOf(path, groups)
+  const canGoBack = depth > 0 || fallback !== null
+  function goBack() {
+    if (depth > 0) router.back()
+    else if (fallback) router.push(fallback)
+  }
 
   function handleSignOut() {
     signOut()
@@ -130,6 +154,13 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
               className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-100 lg:hidden">
               <Menu className="h-5 w-5"/>
             </button>
+            {canGoBack && (
+              <button type="button" onClick={goBack} aria-label="Go back"
+                className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-[13px] font-medium text-gray-600 hover:bg-gray-100 hover:text-black">
+                <ArrowLeft className="h-4 w-4"/>
+                Back
+              </button>
+            )}
             <Link href="/dashboard" className="flex items-center gap-2 lg:hidden">
               <div className="h-7 w-7"><LogoMark className="text-black"/></div>
             </Link>
