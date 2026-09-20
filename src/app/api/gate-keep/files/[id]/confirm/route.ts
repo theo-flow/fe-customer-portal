@@ -57,6 +57,8 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
     }
 
     const { name } = await confirmFile(db, ws, file, { folderId, versionId: head.VersionId, size, purgeAt })
-    return NextResponse.json({ file: toPublicFile({ ...file, name, folderId, size, status: 'READY' }) })
+    // purgeAt is set explicitly: the pending row still carries its 24-hour abandoned-upload TTL,
+    // which must not be shown as the file's end of life.
+    return NextResponse.json({ file: toPublicFile({ ...file, name, folderId, size, status: 'READY', purgeAt }) })
   })
 }

@@ -526,7 +526,8 @@ describe('POST /files/[id]/retention', () => {
 })
 
 describe('POST /files/[id]/confirm with an agreed end-of-life period', () => {
-  const pending = () => file({ status: 'PENDING', versionId: undefined })
+  // A real pending row carries the 24-hour abandoned-upload TTL.
+  const pending = () => file({ status: 'PENDING', versionId: undefined, purgeAt: Math.floor(Date.now() / 1000) + 86_400 })
   const DAY_S = 86_400
 
   beforeEach(() => {
@@ -555,6 +556,20 @@ describe('POST /files/[id]/confirm with an agreed end-of-life period', () => {
       expect(purgeAt).toBeGreaterThanOrEqual(before + days * DAY_S)
       expect(purgeAt).toBeLessThanOrEqual(before + days * DAY_S + 5)
     })
+
+  it('the response shows the file\'s real end of life, not the pending row\'s 24-hour TTL', async () => {
+    orgYears.mockResolvedValue(5)
+    const body = await (await confirmPOST(req('POST', '/x'), p('f1'))).json()
+    const days = (new Date(body.file.deletesOn).getTime() - Date.now()) / 86_400_000
+    expect(days).toBeGreaterThan(1826)
+    expect(days).toBeLessThan(1828)
+  })
+
+  it('with no agreement the response shows no end of life (never the abandoned-upload TTL)', async () => {
+    orgYears.mockResolvedValue(null)
+    const body = await (await confirmPOST(req('POST', '/x'), p('f1'))).json()
+    expect(body.file.deletesOn).toBeNull()
+  })
 
   it('tags the file BEFORE it is listed, so a failure leaves nothing half done', async () => {
     orgYears.mockResolvedValue(5)
