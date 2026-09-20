@@ -36,3 +36,9 @@ export const TABLE         = process.env.DYNAMODB_TABLE_ORGS    ?? 'daai-insure-
 export const BUCKET        = process.env.S3_INTAKE_BUCKET       ?? 'daai-insure-intake'
 export const OUTPUT_BUCKET = process.env.S3_OUTPUT_BUCKET       ?? 'daai-insure-output'
 export const CONTACT_TABLE = process.env.DYNAMODB_TABLE_CONTACT ?? 'daai-insure-contact-messages'
+
+// Gate-Keep archive: bytes in a dedicated versioned bucket, folders and file
+// metadata in their own catalogue table (infrastructure/terraform/gate-keep).
+// Defaults are the real names, so no Lambda environment change is needed.
+export const GATE_KEEP_BUCKET = process.env.S3_GATE_KEEP_BUCKET     ?? 'theoflow-gate-keep-archive'
+export const GATE_KEEP_TABLE  = process.env.DYNAMODB_TABLE_GATE_KEEP ?? 'daai-insure-gate-keep'
