@@ -79,6 +79,21 @@ describe('SendFormPage', () => {
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('could not be loaded'))
   })
 
+  it('shows the forms set up for the organisation before any document is added', async () => {
+    withForms([aoa])
+    render(<SendFormPage />)
+    await waitFor(() => expect(screen.getByText('Forms set up for you')).toBeInTheDocument())
+    expect(screen.getByText('New AOA')).toBeInTheDocument()
+    expect(screen.getByText(`3 pages ${String.fromCharCode(0xb7)} signed by Customer, Witness 1, Seller`)).toBeInTheDocument()
+  })
+
+  it('has a way back to the signing sessions', async () => {
+    withForms([aoa])
+    render(<SendFormPage />)
+    const back = await screen.findByRole('link', { name: /Back to signing sessions/ })
+    expect(back).toHaveAttribute('href', '/sign')
+  })
+
   it('reads the upload and picks the right one of two same-shaped forms by itself', async () => {
     withForms([consent, aoa])
     vi.mocked(readUploadInfo).mockResolvedValue(aoaUpload)
