@@ -5,13 +5,20 @@ import { useRouter } from 'next/navigation'
 import { useOrg } from '@/lib/org-context'
 import { fmtDate, fmtTime } from '@/lib/format'
 
+interface FormGroup {
+  group:      string
+  groupLabel: string
+  items:      Submission[]
+}
+
 interface Submission {
   submissionId:  string
   group:         string
   groupLabel:    string
   submittedAt:   string
   status:        string
-  recipientName: string | null
+  recipientName:  string | null
+  recipientEmail: string | null
 }
 
 export default function SubmissionsPage() {
@@ -19,6 +26,7 @@ export default function SubmissionsPage() {
   const { orgName, loading: orgLoading } = useOrg()
   const [submissions, setSubmissions]    = useState<Submission[]>([])
   const [loading, setLoading]            = useState(true)
+  const [selected, setSelected]          = useState<string>('all')
 
   useEffect(() => {
     fetch('/api/submissions')
@@ -27,6 +35,16 @@ export default function SubmissionsPage() {
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
+
+  // One entry per form, newest activity first. Submissions arrive newest-first,
+  // so the first one seen for a form is that form's latest.
+  const forms: FormGroup[] = []
+  for (const sub of submissions) {
+    const existing = forms.find(f => f.group === sub.group)
+    if (existing) existing.items.push(sub)
+    else forms.push({ group: sub.group, groupLabel: sub.groupLabel, items: [sub] })
+  }
+  const visible = selected === 'all' ? forms : forms.filter(f => f.group === selected)
 
   if (orgLoading || loading) {
     return (
@@ -48,7 +66,7 @@ export default function SubmissionsPage() {
         </p>
         <h1 className="font-display text-[2.1rem] leading-tight text-black">Submissions</h1>
         <p className="text-[13px] text-gray-400 mt-1">
-          {submissions.length} submission{submissions.length !== 1 ? 's' : ''} received
+          {submissions.length} submission{submissions.length !== 1 ? 's' : ''} across {forms.length} form{forms.length !== 1 ? 's' : ''}
         </p>
       </div>
 
@@ -69,65 +87,106 @@ export default function SubmissionsPage() {
           </p>
         </div>
       ) : (
-        <div className="bg-white rounded-2xl border border-black/[0.08] overflow-hidden">
-          {/* Desktop table */}
-          <table className="hidden sm:table w-full text-sm">
-            <thead>
-              <tr className="border-b border-black/[0.06]"
-                  style={{ background: 'rgba(0,0,0,0.02)' }}>
-                {['Form', 'Recipient', 'Date', 'Time', 'Reference'].map(h => (
-                  <th key={h}
-                      className="text-left px-5 py-3 text-[11px] font-semibold text-gray-400
-                                 uppercase tracking-wide">
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-black/[0.04]">
-              {submissions.map(sub => (
-                <tr key={sub.submissionId}
-                    onClick={() => router.push(`/submissions/${sub.submissionId}`)}
-                    className="hover:bg-gray-50/60 transition-colors cursor-pointer">
-                  <td className="px-5 py-3.5">
-                    <p className="text-[13px] font-medium text-black">{sub.groupLabel}</p>
-                    <p className="text-[11px] text-gray-400 uppercase tracking-wide mt-0.5">
-                      {sub.group}
-                    </p>
-                  </td>
-                  <td className="px-5 py-3.5 text-[13px] text-gray-600">
-                    {sub.recipientName ?? <span className="text-gray-300">Anonymous</span>}
-                  </td>
-                  <td className="px-5 py-3.5 text-[13px] text-gray-600">
-                    {fmtDate(sub.submittedAt)}
-                  </td>
-                  <td className="px-5 py-3.5 text-[13px] text-gray-400">
-                    {fmtTime(sub.submittedAt)}
-                  </td>
-                  <td className="px-5 py-3.5 font-mono text-[11px] text-gray-400">
-                    {sub.submissionId.slice(0, 8)}…
-                  </td>
-                </tr>
+        <div>
+          {/* Form filter */}
+          {forms.length > 1 && (
+            <div className="flex flex-wrap gap-2 mb-6">
+              {[{ group: 'all', groupLabel: 'All forms', count: submissions.length },
+                ...forms.map(f => ({ group: f.group, groupLabel: f.groupLabel, count: f.items.length }))
+              ].map(chip => (
+                <button key={chip.group} onClick={() => setSelected(chip.group)}
+                        className={`text-[12px] font-semibold px-3.5 py-1.5 rounded-full border transition-colors
+                                    ${selected === chip.group
+                                      ? 'bg-black text-white border-black'
+                                      : 'bg-white text-gray-600 border-black/[0.1] hover:bg-gray-50'}`}>
+                  {chip.groupLabel}
+                  <span className={`ml-1.5 ${selected === chip.group ? 'text-white/60' : 'text-gray-400'}`}>
+                    {chip.count}
+                  </span>
+                </button>
               ))}
-            </tbody>
-          </table>
+            </div>
+          )}
 
-          {/* Mobile list */}
-          <div className="sm:hidden divide-y divide-black/[0.04]">
-            {submissions.map(sub => (
-              <Link key={sub.submissionId} href={`/submissions/${sub.submissionId}`}
-                    className="block px-4 py-4 active:bg-gray-50/60 transition-colors">
-                <p className="text-[14px] font-semibold text-black">{sub.groupLabel}</p>
-                <p className="text-[12px] text-gray-500 mt-0.5">
-                  {sub.recipientName ?? 'Anonymous'}
-                </p>
-                <p className="text-[12px] text-gray-400 mt-0.5">
-                  {fmtDate(sub.submittedAt)} at {fmtTime(sub.submittedAt)}
-                </p>
-                <p className="font-mono text-[11px] text-gray-300 mt-1">
-                  {sub.submissionId.slice(0, 8)}…
-                </p>
-              </Link>
+          <div className="space-y-8">
+            {visible.map(form => (
+              <section key={form.group}>
+                <div className="flex items-baseline justify-between mb-3">
+                  <h2 className="text-[15px] font-semibold text-black">
+                    {form.groupLabel}
+                    <span className="ml-2 text-[12px] font-normal text-gray-400">
+                      {form.items.length} submission{form.items.length !== 1 ? 's' : ''}
+                    </span>
+                  </h2>
+                  <p className="text-[12px] text-gray-400">
+                    Latest {fmtDate(form.items[0].submittedAt)}
+                  </p>
+                </div>
+
+                <div className="bg-white rounded-2xl border border-black/[0.08] overflow-hidden">
+                  {/* Desktop table */}
+                  <table className="hidden sm:table w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-black/[0.06]"
+                          style={{ background: 'rgba(0,0,0,0.02)' }}>
+                        {['Recipient', 'Date', 'Time', 'Reference'].map(h => (
+                          <th key={h}
+                              className="text-left px-5 py-3 text-[11px] font-semibold text-gray-400
+                                         uppercase tracking-wide">
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-black/[0.04]">
+                      {form.items.map(sub => (
+                        <tr key={sub.submissionId}
+                            onClick={() => router.push(`/submissions/${sub.submissionId}`)}
+                            className="hover:bg-gray-50/60 transition-colors cursor-pointer">
+                          <td className="px-5 py-3.5">
+                            <p className="text-[13px] text-gray-600">
+                              {sub.recipientName ?? <span className="text-gray-300">Anonymous</span>}
+                            </p>
+                            {sub.recipientEmail && (
+                              <p className="text-[11px] text-gray-400 mt-0.5">{sub.recipientEmail}</p>
+                            )}
+                          </td>
+                          <td className="px-5 py-3.5 text-[13px] text-gray-600">
+                            {fmtDate(sub.submittedAt)}
+                          </td>
+                          <td className="px-5 py-3.5 text-[13px] text-gray-400">
+                            {fmtTime(sub.submittedAt)}
+                          </td>
+                          <td className="px-5 py-3.5 font-mono text-[11px] text-gray-400">
+                            {sub.submissionId.slice(0, 8)}…
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+
+                  {/* Mobile list */}
+                  <div className="sm:hidden divide-y divide-black/[0.04]">
+                    {form.items.map(sub => (
+                      <Link key={sub.submissionId} href={`/submissions/${sub.submissionId}`}
+                            className="block px-4 py-4 active:bg-gray-50/60 transition-colors">
+                        <p className="text-[14px] font-semibold text-black">
+                          {sub.recipientName ?? 'Anonymous'}
+                        </p>
+                        {sub.recipientEmail && (
+                          <p className="text-[12px] text-gray-500 mt-0.5">{sub.recipientEmail}</p>
+                        )}
+                        <p className="text-[12px] text-gray-400 mt-0.5">
+                          {fmtDate(sub.submittedAt)} at {fmtTime(sub.submittedAt)}
+                        </p>
+                        <p className="font-mono text-[11px] text-gray-300 mt-1">
+                          {sub.submissionId.slice(0, 8)}…
+                        </p>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              </section>
             ))}
           </div>
         </div>

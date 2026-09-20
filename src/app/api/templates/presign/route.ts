@@ -5,6 +5,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { ddbDocClient, s3Client, TABLE, BUCKET } from '@/lib/aws'
 import { verifyJwtClaims } from '@/lib/token'
+import { orgLocked } from '@/lib/org-access'
+import { writeAudit } from '@/lib/audit'
 
 const ALLOWED   = ['application/pdf', 'image/jpeg', 'image/png', 'image/tiff']
 const MAX_BYTES = 50 * 1024 * 1024
@@ -19,15 +21,8 @@ export async function POST(req: NextRequest) {
   if (!claims) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const orgId  = claims['custom:org_id'] ?? claims.sub
 
-  const db      = ddbDocClient()
-  const profile = await db.send(new GetCommand({
-    TableName: TABLE,
-    Key: { PK: `ORG#${orgId}`, SK: 'PROFILE' },
-  }))
-  const subscribed: string[] = profile.Item?.subscribed_products ?? []
-  if (!subscribed.includes('forge')) {
-    return NextResponse.json({ error: 'Forge subscription required' }, { status: 403 })
-  }
+  const locked = await orgLocked(orgId)
+  if (locked) return locked
 
   let body: { group?: string; groupLabel?: string; filename?: string; contentType?: string; contentLength?: number }
   try { body = await req.json() } catch {
@@ -60,6 +55,8 @@ export async function POST(req: NextRequest) {
     console.error('[templates/presign] Failed to generate presigned URL', { orgId, key, error: err })
     return NextResponse.json({ error: 'Failed to prepare upload' }, { status: 500 })
   }
+
+  await writeAudit(orgId, claims, 'template.upload', groupLabel)
 
   return NextResponse.json({ uploadUrl, key })
 }

@@ -3,7 +3,7 @@ import { useState, useEffect, Suspense } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { signIn, friendlyError } from '@/lib/auth'
+import { signIn, completeNewPassword, friendlyError } from '@/lib/auth'
 import { LogoMark } from '@/components/LogoMark'
 
 // TEMPORARY — diagnosing a production "session expired immediately after
@@ -76,6 +76,11 @@ function LoginForm() {
   const [password, setPassword] = useState('')
   const [loading, setLoading]   = useState(false)
   const [error, setError]       = useState('')
+  // An invited agent's first sign-in uses a temporary password and must
+  // choose their own before continuing.
+  const [choosingPassword, setChoosingPassword] = useState(false)
+  const [newPassword, setNewPassword]           = useState('')
+  const [confirmPassword, setConfirmPassword]   = useState('')
 
   const verified = searchParams.get('verified') === '1'
   const resetDone = searchParams.get('reset') === '1'
@@ -105,9 +110,20 @@ function LoginForm() {
     setError('')
     if (!email.trim())    { setError('Email address is required.'); return }
     if (!password)        { setError('Password is required.'); return }
+    if (choosingPassword) {
+      if (newPassword !== confirmPassword) { setError('The two passwords do not match.'); return }
+      if (newPassword.length < 12)         { setError('Password must be at least 12 characters and include an uppercase letter, a number, and a symbol.'); return }
+    }
     setLoading(true)
     try {
-      await signIn(email.trim(), password)
+      if (choosingPassword) {
+        await completeNewPassword(email.trim(), password, newPassword)
+        // Best-effort: marks the agent active on their team. A failure here
+        // must not stop them getting in.
+        await fetch('/api/team/activate', { method: 'POST' }).catch(() => {})
+      } else {
+        await signIn(email.trim(), password)
+      }
       if (showDebug) {
         sessionStorage.setItem(DEBUG_PRESEND_KEY, snapshotCookieLines('PRE-SEND — right after signIn(), before navigating'))
       }
@@ -119,7 +135,11 @@ function LoginForm() {
       // straight after a successful sign-in.
       window.location.href = next
     } catch (err: unknown) {
-      setError(friendlyError(err as { code?: string; message?: string }))
+      if ((err as { code?: string })?.code === 'NewPasswordRequired') {
+        setChoosingPassword(true)
+      } else {
+        setError(friendlyError(err as { code?: string; message?: string }))
+      }
     } finally {
       setLoading(false)
     }
@@ -145,9 +165,13 @@ function LoginForm() {
             initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.1 }}>
 
-            <h1 className="font-display text-[2.8rem] leading-tight text-white mb-2">Sign in</h1>
+            <h1 className="font-display text-[2.8rem] leading-tight text-white mb-2">
+              {choosingPassword ? 'Choose your password' : 'Sign in'}
+            </h1>
             <p className="text-[13px] mb-9" style={{ color: 'rgba(255,255,255,0.36)' }}>
-              Welcome back — enter your credentials below.
+              {choosingPassword
+                ? 'Welcome to the team. Pick a password of your own to finish setting up your account.'
+                : 'Welcome back — enter your credentials below.'}
             </p>
 
             {showDebug && <CookieDebugPanel />}
@@ -199,14 +223,44 @@ function LoginForm() {
                   <label htmlFor="password"
                          className="block text-[12px] font-semibold tracking-wide uppercase mb-2"
                          style={{ color: 'rgba(255,255,255,0.45)' }}>
-                    Password
+                    {choosingPassword ? 'Temporary password' : 'Password'}
                   </label>
                   <DarkInput
                     id="password" type="password" autoComplete="current-password" value={password}
                     onChange={e => setPassword(e.target.value)}
-                    placeholder="Enter your password" required
+                    placeholder={choosingPassword ? 'The one from your invite email' : 'Enter your password'} required
+                    readOnly={choosingPassword}
                   />
                 </div>
+
+                {choosingPassword && (
+                  <>
+                    <div>
+                      <label htmlFor="new-password"
+                             className="block text-[12px] font-semibold tracking-wide uppercase mb-2"
+                             style={{ color: 'rgba(255,255,255,0.45)' }}>
+                        New password
+                      </label>
+                      <DarkInput
+                        id="new-password" type="password" autoComplete="new-password" value={newPassword}
+                        onChange={e => setNewPassword(e.target.value)}
+                        placeholder="At least 12 characters" required
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="confirm-password"
+                             className="block text-[12px] font-semibold tracking-wide uppercase mb-2"
+                             style={{ color: 'rgba(255,255,255,0.45)' }}>
+                        Confirm new password
+                      </label>
+                      <DarkInput
+                        id="confirm-password" type="password" autoComplete="new-password" value={confirmPassword}
+                        onChange={e => setConfirmPassword(e.target.value)}
+                        placeholder="Type it again" required
+                      />
+                    </div>
+                  </>
+                )}
               </div>
 
               <div className="mt-7 flex items-center gap-5">
@@ -216,9 +270,9 @@ function LoginForm() {
                                    disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0">
                   {loading
                     ? <span className="flex items-center gap-2">
-                        <Spinner /> Signing in…
+                        <Spinner /> {choosingPassword ? 'Saving…' : 'Signing in…'}
                       </span>
-                    : 'Sign in'}
+                    : choosingPassword ? 'Set password and continue' : 'Sign in'}
                 </button>
                 <Link href="/forgot-password" className="text-[13px]"
                       style={{ color: 'rgba(255,255,255,0.35)' }}>

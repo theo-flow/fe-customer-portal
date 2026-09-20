@@ -33,7 +33,10 @@ export async function POST(
   }))
 
   const item = found.Items?.[0]
-  if (!item) return NextResponse.json({ error: 'Notification not found' }, { status: 404 })
+  // Another agent's notification is "not found" here, same as if it didn't exist.
+  if (!item || (item.target_sub && item.target_sub !== claims.sub)) {
+    return NextResponse.json({ error: 'Notification not found' }, { status: 404 })
+  }
 
   await ddbDocClient().send(new UpdateCommand({
     TableName:                 TABLE,

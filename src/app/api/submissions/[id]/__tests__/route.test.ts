@@ -7,6 +7,9 @@ const { mockCookieGet, mockSend } = vi.hoisted(() => ({
   mockSend:      vi.fn(),
 }))
 
+const { mockAudit } = vi.hoisted(() => ({ mockAudit: vi.fn(async () => {}) }))
+vi.mock('@/lib/audit', () => ({ writeAudit: mockAudit }))
+
 vi.mock('next/headers', () => ({
   cookies: () => ({ get: mockCookieGet }),
 }))
@@ -119,5 +122,17 @@ describe('GET /api/submissions/[id]', () => {
     expect(res.status).toBe(200)
     expect(body.extraction.schemaFields).toEqual([])
     expect(body.extraction.unresolvedFields).toEqual([])
+  })
+
+
+  it('records who opened a submission, but not a lookup that found nothing', async () => {
+    mockSend.mockResolvedValueOnce({ Item: undefined })
+    await GET(makeRequest(), { params: { id: 'missing' } })
+    expect(mockAudit).not.toHaveBeenCalled()
+
+    mockSend.mockResolvedValueOnce({ Item: submissionItem }).mockResolvedValueOnce({ Item: { fields: schemaFields } })
+    await GET(makeRequest(), { params: { id: 'sub-1' } })
+    expect(mockAudit).toHaveBeenCalledTimes(1)
+    expect(mockAudit).toHaveBeenCalledWith(ORG_ID, expect.objectContaining({ sub: 'user-1' }), 'submission.view', 'sub-1')
   })
 })

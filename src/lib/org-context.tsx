@@ -3,12 +3,22 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 
 export interface FormGroup { group: string; groupLabel: string }
 
+export interface OrgAccessInfo {
+  state:       'trial' | 'active' | 'locked'
+  daysLeft:    number | null
+  trialEndsAt: string | null
+}
+
 export interface OrgData {
   name:               string
   email:              string
   orgId:              string
   orgName:            string
   initials:           string
+  // 'agent' until /api/me says otherwise, so admin-only UI never flashes.
+  role:               'admin' | 'agent'
+  // 'active' until /api/me says otherwise, so a slow load never flashes a lock screen.
+  access:             OrgAccessInfo
   subscribedProducts: string[]
   formGroups:         FormGroup[]
   loading:            boolean
@@ -17,14 +27,16 @@ export interface OrgData {
 
 const OrgContext = createContext<OrgData>({
   name: '', email: '', orgId: '', orgName: '',
-  initials: '··', subscribedProducts: [], formGroups: [],
+  initials: '··', role: 'agent', access: { state: 'active', daysLeft: null, trialEndsAt: null },
+  subscribedProducts: [], formGroups: [],
   loading: true, refetch: () => {},
 })
 
 export function OrgProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<Omit<OrgData, 'refetch'>>({
     name: '', email: '', orgId: '', orgName: '',
-    initials: '··', subscribedProducts: [], formGroups: [],
+    initials: '··', role: 'agent', access: { state: 'active', daysLeft: null, trialEndsAt: null },
+    subscribedProducts: [], formGroups: [],
     loading: true,
   })
 

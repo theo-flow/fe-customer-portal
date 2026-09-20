@@ -1,37 +1,54 @@
-import { ListObjectsV2Command } from '@aws-sdk/client-s3'
-import { NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
-import { BUCKET } from '@/lib/aws'
-import { verifyJwtClaims } from '@/lib/token'
-import { getScopedS3Client } from '@/lib/gate-keep-credentials'
+import { randomUUID } from 'crypto'
+import { PutObjectCommand } from '@aws-sdk/client-s3'
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+import { NextRequest, NextResponse } from 'next/server'
+import { GATE_KEEP_BUCKET } from '@/lib/aws'
+import { gateKeep, HttpError, readJson } from '@/lib/gate-keep-route'
+import { createPendingFile, getFolder } from '@/lib/gate-keep-store'
+import {
+  ALLOWED_CONTENT_TYPES, MAX_UPLOAD_BYTES, ROOT_FOLDER_ID, buildPendingFile, s3KeyFor, validateName,
+} from '@/lib/gate-keep-catalog'
 
-export async function GET() {
-  const token = cookies().get('tf_token')?.value
-  if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+// Step 1 of an upload: reserve a catalogue row (not yet visible) and hand back a
+// presigned PUT to {workspace}/{fileId}. The file appears in its folder only
+// after step 2 (.../confirm) has checked that the bytes really arrived.
+export async function POST(req: NextRequest) {
+  return gateKeep('files/create', async ({ ws, userId, s3, db }) => {
+    const body = await readJson<{ folderId: string; filename: string; contentType: string; contentLength: number }>(req)
 
-  const claims = await verifyJwtClaims(token)
-  if (!claims) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const orgId  = claims['custom:org_id'] ?? claims.sub
-  const userId = claims.sub
+    // Keep only the file's own name, whatever path the browser reported.
+    const base    = typeof body.filename === 'string' ? body.filename.split(/[\\/]/).pop() ?? '' : ''
+    const checked = validateName(base)
+    if (!checked.ok) throw new HttpError(400, 'invalid_name', checked.error)
 
-  const prefix = `gate-keep/${orgId}/${userId}/`
+    const contentType = body.contentType
+    if (!contentType || !ALLOWED_CONTENT_TYPES.includes(contentType)) {
+      throw new HttpError(415, 'unsupported_type', 'Unsupported file type.')
+    }
 
-  try {
-    const scopedS3 = await getScopedS3Client(token)
-    const result = await scopedS3.send(new ListObjectsV2Command({ Bucket: BUCKET, Prefix: prefix }))
+    const size = body.contentLength
+    if (typeof size !== 'number' || !Number.isFinite(size) || size <= 0) {
+      throw new HttpError(400, 'invalid_size', 'The file appears to be empty.')
+    }
+    if (size > MAX_UPLOAD_BYTES) {
+      throw new HttpError(413, 'too_large', `File too large. Max ${MAX_UPLOAD_BYTES / 1024 / 1024} MB.`)
+    }
 
-    const files = (result.Contents ?? [])
-      .filter(obj => obj.Key && obj.Key !== prefix)
-      .map(obj => ({
-        key:          obj.Key!,
-        filename:     obj.Key!.slice(prefix.length).replace(/^[0-9a-f-]{36}-/, ''),
-        size:         obj.Size ?? 0,
-        lastModified: obj.LastModified?.toISOString() ?? null,
-      }))
+    const folderId = body.folderId || ROOT_FOLDER_ID
+    if (folderId !== ROOT_FOLDER_ID && !(await getFolder(db, ws, folderId))) {
+      throw new HttpError(404, 'not_found', 'That folder no longer exists.')
+    }
 
-    return NextResponse.json({ files })
-  } catch (err) {
-    console.error('[gate-keep/files] Failed to list files', { orgId, userId, error: err })
-    return NextResponse.json({ error: 'Failed to list files' }, { status: 500 })
-  }
+    const fileId = randomUUID()
+    await createPendingFile(db, ws, buildPendingFile(ws, {
+      id: fileId, folderId, name: checked.name, contentType, size, by: userId, now: Date.now(),
+    }))
+
+    const uploadUrl = await getSignedUrl(
+      s3,
+      new PutObjectCommand({ Bucket: GATE_KEEP_BUCKET, Key: s3KeyFor(ws, fileId), ContentType: contentType }),
+      { expiresIn: 600 },
+    )
+    return NextResponse.json({ fileId, uploadUrl }, { status: 201 })
+  })
 }

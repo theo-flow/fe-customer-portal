@@ -14,15 +14,19 @@ export async function GET() {
   const orgId  = claims['custom:org_id']
   if (!orgId) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
+  // Notifications addressed to a specific agent (target_sub) are only visible
+  // to that agent; everything else is org-wide. No Query Limit: it caps items
+  // examined before the filter runs, so it would hide this agent's items
+  // behind other agents' notifications. The 20-item cap is applied after.
   const result = await ddbDocClient().send(new QueryCommand({
     TableName:                 TABLE,
     KeyConditionExpression:    'PK = :pk AND begins_with(SK, :prefix)',
-    ExpressionAttributeValues: { ':pk': `ORG#${orgId}`, ':prefix': 'NOTIFICATION#' },
+    FilterExpression:          'attribute_not_exists(target_sub) OR target_sub = :sub',
+    ExpressionAttributeValues: { ':pk': `ORG#${orgId}`, ':prefix': 'NOTIFICATION#', ':sub': claims.sub },
     ScanIndexForward:          false,
-    Limit:                     20,
   }))
 
-  const notifications = (result.Items ?? []).map(item => ({
+  const notifications = (result.Items ?? []).slice(0, 20).map(item => ({
     notificationId: item.notificationId as string,
     submissionId:   item.submissionId   as string,
     group:          item.group          as string,

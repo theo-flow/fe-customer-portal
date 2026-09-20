@@ -2,7 +2,7 @@ import { GetCommand } from '@aws-sdk/lib-dynamodb'
 import { GetObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { NextRequest, NextResponse } from 'next/server'
-import { ddbDocClient, s3Client, TABLE, BUCKET } from '@/lib/aws'
+import { ddbDocClient, s3Client, TABLE, SIGN_BUCKET } from '@/lib/aws'
 import { hashToken, type SignSession } from '@/lib/sign'
 
 // Short-lived, matching the other presign routes' convention -- long enough
@@ -44,11 +44,16 @@ export async function GET(
   try {
     const url = await getSignedUrl(
       s3Client(),
-      new GetObjectCommand({ Bucket: BUCKET, Key: session.source_document.s3_key }),
+      new GetObjectCommand({ Bucket: SIGN_BUCKET, Key: session.source_document.s3_key }),
       { expiresIn: URL_EXPIRY_SECONDS },
     )
     return NextResponse.json({
       url,
+      // The signer's own name and role, so the page can pre-fill their
+      // initials and say who they are signing as. Only THEIR boxes are sent.
+      signerName: signer.name,
+      signerRole: signer.role,
+      formName:   session.working_document?.form?.name ?? null,
       detectedFields: (session.working_document?.detected_fields ?? [])
         .filter(f => f.signer_order === signer.order),
     })
