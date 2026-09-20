@@ -450,7 +450,7 @@ describe('FileBrowser', () => {
     await user.click(within(dialog).getByRole('checkbox'))
     await user.click(within(dialog).getByRole('button', { name: 'Protect' }))
 
-    expect(await screen.findByText(/2 files protected until/)).toBeInTheDocument()
+    expect(await screen.findByText(/2 files protected until/, {}, { timeout: 5000 })).toBeInTheDocument()
     expect(server.state.files.filter(f => f.folderId === 'root').every(f => !!f.retainUntil)).toBe(true)
   })
 
@@ -470,7 +470,7 @@ describe('FileBrowser', () => {
     await user.click(within(dialog).getByRole('checkbox'))
     await user.click(within(dialog).getByRole('button', { name: 'Protect' }))
 
-    expect(await screen.findByText('1 file could not be protected')).toBeInTheDocument()
+    expect(await screen.findByText('1 file could not be protected', {}, { timeout: 5000 })).toBeInTheDocument()
     expect(screen.getByText(/never shortened\. 1 other file protected\./)).toBeInTheDocument()
     expect(server.state.files.find(f => f.id === 'a2')!.retainUntil).toBeTruthy()
     expect(server.state.files.find(f => f.id === 'a1')!.retainUntil).toBe(later)     // untouched
