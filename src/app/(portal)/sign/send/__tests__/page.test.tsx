@@ -48,6 +48,11 @@ const everyone = {
   Seller: { name: 'Anele Bank', email: 'anele@bank.example' },
 }
 
+// The form is clicked first; only then can the document be added.
+async function clickForm(name = 'New AOA') {
+  fireEvent.click(await screen.findByRole('radio', { name: new RegExp(name) }))
+  await screen.findByLabelText('Choose the PDF')
+}
 const sendBtn = () => screen.getByRole('button', { name: /Send for signature|Sending/ })
 
 describe('SendFormPage', () => {
@@ -79,11 +84,11 @@ describe('SendFormPage', () => {
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('could not be loaded'))
   })
 
-  it('shows the forms set up for the organisation before any document is added', async () => {
+  it('shows the forms to click before any document is added', async () => {
     withForms([aoa])
     render(<SendFormPage />)
-    await waitFor(() => expect(screen.getByText('Forms set up for you')).toBeInTheDocument())
-    expect(screen.getByText('New AOA')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText('1. Click the form you are sending')).toBeInTheDocument())
+    expect(screen.getByRole('radio', { name: /New AOA/ })).toBeInTheDocument()
     expect(screen.getByText(`3 pages ${String.fromCharCode(0xb7)} signed by Customer, Witness 1, Seller`)).toBeInTheDocument()
   })
 
@@ -94,58 +99,27 @@ describe('SendFormPage', () => {
     expect(back).toHaveAttribute('href', '/sign')
   })
 
-  it('reads the upload and picks the right one of two same-shaped forms by itself', async () => {
-    withForms([consent, aoa])
-    vi.mocked(readUploadInfo).mockResolvedValue(aoaUpload)
+  it('the document can only be added after the form is clicked, and nothing is chosen for you', async () => {
+    withForms([aoa])
     render(<SendFormPage />)
-    await waitFor(() => expect(screen.getByLabelText('Choose the PDF')).toBeInTheDocument())
-    await chooseFile(pdfFile())
-
-    await waitFor(() => expect(screen.getByText('This looks like New AOA.')).toBeInTheDocument())
-    expect((screen.getByLabelText('Which form is this?') as HTMLSelectElement).value).toBe('aoa')
-    expect(screen.getByText('This document matches New AOA.')).toBeInTheDocument()
-    // one row per role appears
-    for (const role of ['Customer', 'Witness 1', 'Seller']) expect(screen.getByLabelText(`Name for ${role}`)).toBeInTheDocument()
+    await screen.findByRole('radio', { name: /New AOA/ })
+    expect((screen.getByRole('radio', { name: /New AOA/ }) as HTMLInputElement).checked).toBe(false)
+    expect(screen.queryByLabelText('Choose the PDF')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('radio', { name: /New AOA/ }))
+    expect(await screen.findByLabelText('Choose the PDF')).toBeInTheDocument()
   })
 
-  it('labels every form with how well the document fits it', async () => {
+  it('does not analyse or judge the document: no match check, no warnings, and it can be sent', async () => {
     withForms([consent, aoa])
-    vi.mocked(readUploadInfo).mockResolvedValue(aoaUpload)
+    // a document that shares nothing with the form: different page count, different wording
+    vi.mocked(readUploadInfo).mockResolvedValue({ ...aoaUpload, pageCount: 5, pageTexts: ['a', 'b', 'c', 'd', 'e'] })
     render(<SendFormPage />)
-    await waitFor(() => screen.getByLabelText('Choose the PDF'))
+    await clickForm('New AOA')
     await chooseFile(pdfFile())
-    await waitFor(() => expect(screen.getByRole('option', { name: 'New AOA (looks right)' })).toBeInTheDocument())
-    expect(screen.getByRole('option', { name: 'Consent (does not fit this document)' })).toBeInTheDocument()
-  })
-
-  it('does not choose for the person when nothing matches, and blocks sending a form that cannot fit', async () => {
-    withForms([consent, aoa])
-    vi.mocked(readUploadInfo).mockResolvedValue({ ...aoaUpload, pageCount: 4, pageTexts: ['a', 'b', 'c', 'd'] })
-    render(<SendFormPage />)
-    await waitFor(() => screen.getByLabelText('Choose the PDF'))
-    await chooseFile(pdfFile())
-    await waitFor(() => screen.getByLabelText('Which form is this?'))
-    expect((screen.getByLabelText('Which form is this?') as HTMLSelectElement).value).toBe('')
-
-    fireEvent.change(screen.getByLabelText('Which form is this?'), { target: { value: 'aoa' } })
-    expect(screen.getByRole('alert')).toHaveTextContent('does not fit New AOA')
-    expect(screen.getByText('This document has 4 pages, but New AOA has 3.')).toBeInTheDocument()
+    await waitFor(() => screen.getByLabelText('Name for Customer'))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.queryByText(/does not fit|matches|looks like|could not be sure|checked that this is the right form/i)).not.toBeInTheDocument()
     fillPeople(everyone)
-    expect(sendBtn()).toBeDisabled()
-  })
-
-  it('needs the person to confirm when it cannot be sure, then allows sending', async () => {
-    // two of the form's three phrases are found: close enough to suggest, not enough to be sure
-    withForms([{ ...aoa, anchors: [...aoa.anchors, { page: 3, text: 'Witness for consumer' }] }])
-    vi.mocked(readUploadInfo).mockResolvedValue({ ...aoaUpload, pageTexts: ['AMENDMENT OF AGREEMENT', 'In presence of the undersigned witnesses', 'a different last page'] })
-    render(<SendFormPage />)
-    await waitFor(() => screen.getByLabelText('Choose the PDF'))
-    await chooseFile(pdfFile())
-    await waitFor(() => screen.getByText(/We could not be sure this is New AOA/))   // lone form is pre-selected, check still shown
-
-    fillPeople(everyone)
-    expect(sendBtn()).toBeDisabled()
-    fireEvent.click(screen.getByLabelText('I have checked that this is the right form'))
     expect(sendBtn()).toBeEnabled()
   })
 
@@ -153,7 +127,7 @@ describe('SendFormPage', () => {
     withForms([aoa])
     vi.mocked(readUploadInfo).mockResolvedValue(aoaUpload)
     render(<SendFormPage />)
-    await waitFor(() => screen.getByLabelText('Choose the PDF'))
+    await clickForm()
     await chooseFile(pdfFile())
     await waitFor(() => screen.getByLabelText('Name for Customer'))
 
@@ -180,7 +154,7 @@ describe('SendFormPage', () => {
     })
     vi.mocked(readUploadInfo).mockResolvedValue(aoaUpload)
     render(<SendFormPage />)
-    await waitFor(() => screen.getByLabelText('Choose the PDF'))
+    await clickForm()
     await chooseFile(pdfFile())
     await waitFor(() => screen.getByLabelText('Name for Customer'))
     fillPeople(everyone)
@@ -216,7 +190,7 @@ describe('SendFormPage', () => {
     })
     vi.mocked(readUploadInfo).mockResolvedValue({ ...aoaUpload, pageTexts: ['CONSENT TO CREDIT CHECK', 'b', 'c'] })
     render(<SendFormPage />)
-    await waitFor(() => screen.getByLabelText('Choose the PDF'))
+    await clickForm('Consent')
     await chooseFile(pdfFile('consent.pdf'))
     await waitFor(() => screen.getByLabelText('Name for Customer'))
     fillPeople({ Customer: { name: 'Thandi', email: 't@example.com' } })
@@ -233,7 +207,7 @@ describe('SendFormPage', () => {
     })
     vi.mocked(readUploadInfo).mockResolvedValue({ ...aoaUpload, pageTexts: ['CONSENT TO CREDIT CHECK', 'b', 'c'] })
     render(<SendFormPage />)
-    await waitFor(() => screen.getByLabelText('Choose the PDF'))
+    await clickForm('Consent')
     await chooseFile(pdfFile('consent.pdf'))
     await waitFor(() => screen.getByLabelText('Name for Customer'))
     fillPeople({ Customer: { name: 'Thandi', email: 't@example.com' } })
@@ -252,7 +226,7 @@ describe('SendFormPage', () => {
     })
     vi.mocked(readUploadInfo).mockResolvedValue({ ...aoaUpload, pageTexts: ['CONSENT TO CREDIT CHECK', 'b', 'c'] })
     render(<SendFormPage />)
-    await waitFor(() => screen.getByLabelText('Choose the PDF'))
+    await clickForm('Consent')
     await chooseFile(pdfFile('consent.pdf'))
     await waitFor(() => screen.getByLabelText('Name for Customer'))
     fillPeople({ Customer: { name: 'Thandi', email: 't@example.com' } })
@@ -264,7 +238,7 @@ describe('SendFormPage', () => {
   it('rejects a file that is not a PDF and one that cannot be read', async () => {
     withForms([aoa])
     render(<SendFormPage />)
-    await waitFor(() => screen.getByLabelText('Choose the PDF'))
+    await clickForm()
 
     fireEvent.change(screen.getByLabelText('Choose the PDF'), { target: { files: [new File(['x'], 'photo.png', { type: 'image/png' })] } })
     expect(await screen.findByRole('alert')).toHaveTextContent('Only PDF documents')
@@ -284,14 +258,18 @@ describe('SendFormPage', () => {
     })
     vi.mocked(readUploadInfo).mockResolvedValue({ ...aoaUpload, pageTexts: ['CONSENT TO CREDIT CHECK', 'b', 'c'] })
     render(<SendFormPage />)
-    await waitFor(() => screen.getByLabelText('Choose the PDF'))
+    await clickForm('Consent')
     await chooseFile(pdfFile('consent.pdf'))
     await waitFor(() => screen.getByLabelText('Name for Customer'))
     fillPeople({ Customer: { name: 'Thandi', email: 't@example.com' } })
     fireEvent.click(sendBtn())
     await waitFor(() => screen.getByText('Form sent'))
     fireEvent.click(screen.getByRole('button', { name: 'Send another form' }))
-    expect(screen.getByLabelText('Choose the PDF')).toBeInTheDocument()
+    // back to the start: nothing is chosen, so the form must be clicked again before a document can be added
+    expect((screen.getByRole('radio', { name: /Consent/ }) as HTMLInputElement).checked).toBe(false)
+    expect(screen.queryByLabelText('Choose the PDF')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('radio', { name: /Consent/ }))
+    expect(await screen.findByLabelText('Choose the PDF')).toBeInTheDocument()
     expect(screen.queryByLabelText('Name for Customer')).not.toBeInTheDocument()
   })
 
@@ -317,7 +295,7 @@ describe('SendFormPage', () => {
       withForms([form])
       vi.mocked(readUploadInfo).mockResolvedValue(info)
       render(<SendFormPage />)
-      await waitFor(() => screen.getByLabelText('Choose the PDF'))
+      await clickForm()
       await chooseFile(pdfFile())
       await waitFor(() => screen.getByLabelText('Name for Customer'))
     }
@@ -377,12 +355,12 @@ describe('SendFormPage', () => {
       withForms([readingForm, { ...consent, roles: ['Customer'], reads: [], roleDefaults: [] }])
       vi.mocked(readUploadInfo).mockResolvedValue(upload())
       render(<SendFormPage />)
-      await waitFor(() => screen.getByLabelText('Choose the PDF'))
+      await clickForm('New AOA')
       await chooseFile(pdfFile())
       await waitFor(() => screen.getByLabelText('Name for Customer'))
       fireEvent.change(screen.getByLabelText('Email for Customer'), { target: { value: 'thandi@example.com' } })
 
-      fireEvent.change(screen.getByLabelText('Which form is this?'), { target: { value: 'consent' } })
+      fireEvent.click(screen.getByRole('radio', { name: /Consent/ }))
       expect((screen.getByLabelText('Email for Customer') as HTMLInputElement).value).toBe('thandi@example.com')
       expect((screen.getByLabelText('Name for Customer') as HTMLInputElement).value).toBe('Thandi Nkosi')
     })
@@ -402,7 +380,7 @@ describe('SendFormPage', () => {
       })
       vi.mocked(readUploadInfo).mockResolvedValue(upload())
       render(<SendFormPage />)
-      await waitFor(() => screen.getByLabelText('Choose the PDF'))
+      await clickForm()
       await chooseFile(pdfFile())
       await waitFor(() => screen.getByLabelText('Name for Customer'))
       fireEvent.change(screen.getByLabelText('Email for Customer'), { target: { value: 'thandi@example.com' } })
