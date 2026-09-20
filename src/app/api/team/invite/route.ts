@@ -1,5 +1,5 @@
 import { AdminCreateUserCommand, AdminDeleteUserCommand } from '@aws-sdk/client-cognito-identity-provider'
-import { PutCommand } from '@aws-sdk/lib-dynamodb'
+import { DeleteCommand, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb'
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { cognitoClient, ddbDocClient, TABLE, USER_POOL_ID } from '@/lib/aws'
@@ -8,6 +8,9 @@ import { forbiddenUnlessAdmin } from '@/lib/roles'
 import { validateEmail } from '@/lib/validators'
 import { loadTeam, memberKey, membershipKey, seatAllowance, seatsUsed } from '@/lib/team'
 import { writeAudit } from '@/lib/audit'
+import { enqueueTeamInviteEmail } from '@/lib/notify-queue'
+import { generateTempPassword, TEMP_PASSWORD_VALID_DAYS } from '@/lib/temp-password'
+import { DEFAULT_APP_URL } from '@/lib/email-templates'
 
 export async function POST(req: NextRequest) {
   const token = cookies().get('tf_token')?.value
@@ -53,14 +56,16 @@ export async function POST(req: NextRequest) {
   }
 
   const cognito = cognitoClient()
+  const temporaryPassword = generateTempPassword()
   let sub: string | undefined
   try {
-    // Cognito emails the invite with a temporary password through
-    // fn-15-cognito-custom-message's CustomMessage_AdminCreateUser template.
+    // Cognito's own email is suppressed: the invite is rendered from the portal's
+    // template (src/lib/email-templates.ts) and sent through the notify queue.
     const created = await cognito.send(new AdminCreateUserCommand({
-      UserPoolId:             USER_POOL_ID,
-      Username:               email,
-      DesiredDeliveryMediums: ['EMAIL'],
+      UserPoolId:        USER_POOL_ID,
+      Username:          email,
+      MessageAction:     'SUPPRESS',
+      TemporaryPassword: temporaryPassword,
       UserAttributes: [
         { Name: 'email',          Value: email },
         { Name: 'email_verified', Value: 'true' },
@@ -99,9 +104,31 @@ export async function POST(req: NextRequest) {
     // A Cognito user with no membership record gets no org, so an orphan is
     // harmless, but remove it so the same email can be invited again.
     console.error('[team/invite] Membership write failed, removing Cognito user', { orgId, error: err })
-    await cognito.send(new AdminDeleteUserCommand({ UserPoolId: USER_POOL_ID, Username: email }))
-      .catch(e => console.error('[team/invite] Cleanup AdminDeleteUser failed', { orgId, error: e }))
+    await removeInvitee(cognito, email)
     return NextResponse.json({ error: 'Could not send the invite. Please try again.' }, { status: 500 })
+  }
+
+  // Nobody can sign in without this email, so a failed send undoes the invite
+  // rather than leaving a seat held by someone who was never told.
+  const sent = await enqueueTeamInviteEmail({
+    correlationId:     `team-invite-${orgId}-${sub}`,
+    toEmail:           email,
+    inviteeName:       name,
+    orgName:           await lookupOrgName(orgId),
+    invitedBy:         claims.name?.trim() || claims.email,
+    temporaryPassword,
+    signInUrl:         `${process.env.NEXT_PUBLIC_APP_URL || DEFAULT_APP_URL}/login`,
+    validDays:         TEMP_PASSWORD_VALID_DAYS,
+  })
+  if (!sent) {
+    console.error('[team/invite] Invite email not queued, undoing invite', { orgId })
+    const db = ddbDocClient()
+    await Promise.all([
+      db.send(new DeleteCommand({ TableName: TABLE, Key: membershipKey(sub) })),
+      db.send(new DeleteCommand({ TableName: TABLE, Key: memberKey(orgId, sub) })),
+    ]).catch(e => console.error('[team/invite] Cleanup of membership records failed', { orgId, error: e }))
+    await removeInvitee(cognito, email)
+    return NextResponse.json({ error: 'Could not send the invite email. Please try again.' }, { status: 502 })
   }
 
   await writeAudit(orgId, claims, 'team.invite', email)
@@ -110,4 +137,25 @@ export async function POST(req: NextRequest) {
     { member: { sub, email, name, role: 'agent', status: 'invited', invitedBy: claims.sub, createdAt: now } },
     { status: 201 },
   )
+}
+
+type Cognito = ReturnType<typeof cognitoClient>
+
+async function removeInvitee(cognito: Cognito, email: string): Promise<void> {
+  await cognito.send(new AdminDeleteUserCommand({ UserPoolId: USER_POOL_ID, Username: email }))
+    .catch(e => console.error('[team/invite] Cleanup AdminDeleteUser failed', { error: e }))
+}
+
+async function lookupOrgName(orgId: string): Promise<string> {
+  try {
+    const r = await ddbDocClient().send(new GetCommand({
+      TableName: TABLE,
+      Key: { PK: `ORG#${orgId}`, SK: 'PROFILE' },
+      ProjectionExpression: 'orgName',
+    }))
+    return (r.Item?.orgName as string | undefined) || 'your organisation'
+  } catch (err) {
+    console.error('[team/invite] Org name lookup failed', { orgId, error: err })
+    return 'your organisation'
+  }
 }
