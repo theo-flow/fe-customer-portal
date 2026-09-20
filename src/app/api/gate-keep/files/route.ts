@@ -4,7 +4,8 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { NextRequest, NextResponse } from 'next/server'
 import { GATE_KEEP_BUCKET } from '@/lib/aws'
 import { gateKeep, HttpError, readJson } from '@/lib/gate-keep-route'
-import { createPendingFile, getFolder } from '@/lib/gate-keep-store'
+import { createPendingFile, listFolders } from '@/lib/gate-keep-store'
+import { canAddFilesTo } from '@/lib/gate-keep-access'
 import {
   ALLOWED_CONTENT_TYPES, MAX_UPLOAD_BYTES, ROOT_FOLDER_ID, buildPendingFile, s3KeyFor, validateName,
 } from '@/lib/gate-keep-catalog'
@@ -13,7 +14,7 @@ import {
 // presigned PUT to {workspace}/{fileId}. The file appears in its folder only
 // after step 2 (.../confirm) has checked that the bytes really arrived.
 export async function POST(req: NextRequest) {
-  return gateKeep('files/create', async ({ ws, userId, s3, db }) => {
+  return gateKeep('files/create', async ({ ws, userId, viewer, s3, db }) => {
     const body = await readJson<{ folderId: string; filename: string; contentType: string; contentLength: number }>(req)
 
     // Keep only the file's own name, whatever path the browser reported.
@@ -35,7 +36,9 @@ export async function POST(req: NextRequest) {
     }
 
     const folderId = body.folderId || ROOT_FOLDER_ID
-    if (folderId !== ROOT_FOLDER_ID && !(await getFolder(db, ws, folderId))) {
+    // Somewhere you cannot see does not exist as far as you know. Files added to the
+    // organisation's shared space belong to the organisation (only an admin can delete them).
+    if (!canAddFilesTo(viewer, folderId, await listFolders(db, ws))) {
       throw new HttpError(404, 'not_found', 'That folder no longer exists.')
     }
 

@@ -50,10 +50,12 @@ async function transact(db: Db, ops: Op[]): Promise<void> {
   }
 }
 
-const lockPut = (ws: string, parentId: string, name: string, targetId: string): Op => ({
+// purgeAt (epoch seconds, a DynamoDB TTL) is set only for a file with an agreed end of life, on the
+// file row AND its name lock, so both disappear together with the file.
+const lockPut = (ws: string, parentId: string, name: string, targetId: string, purgeAt?: number): Op => ({
   Put: {
     TableName: T,
-    Item: { PK: wsPk(ws), SK: nameLockSk(parentId, name), type: 'NAME', targetId },
+    Item: { PK: wsPk(ws), SK: nameLockSk(parentId, name), type: 'NAME', targetId, ...(purgeAt ? { purgeAt } : {}) },
     ConditionExpression: 'attribute_not_exists(PK)',
   },
 })
@@ -130,7 +132,7 @@ export async function createFolder(db: Db, ws: string, folder: FolderItem): Prom
 // Rename and/or move. The unique-name lock moves with the folder; a case-only
 // rename keeps the same lock (one transaction cannot touch one item twice).
 export async function updateFolder(
-  db: Db, ws: string, folder: FolderItem, to: { name: string; parentId: string },
+  db: Db, ws: string, folder: FolderItem, to: { name: string; parentId: string; ownerId?: string | null },
 ): Promise<void> {
   const oldLock = nameLockSk(folder.parentId, folder.name)
   const newLock = nameLockSk(to.parentId, to.name)
@@ -144,10 +146,16 @@ export async function updateFolder(
     Update: {
       TableName: T,
       Key: { PK: wsPk(ws), SK: folderSk(folder.folderId) },
-      UpdateExpression: 'SET #n = :name, parentId = :pid, GSI1PK = :g1p, GSI1SK = :g1s',
+      // ownerId: a string sets it, null clears it, undefined leaves it alone.
+      UpdateExpression: 'SET #n = :name, parentId = :pid, GSI1PK = :g1p, GSI1SK = :g1s'
+        + (typeof to.ownerId === 'string' ? ', ownerId = :own' : '')
+        + (to.ownerId === null ? ' REMOVE ownerId' : ''),
       ConditionExpression: 'attribute_exists(PK)',
       ExpressionAttributeNames: { '#n': 'name' },
-      ExpressionAttributeValues: { ':name': to.name, ':pid': to.parentId, ':g1p': keys.GSI1PK, ':g1s': keys.GSI1SK },
+      ExpressionAttributeValues: {
+        ':name': to.name, ':pid': to.parentId, ':g1p': keys.GSI1PK, ':g1s': keys.GSI1SK,
+        ...(typeof to.ownerId === 'string' ? { ':own': to.ownerId } : {}),
+      },
     },
   })
   await transact(db, ops)
@@ -178,7 +186,7 @@ export async function createPendingFile(db: Db, _ws: string, file: FileItem): Pr
 // Makes an uploaded file visible: lists it in its folder and claims its name,
 // in one transaction. If the name is taken, the next free "name (n)" is used.
 export async function confirmFile(
-  db: Db, ws: string, file: FileItem, a: { folderId: string; versionId: string; size: number },
+  db: Db, ws: string, file: FileItem, a: { folderId: string; versionId: string; size: number; purgeAt?: number },
 ): Promise<{ name: string }> {
   return tryNames(withSuffixes([file.name], file.name), async name => {
     const keys = folderIndexKeys(ws, a.folderId, name, 'file', file.fileId)
@@ -188,16 +196,19 @@ export async function confirmFile(
           TableName: T,
           Key: { PK: wsPk(ws), SK: fileSk(file.fileId) },
           UpdateExpression:
-            'SET #st = :ready, versionId = :v, #sz = :sz, #n = :name, folderId = :fid, GSI1PK = :g1p, GSI1SK = :g1s REMOVE purgeAt',
+            'SET #st = :ready, versionId = :v, #sz = :sz, #n = :name, folderId = :fid, GSI1PK = :g1p, GSI1SK = :g1s'
+            // An abandoned-upload TTL goes; a file with an agreed end of life gets that TTL instead.
+            + (a.purgeAt ? ', purgeAt = :eol' : ' REMOVE purgeAt'),
           ConditionExpression: '#st = :pending',
           ExpressionAttributeNames: { '#st': 'status', '#sz': 'size', '#n': 'name' },
           ExpressionAttributeValues: {
             ':ready': 'READY', ':pending': 'PENDING', ':v': a.versionId, ':sz': a.size,
             ':name': name, ':fid': a.folderId, ':g1p': keys.GSI1PK, ':g1s': keys.GSI1SK,
+            ...(a.purgeAt ? { ':eol': a.purgeAt } : {}),
           },
         },
       },
-      lockPut(ws, a.folderId, name, file.fileId),
+      lockPut(ws, a.folderId, name, file.fileId, a.purgeAt),
     ])
     return { name }
   })
@@ -214,7 +225,7 @@ export async function updateFile(
 
   const ops: Op[] = []
   if (oldLock !== newLock) {
-    ops.push(lockDelete(ws, file.folderId, file.name), lockPut(ws, to.folderId, to.name, file.fileId))
+    ops.push(lockDelete(ws, file.folderId, file.name), lockPut(ws, to.folderId, to.name, file.fileId, file.purgeAt))
   }
   ops.push({
     Update: {

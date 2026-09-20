@@ -3,8 +3,9 @@ import { NextRequest } from 'next/server'
 import fs from 'node:fs'
 import path from 'node:path'
 
-const { mockCtx, s3Send, presign, store, audit } = vi.hoisted(() => ({
+const { mockCtx, s3Send, presign, store, audit, orgYears } = vi.hoisted(() => ({
   mockCtx: vi.fn(),
+  orgYears: vi.fn(),
   audit:   vi.fn(),
   s3Send:  vi.fn(),
   presign: vi.fn(),
@@ -18,6 +19,7 @@ const { mockCtx, s3Send, presign, store, audit } = vi.hoisted(() => ({
 
 vi.mock('@/lib/gate-keep-context',     () => ({ getGateKeepContext: mockCtx }))
 vi.mock('@/lib/audit', () => ({ writeAudit: audit }))
+vi.mock('@/lib/org-retention', () => ({ getOrgRetentionYears: orgYears }))
 vi.mock('@/lib/gate-keep-credentials', () => ({ getScopedClients: async () => ({ s3: { send: s3Send }, db: { tag: 'db' } }) }))
 vi.mock('@/lib/aws', () => ({ GATE_KEEP_BUCKET: 'bkt', GATE_KEEP_TABLE: 'tbl' }))
 vi.mock('@aws-sdk/s3-request-presigner', () => ({ getSignedUrl: presign }))
@@ -25,6 +27,7 @@ vi.mock('@aws-sdk/client-s3', () => ({
   HeadObjectCommand:   vi.fn(function (this: unknown, input: unknown) { return { __type: 'Head',   input } }),
   DeleteObjectCommand: vi.fn(function (this: unknown, input: unknown) { return { __type: 'Delete', input } }),
   PutObjectRetentionCommand: vi.fn(function (this: unknown, input: unknown) { return { __type: 'Retain', input } }),
+  PutObjectTaggingCommand: vi.fn(function (this: unknown, input: unknown) { return { __type: 'Tag', input } }),
   PutObjectCommand:    vi.fn(function (this: unknown, input: unknown) { return { __type: 'Put',    input } }),
   GetObjectCommand:    vi.fn(function (this: unknown, input: unknown) { return { __type: 'Get',    input } }),
 }))
@@ -51,7 +54,7 @@ const req = (method: string, url: string, body?: unknown) =>
 
 const file = (over: Record<string, unknown> = {}) => ({
   fileId: 'f1', folderId: 'root', name: 'a.pdf', contentType: 'application/pdf', size: 10, status: 'READY',
-  createdAt: '2026-09-19T00:00:00.000Z', versionId: 'v1', ...over,
+  createdAt: '2026-09-19T00:00:00.000Z', createdBy: USER, versionId: 'v1', ...over,
 })
 const folder = (over: Record<string, unknown> = {}) => ({
   folderId: 'd1', parentId: 'root', name: 'Legal', createdAt: '2026-09-19T00:00:00.000Z', ...over,
@@ -59,12 +62,18 @@ const folder = (over: Record<string, unknown> = {}) => ({
 
 const s3Types = () => s3Send.mock.calls.map(c => c[0])
 
+// Who is asking. The organisation-wide rules are tested in the second half of this file; the
+// first half runs as an admin, who may see and change everything.
+const ADMIN  = { sub: USER, email: 'u@example.com', 'custom:role': 'admin' }
+const as = (claims: Record<string, unknown>) => ({ token: 't', orgId: WS, userId: claims.sub, claims })
+
 beforeEach(() => {
   vi.clearAllMocks()
-  mockCtx.mockResolvedValue({ token: 't', orgId: WS, userId: USER, claims: { sub: USER, email: 'u@example.com' } })
+  mockCtx.mockResolvedValue(as(ADMIN))
   presign.mockResolvedValue('https://signed.example/url')
   s3Send.mockResolvedValue({})
-  store.listFolders.mockResolvedValue([])
+  orgYears.mockResolvedValue(null)
+  store.listFolders.mockResolvedValue([folder()])
   store.listFolderContents.mockResolvedValue({ folders: [], files: [] })
   store.getFolder.mockResolvedValue(null)
   store.getFile.mockResolvedValue(null)
@@ -452,7 +461,7 @@ describe('POST /files/[id]/retention', () => {
     expect(put.input.Retention.Mode).toBe('GOVERNANCE')
     expect(put.input.Retention.RetainUntilDate.toISOString()).toBe(until)
     expect(store.setRetention.mock.calls[0][3].toISOString()).toBe(until)
-    expect(audit).toHaveBeenCalledWith(WS, { sub: USER, email: 'u@example.com' }, 'gate_keep.protected', expect.stringContaining('a.pdf until '))
+    expect(audit).toHaveBeenCalledWith(WS, expect.objectContaining({ sub: USER, email: 'u@example.com' }), 'gate_keep.protected', expect.stringContaining('a.pdf until '))
   })
 
   it('always Governance, never Compliance, whatever the request says', async () => {
@@ -513,5 +522,71 @@ describe('POST /files/[id]/retention', () => {
   it('needs a request body', async () => {
     store.getFile.mockResolvedValue(file())
     expect((await retentionPOST(req('POST', '/x'), p('f1'))).status).toBe(400)
+  })
+})
+
+describe('POST /files/[id]/confirm with an agreed end-of-life period', () => {
+  const pending = () => file({ status: 'PENDING', versionId: undefined })
+  const DAY_S = 86_400
+
+  beforeEach(() => {
+    store.getFile.mockResolvedValue(pending())
+    s3Send.mockResolvedValue({ ContentLength: 5, VersionId: 'v-real' })
+    store.confirmFile.mockResolvedValue({ name: 'a.pdf' })
+  })
+
+  it('an organisation with NO agreement: no tag, no end-of-life date (its files are never expired)', async () => {
+    orgYears.mockResolvedValue(null)
+    await confirmPOST(req('POST', '/x'), p('f1'))
+    expect(s3Types().some(c => c.__type === 'Tag')).toBe(false)
+    expect(store.confirmFile.mock.calls[0][3].purgeAt).toBeUndefined()
+  })
+
+  it.each([[5, '5y', 1827], [6, '6y', 2192], [7, '7y', 2557]])(
+    'an agreement of %i years tags the exact version %s and dates the rows %i days out', async (years, tag, days) => {
+      orgYears.mockResolvedValue(years)
+      const before = Math.floor(Date.now() / 1000)
+      const res = await confirmPOST(req('POST', '/x'), p('f1'))
+
+      expect(res.status).toBe(200)
+      const put = s3Types().find(c => c.__type === 'Tag')
+      expect(put.input).toMatchObject({ Bucket: 'bkt', Key: 'org-1/f1', VersionId: 'v-real', Tagging: { TagSet: [{ Key: 'eol', Value: tag }] } })
+      const purgeAt = store.confirmFile.mock.calls[0][3].purgeAt
+      expect(purgeAt).toBeGreaterThanOrEqual(before + days * DAY_S)
+      expect(purgeAt).toBeLessThanOrEqual(before + days * DAY_S + 5)
+    })
+
+  it('tags the file BEFORE it is listed, so a failure leaves nothing half done', async () => {
+    orgYears.mockResolvedValue(5)
+    const order: string[] = []
+    s3Send.mockImplementation(async (c: { __type: string }) => { order.push(c.__type); return { ContentLength: 5, VersionId: 'v-real' } })
+    store.confirmFile.mockImplementation(async () => { order.push('list'); return { name: 'a.pdf' } })
+    await confirmPOST(req('POST', '/x'), p('f1'))
+    expect(order).toEqual(['Head', 'Tag', 'list'])
+  })
+
+  it('if tagging fails the file is NOT listed (it would outlive the agreement); the upload can be retried', async () => {
+    orgYears.mockResolvedValue(5)
+    s3Send.mockImplementation(async (c: { __type: string }) => {
+      if (c.__type === 'Tag') throw new Error('tagging denied')
+      return { ContentLength: 5, VersionId: 'v-real' }
+    })
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    expect((await confirmPOST(req('POST', '/x'), p('f1'))).status).toBe(500)
+    expect(store.confirmFile).not.toHaveBeenCalled()
+  })
+
+  it('if the agreement cannot be read the file is NOT listed (never guess "no agreement")', async () => {
+    orgYears.mockRejectedValue(new Error('orgs table unavailable'))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    expect((await confirmPOST(req('POST', '/x'), p('f1'))).status).toBe(500)
+    expect(store.confirmFile).not.toHaveBeenCalled()
+    expect(s3Types().some(c => c.__type === 'Tag')).toBe(false)
+  })
+
+  it('reads the agreement for the caller\'s own organisation, never one from the request', async () => {
+    orgYears.mockResolvedValue(7)
+    await confirmPOST(req('POST', '/x', { orgId: 'org-2', retentionYears: 1 }), p('f1'))
+    expect(orgYears).toHaveBeenCalledWith(WS)
   })
 })

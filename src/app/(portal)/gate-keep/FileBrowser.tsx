@@ -200,8 +200,10 @@ export function FileBrowser() {
 
   // ── selection ──────────────────────────────────────────────────────────────
 
-  const allSelected = visibleFiles.length > 0 && visibleFiles.every(f => selected.has(f.id))
-  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(visibleFiles.map(f => f.id)))
+  // Only files this person may change can be selected for the bulk actions.
+  const selectable = visibleFiles.filter(f => f.canManage !== false)
+  const allSelected = selectable.length > 0 && selectable.every(f => selected.has(f.id))
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(selectable.map(f => f.id)))
   const toggleOne = (id: string) => setSelected(prev => {
     const next = new Set(prev)
     next.has(id) ? next.delete(id) : next.add(id)
@@ -220,13 +222,15 @@ export function FileBrowser() {
     ? `No files or folders match "${query.trim()}".`
     : folderId === 'root' ? 'No files stored yet.' : 'This folder is empty.'
 
-  const folderMenu = (f: FolderRow) => [
+  const folderMenu = (f: FolderRow) => f.canManage === false ? [] : [
     { label: 'Rename',    icon: <Pencil className="h-3.5 w-3.5"/>,      onSelect: () => setRenameTarget({ kind: 'folder', id: f.id, name: f.name, parentId: f.parentId }) },
     { label: 'Move to…',  icon: <FolderInput className="h-3.5 w-3.5"/>, onSelect: () => setMoveTarget({ kind: 'folder', id: f.id, name: f.name, parentId: f.parentId }) },
     { label: 'Delete folder', danger: true, icon: <Trash2 className="h-3.5 w-3.5"/>, onSelect: () => setDeleteFolder({ kind: 'folder', id: f.id, name: f.name, parentId: f.parentId }) },
   ]
 
-  const fileMenu = (f: FileRow) => [
+  const fileMenu = (f: FileRow) => f.canManage === false ? [
+    { label: 'Download',      icon: <Download className="h-3.5 w-3.5"/>,    onSelect: () => handleDownload(f.id) },
+  ] : [
     { label: 'Download',      icon: <Download className="h-3.5 w-3.5"/>,    onSelect: () => handleDownload(f.id) },
     { label: 'Rename',        icon: <Pencil className="h-3.5 w-3.5"/>,      onSelect: () => setRenameTarget({ kind: 'file', id: f.id, name: f.name, parentId: f.folderId }) },
     { label: 'Move to…',      icon: <FolderInput className="h-3.5 w-3.5"/>, onSelect: () => setMoveTarget({ kind: 'file', id: f.id, name: f.name, parentId: f.folderId }) },
@@ -236,7 +240,10 @@ export function FileBrowser() {
 
   return (
     <div>
-      <UploadPanel folderId={currentId} folderLabel={folderLabel} onUploaded={() => refresh()}/>
+      <UploadPanel folderId={currentId} folderLabel={folderLabel} onUploaded={() => refresh()}
+        note={data?.access && data.access.sharedHere && !data.access.isAdmin
+          ? 'Files added here belong to the organisation, and only an admin can delete them. Add them to one of your own folders to keep control.'
+          : undefined}/>
 
       <div className="mt-10">
         <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-400">Your stored files</p>
@@ -278,7 +285,7 @@ export function FileBrowser() {
                 </span>
               ))}
             </nav>
-            <button onClick={() => setNewFolderOpen(true)} disabled={loading}
+            <button onClick={() => setNewFolderOpen(true)} disabled={loading || data?.access?.canCreateFolder === false}
               className="flex items-center gap-1.5 rounded-full border border-black/[0.12] px-4 py-1.5 text-[12px] font-semibold transition-colors hover:border-black/30 disabled:opacity-50">
               <FolderPlus className="h-3.5 w-3.5"/> New folder
             </button>
@@ -309,7 +316,7 @@ export function FileBrowser() {
           <p className="py-6 text-[13px] text-gray-400">{emptyMessage}</p>
         ) : (
           <div>
-            {visibleFiles.length > 0 && (
+            {selectable.length > 0 && (
               <label className="mb-2 flex items-center gap-3 px-4 text-[12px] text-gray-400">
                 <input type="checkbox" checked={allSelected} onChange={toggleAll} aria-label="Select all files" className="h-3.5 w-3.5 accent-black"/>
                 Select all
@@ -322,19 +329,24 @@ export function FileBrowser() {
                   <button onClick={() => open(f.id)} aria-label={`Open folder ${f.name}`}
                     className="min-w-0 flex-1 text-left">
                     <p className="truncate text-[13px] font-medium text-black">{f.name}</p>
-                    <p className="text-[11px] text-gray-400">Folder · {fmtDate(f.createdAt)}</p>
+                    <p className="text-[11px] text-gray-400">Folder · {fmtDate(f.createdAt)}{f.shared === true ? ' · Shared with the organisation' : f.shared === false ? ' · Private' : ''}</p>
                   </button>
-                  <RowMenu label={`Actions for ${f.name}`} items={folderMenu(f)}/>
+                  {folderMenu(f).length > 0 && <RowMenu label={`Actions for ${f.name}`} items={folderMenu(f)}/>}
                 </li>
               ))}
               {visibleFiles.map(f => (
                 <li key={f.id} className="flex items-center gap-3 rounded-xl border border-black/[0.08] px-4 py-3">
-                  <input type="checkbox" checked={selected.has(f.id)} onChange={() => toggleOne(f.id)}
-                    aria-label={`Select ${f.name}`} className="h-3.5 w-3.5 flex-shrink-0 accent-black"/>
+                  {f.canManage === false
+                    ? <span className="h-3.5 w-3.5 flex-shrink-0" aria-hidden="true"/>
+                    : <input type="checkbox" checked={selected.has(f.id)} onChange={() => toggleOne(f.id)}
+                        aria-label={`Select ${f.name}`} className="h-3.5 w-3.5 flex-shrink-0 accent-black"/>}
                   {FILE_ICON}
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-[13px] font-medium text-black">{f.name}</p>
                     <p className="text-[11px] text-gray-400">{formatFileSize(f.size)} · {fmtDate(f.createdAt)}</p>
+                    {f.deletesOn && (
+                      <p className="mt-0.5 text-[11px] text-gray-400">Deleted automatically on {fmtDate(f.deletesOn)}</p>
+                    )}
                     {isProtectedNow(f) && (
                       <p className="mt-0.5 flex items-center gap-1 text-[11px] font-medium text-gray-600">
                         <Lock className="h-3 w-3"/> Protected until {fmtDate(f.retainUntil!)}

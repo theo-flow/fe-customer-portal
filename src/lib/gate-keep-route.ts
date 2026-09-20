@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import type { S3Client } from '@aws-sdk/client-s3'
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb'
 import type { JwtClaims } from '@/lib/token'
+import { isAdmin } from '@/lib/roles'
+import type { Viewer } from '@/lib/gate-keep-access'
 import { getGateKeepContext } from '@/lib/gate-keep-context'
 import { getScopedClients } from '@/lib/gate-keep-credentials'
 import { NameTakenError, StaleItemError } from '@/lib/gate-keep-store'
@@ -23,6 +25,7 @@ export interface GkContext {
   ws:     string
   userId: string
   claims: JwtClaims
+  viewer: Viewer
   s3:     S3Client
   db:     DynamoDBDocumentClient
 }
@@ -39,7 +42,7 @@ export async function gateKeep(
 
   try {
     const { s3, db } = await getScopedClients(ctx.token)
-    return await handler({ ws: ctx.orgId, userId: ctx.userId, claims: ctx.claims, s3, db })
+    return await handler({ ws: ctx.orgId, userId: ctx.userId, claims: ctx.claims, viewer: { userId: ctx.userId, isAdmin: isAdmin(ctx.claims) }, s3, db })
   } catch (err) {
     if (err instanceof HttpError)      return fail(err.status, err.code, err.message)
     if (err instanceof NameTakenError) return fail(409, 'name_taken', err.message)
