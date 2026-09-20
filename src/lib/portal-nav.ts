@@ -1,5 +1,5 @@
 import {
-  LayoutDashboard, FileText, Send, Inbox, UploadCloud, MessageSquareWarning, PenLine, FolderLock, Users,
+  LayoutDashboard, FileText, Send, Inbox, UploadCloud, MessageSquareWarning, PenLine, FolderLock, Users, History,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -46,7 +46,12 @@ export function navGroupsFor(products: string[], role: string = 'agent'): NavGro
     },
     { label: 'Files', items: [{ href: '/gate-keep', label: 'Gate-Keep', icon: FolderLock }] },
     // Managing users is an admin action, so agents never see this item.
-    { label: 'Organisation', items: role === 'admin' ? [{ href: '/team', label: 'Team', icon: Users }] : [] },
+    {
+      label: 'Organisation',
+      items: role === 'admin'
+        ? [{ href: '/team', label: 'Team', icon: Users }, { href: '/activity', label: 'Activity', icon: History }]
+        : [],
+    },
   ]
 
   return groups.filter(g => g.items.length > 0)

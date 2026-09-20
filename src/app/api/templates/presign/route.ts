@@ -6,6 +6,7 @@ import { cookies } from 'next/headers'
 import { ddbDocClient, s3Client, TABLE, BUCKET } from '@/lib/aws'
 import { verifyJwtClaims } from '@/lib/token'
 import { orgLocked } from '@/lib/org-access'
+import { writeAudit } from '@/lib/audit'
 
 const ALLOWED   = ['application/pdf', 'image/jpeg', 'image/png', 'image/tiff']
 const MAX_BYTES = 50 * 1024 * 1024
@@ -54,6 +55,8 @@ export async function POST(req: NextRequest) {
     console.error('[templates/presign] Failed to generate presigned URL', { orgId, key, error: err })
     return NextResponse.json({ error: 'Failed to prepare upload' }, { status: 500 })
   }
+
+  await writeAudit(orgId, claims, 'template.upload', groupLabel)
 
   return NextResponse.json({ uploadUrl, key })
 }

@@ -8,6 +8,7 @@ import { orgAccess } from '@/lib/org-access'
 import { PAID_PLAN_ID } from '@/lib/plans'
 import { computeSeatCharge, MAX_SEATS } from '@/lib/seat-pricing'
 import { addOneMonth, isoUtc } from '@/lib/dates'
+import { writeAudit } from '@/lib/audit'
 
 // Starts the paid plan straight away, instead of waiting for the pilot to end and
 // the automatic conversion. Admin only. Nothing is charged here: this creates the
@@ -97,6 +98,8 @@ export async function POST(req: NextRequest) {
     console.error('[billing/subscribe] Failed', { orgId, error: err })
     return NextResponse.json({ error: 'Could not start the paid plan. Please try again.' }, { status: 500 })
   }
+
+  await writeAudit(orgId, claims, 'billing.subscribe', `${seats} seat${seats === 1 ? '' : 's'}`)
 
   return NextResponse.json({
     ok:              true,

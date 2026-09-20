@@ -9,6 +9,9 @@ const { mockCookieGet, mockDdbSend, mockCognitoSend, mockLoadTeam, mockSeats } =
   mockSeats:       vi.fn(),
 }))
 
+const { mockAudit } = vi.hoisted(() => ({ mockAudit: vi.fn(async () => {}) }))
+vi.mock('@/lib/audit', () => ({ writeAudit: mockAudit }))
+
 vi.mock('next/headers', () => ({ cookies: () => ({ get: mockCookieGet }) }))
 
 vi.mock('@/lib/aws', () => ({
@@ -160,5 +163,20 @@ describe('POST /api/team/invite', () => {
     const cleanup = mockCognitoSend.mock.calls[1][0]
     expect(cleanup.__type).toBe('Delete')
     expect(cleanup.input.Username).toBe('jane@org.com')
+  })
+
+
+  it('records who invited whom, attributed to the signed-in admin', async () => {
+    await POST(makeRequest(valid))
+    expect(mockAudit).toHaveBeenCalledTimes(1)
+    expect(mockAudit).toHaveBeenCalledWith(ORG_ID, expect.objectContaining({ sub: 'admin-1', email: 'boss@org.com' }), 'team.invite', 'jane@org.com')
+  })
+
+  it('records nothing when the invite is refused', async () => {
+    vi.mocked(verifyJwtClaims).mockResolvedValue({ ...admin, 'custom:role': 'agent' })
+    await POST(makeRequest(valid))
+    mockSeats.mockResolvedValue(allowance({ totalSeats: 1 }))
+    await POST(makeRequest(valid))
+    expect(mockAudit).not.toHaveBeenCalled()
   })
 })

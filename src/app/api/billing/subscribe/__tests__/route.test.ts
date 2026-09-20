@@ -7,6 +7,9 @@ const { mockCookieGet, mockSend, mockAccess } = vi.hoisted(() => ({
   mockAccess:    vi.fn(),
 }))
 
+const { mockAudit } = vi.hoisted(() => ({ mockAudit: vi.fn(async () => {}) }))
+vi.mock('@/lib/audit', () => ({ writeAudit: mockAudit }))
+
 vi.mock('next/headers', () => ({ cookies: () => ({ get: mockCookieGet }) }))
 
 vi.mock('@/lib/aws', () => ({
@@ -122,5 +125,21 @@ describe('POST /api/billing/subscribe: start the paid plan now', () => {
     const res = await call(1)
     expect(res.status).toBe(500)
     expect(JSON.stringify(await res.json())).not.toMatch(/boom/)
+  })
+
+
+  it('records who started the paid plan, and with how many seats', async () => {
+    mockSend.mockResolvedValueOnce({})
+    await call(5)
+    expect(mockAudit).toHaveBeenCalledWith(ORG_ID, expect.objectContaining({ sub: 'admin-1' }), 'billing.subscribe', '5 seats')
+  })
+
+  it('records nothing when it is refused or fails', async () => {
+    vi.mocked(verifyJwtClaims).mockResolvedValue({ ...admin, 'custom:role': 'agent' })
+    await call(1)
+    vi.mocked(verifyJwtClaims).mockResolvedValue(admin)
+    mockSend.mockResolvedValueOnce({}).mockRejectedValueOnce(new Error('boom'))
+    await call(1)
+    expect(mockAudit).not.toHaveBeenCalled()
   })
 })

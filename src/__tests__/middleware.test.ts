@@ -81,6 +81,12 @@ describe('middleware — protected routes', () => {
     }
   })
 
+  it('redirects unauthenticated users from /activity to /login', () => {
+    middleware(makeRequest('/activity'))
+    expect(mockRedirect).toHaveBeenCalledTimes(1)
+    expect(mockRedirect.mock.calls[0][0].toString()).toContain('/login')
+  })
+
   it('redirects unauthenticated users from /dashboard to /login', () => {
     middleware(makeRequest('/dashboard'))
     expect(mockRedirect).toHaveBeenCalledTimes(1)

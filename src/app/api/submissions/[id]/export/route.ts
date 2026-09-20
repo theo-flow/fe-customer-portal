@@ -6,6 +6,7 @@ import { verifyJwtClaims } from '@/lib/token'
 import { publishBusinessEvent } from '@/lib/hub-events'
 import { resolveIdentity } from '@/lib/identity'
 import type { Field as SchemaField } from '@/components/FieldInput'
+import { writeAudit } from '@/lib/audit'
 
 // Sub-phase 4 (Integration Hub): "Export" action for a Harvest submission.
 // Same scope cut as the Decode export route (src/app/api/status/[docId]/export/route.ts)
@@ -82,6 +83,8 @@ export async function POST(
   if (!eventId) {
     return NextResponse.json({ error: 'Failed to queue export' }, { status: 500 })
   }
+
+  await writeAudit(orgId, claims, 'submission.export', params.id)
 
   return NextResponse.json({ ok: true })
 }

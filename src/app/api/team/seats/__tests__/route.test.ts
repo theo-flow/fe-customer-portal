@@ -8,6 +8,9 @@ const { mockCookieGet, mockSend, mockLoadTeam, mockAllowance } = vi.hoisted(() =
   mockAllowance: vi.fn(),
 }))
 
+const { mockAudit } = vi.hoisted(() => ({ mockAudit: vi.fn(async () => {}) }))
+vi.mock('@/lib/audit', () => ({ writeAudit: mockAudit }))
+
 vi.mock('next/headers', () => ({ cookies: () => ({ get: mockCookieGet }) }))
 
 vi.mock('@/lib/aws', () => ({
@@ -87,5 +90,20 @@ describe('POST /api/team/seats', () => {
     // 5 people hold seats.
     expect((await call(4)).status).toBe(409)
     expect((await call(5)).status).toBe(200)
+  })
+
+
+  it('records the new seat count, with correct singular and plural', async () => {
+    await call(7)
+    await call(1)
+    expect(mockAudit).toHaveBeenNthCalledWith(1, ORG_ID, expect.objectContaining({ sub: 'admin-1' }), 'team.seats', '7 seats')
+    expect(mockAudit).toHaveBeenNthCalledWith(2, ORG_ID, expect.objectContaining({ sub: 'admin-1' }), 'team.seats', '1 seat')
+  })
+
+  it('records nothing for a refused change', async () => {
+    mockAllowance.mockResolvedValue(pilot)
+    await call(3)
+    await call('nonsense')
+    expect(mockAudit).not.toHaveBeenCalled()
   })
 })

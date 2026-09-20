@@ -4,6 +4,7 @@ import { cookies } from 'next/headers'
 import { ddbDocClient, TABLE } from '@/lib/aws'
 import { verifyJwtClaims } from '@/lib/token'
 import { forbiddenUnlessAdmin } from '@/lib/roles'
+import { writeAudit } from '@/lib/audit'
 
 // Cancels a running pilot, so it is not converted and invoiced on day 8. Admin
 // only. The org is locked: its data is kept, sign-in and Billing still work, and
@@ -36,6 +37,8 @@ export async function POST() {
     console.error('[billing/cancel-pilot] Failed', { orgId, error: err })
     return NextResponse.json({ error: 'Could not cancel. Please try again.' }, { status: 500 })
   }
+
+  await writeAudit(orgId, claims, 'billing.cancel_pilot')
 
   return NextResponse.json({ ok: true })
 }

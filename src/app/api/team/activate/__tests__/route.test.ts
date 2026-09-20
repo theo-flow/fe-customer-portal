@@ -5,6 +5,9 @@ const { mockCookieGet, mockDdbSend } = vi.hoisted(() => ({
   mockDdbSend:   vi.fn(),
 }))
 
+const { mockAudit } = vi.hoisted(() => ({ mockAudit: vi.fn(async () => {}) }))
+vi.mock('@/lib/audit', () => ({ writeAudit: mockAudit }))
+
 vi.mock('next/headers', () => ({ cookies: () => ({ get: mockCookieGet }) }))
 
 vi.mock('@/lib/aws', () => ({
@@ -60,5 +63,17 @@ describe('POST /api/team/activate', () => {
       expect((await POST()).status).toBe(200)
       expect(mockDdbSend).toHaveBeenCalledTimes(1)
     }
+  })
+
+
+  it('records when an invited agent joins, but not for someone already active', async () => {
+    mockDdbSend.mockResolvedValueOnce({ Item: { status: 'active' } })
+    await POST()
+    expect(mockAudit).not.toHaveBeenCalled()
+
+    mockDdbSend.mockResolvedValueOnce({ Item: { status: 'invited' } })
+    await POST()
+    expect(mockAudit).toHaveBeenCalledTimes(1)
+    expect(mockAudit).toHaveBeenCalledWith(ORG_ID, expect.objectContaining({ sub: 'agent-1' }), 'team.joined')
   })
 })

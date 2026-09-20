@@ -5,6 +5,7 @@ import { ddbDocClient, TABLE } from '@/lib/aws'
 import { verifyJwtClaims } from '@/lib/token'
 import type { Field as SchemaField } from '@/components/FieldInput'
 import type { ExtractionData } from '@/components/ExtractedDataView'
+import { writeAudit } from '@/lib/audit'
 
 export async function GET(
   req: NextRequest,
@@ -60,6 +61,8 @@ export async function GET(
     flaggedFields: [],
     unresolvedFields,
   }
+
+  await writeAudit(orgId, claims, 'submission.view', params.id)
 
   return NextResponse.json({
     submissionId: item.submissionId as string,

@@ -5,6 +5,9 @@ const { mockCookieGet, mockSend } = vi.hoisted(() => ({
   mockSend:      vi.fn(),
 }))
 
+const { mockAudit } = vi.hoisted(() => ({ mockAudit: vi.fn(async () => {}) }))
+vi.mock('@/lib/audit', () => ({ writeAudit: mockAudit }))
+
 vi.mock('next/headers', () => ({ cookies: () => ({ get: mockCookieGet }) }))
 
 vi.mock('@/lib/aws', () => ({
@@ -71,5 +74,16 @@ describe('POST /api/billing/cancel-pilot', () => {
     const res = await POST()
     expect(res.status).toBe(500)
     expect(JSON.stringify(await res.json())).not.toMatch(/boom/)
+  })
+
+
+  it('records who cancelled the pilot, but not a cancel that was refused', async () => {
+    mockSend.mockRejectedValueOnce(Object.assign(new Error('x'), { name: 'ConditionalCheckFailedException' }))
+    await POST()
+    expect(mockAudit).not.toHaveBeenCalled()
+
+    await POST()
+    expect(mockAudit).toHaveBeenCalledTimes(1)
+    expect(mockAudit).toHaveBeenCalledWith(ORG_ID, expect.objectContaining({ sub: 'admin-1' }), 'billing.cancel_pilot')
   })
 })

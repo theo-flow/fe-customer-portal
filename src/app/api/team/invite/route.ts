@@ -7,6 +7,7 @@ import { verifyJwtClaims } from '@/lib/token'
 import { forbiddenUnlessAdmin } from '@/lib/roles'
 import { validateEmail } from '@/lib/validators'
 import { loadTeam, memberKey, membershipKey, seatAllowance, seatsUsed } from '@/lib/team'
+import { writeAudit } from '@/lib/audit'
 
 export async function POST(req: NextRequest) {
   const token = cookies().get('tf_token')?.value
@@ -102,6 +103,8 @@ export async function POST(req: NextRequest) {
       .catch(e => console.error('[team/invite] Cleanup AdminDeleteUser failed', { orgId, error: e }))
     return NextResponse.json({ error: 'Could not send the invite. Please try again.' }, { status: 500 })
   }
+
+  await writeAudit(orgId, claims, 'team.invite', email)
 
   return NextResponse.json(
     { member: { sub, email, name, role: 'agent', status: 'invited', invitedBy: claims.sub, createdAt: now } },

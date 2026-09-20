@@ -7,6 +7,9 @@ const { mockCookieGet, mockDdbSend, mockCognitoSend } = vi.hoisted(() => ({
   mockCognitoSend: vi.fn(),
 }))
 
+const { mockAudit } = vi.hoisted(() => ({ mockAudit: vi.fn(async () => {}) }))
+vi.mock('@/lib/audit', () => ({ writeAudit: mockAudit }))
+
 vi.mock('next/headers', () => ({ cookies: () => ({ get: mockCookieGet }) }))
 
 vi.mock('@/lib/aws', () => ({
@@ -90,5 +93,19 @@ describe('DELETE /api/team/[sub]', () => {
   it('returns 404 for an already-removed member', async () => {
     mockDdbSend.mockResolvedValueOnce({ Item: { ...agent, status: 'removed' } })
     expect((await call('agent-1')).status).toBe(404)
+  })
+
+
+  it('records who removed whom', async () => {
+    mockDdbSend.mockResolvedValueOnce({ Item: agent }).mockResolvedValue({})
+    await call('agent-1')
+    expect(mockAudit).toHaveBeenCalledWith(ORG_ID, expect.objectContaining({ sub: 'admin-1' }), 'team.remove', 'jane@org.com')
+  })
+
+  it('records nothing for a refused removal', async () => {
+    await call('admin-1')                                               // themselves
+    mockDdbSend.mockResolvedValueOnce({})
+    await call('agent-in-other-org')                                    // not in this org
+    expect(mockAudit).not.toHaveBeenCalled()
   })
 })

@@ -8,6 +8,7 @@ import { generateToken, hashToken } from '@/lib/sign'
 import { tokenExpiryIso, type RecipientLink } from '@/lib/recipients'
 import { enqueueRecipientInviteEmail } from '@/lib/notify-queue'
 import { orgLocked } from '@/lib/org-access'
+import { writeAudit } from '@/lib/audit'
 
 export async function GET(
   _req: NextRequest,
@@ -127,6 +128,8 @@ export async function POST(
       fillUrl,
     })
   }
+
+  await writeAudit(orgId, claims, 'form.link_created', `${group}: ${name}`)
 
   return NextResponse.json({
     recipientId,

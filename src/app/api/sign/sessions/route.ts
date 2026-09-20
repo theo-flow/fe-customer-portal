@@ -9,6 +9,7 @@ import { verifyJwtClaims } from '@/lib/token'
 import { validateEmail } from '@/lib/validators'
 import { generateToken, hashToken, tokenExpiryIso, type SignSession, type Signer } from '@/lib/sign'
 import { orgLocked } from '@/lib/org-access'
+import { writeAudit } from '@/lib/audit'
 
 const SQS_SIGN_URL = process.env.SQS_SIGN_URL
 
@@ -261,6 +262,8 @@ export async function POST(req: NextRequest) {
   } else {
     console.error('[sign/sessions] SQS_SIGN_URL not configured -- locate_and_notify not queued', { sessionId })
   }
+
+  await writeAudit(orgId, claims, 'sign.session_started', sessionId)
 
   return NextResponse.json({ sessionId, signers: signerLinks, locateQueued }, { status: 201 })
 }

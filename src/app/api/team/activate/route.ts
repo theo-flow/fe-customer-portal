@@ -4,6 +4,7 @@ import { cookies } from 'next/headers'
 import { ddbDocClient, TABLE } from '@/lib/aws'
 import { verifyJwtClaims } from '@/lib/token'
 import { memberKey, membershipKey } from '@/lib/team'
+import { writeAudit } from '@/lib/audit'
 
 // Called once, right after an invited agent sets their password and signs in:
 // flips their own status invited -> active. Any signed-in user may call it;
@@ -31,6 +32,8 @@ export async function POST() {
   await db.send(new UpdateCommand({ TableName: TABLE, Key: membershipKey(claims.sub), ...active }))
   await db.send(new UpdateCommand({ TableName: TABLE, Key: memberKey(orgId, claims.sub), ...active }))
     .catch(err => console.error('[team/activate] listing item update failed', { orgId, sub: claims.sub, error: err }))
+
+  await writeAudit(orgId, claims, 'team.joined')
 
   return NextResponse.json({ ok: true })
 }

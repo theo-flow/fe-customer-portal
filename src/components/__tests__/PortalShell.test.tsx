@@ -62,6 +62,20 @@ describe('PortalShell', () => {
     }
   })
 
+  it('shows the Activity link next to Team for admins only', () => {
+    mockOrg.current = org({ role: 'admin' })
+    const { unmount } = render(<PortalShell><p/></PortalShell>)
+    expect(within(mainNav()).getByRole('link', { name: 'Activity' })).toHaveAttribute('href', '/activity')
+    unmount()
+
+    for (const role of ['agent', undefined]) {
+      mockOrg.current = org({ role })
+      const r = render(<PortalShell><p/></PortalShell>)
+      expect(within(mainNav()).queryByRole('link', { name: 'Activity' })).not.toBeInTheDocument()
+      r.unmount()
+    }
+  })
+
   describe('pilot and lock state', () => {
     const locked = { access: { state: 'locked', daysLeft: null, trialEndsAt: null }, subscribedProducts: [] }
 

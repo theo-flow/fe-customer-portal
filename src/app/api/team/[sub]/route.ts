@@ -6,6 +6,7 @@ import { cognitoClient, ddbDocClient, TABLE, USER_POOL_ID } from '@/lib/aws'
 import { verifyJwtClaims } from '@/lib/token'
 import { forbiddenUnlessAdmin } from '@/lib/roles'
 import { memberKey, membershipKey } from '@/lib/team'
+import { writeAudit } from '@/lib/audit'
 
 export async function DELETE(
   _req: NextRequest,
@@ -53,6 +54,8 @@ export async function DELETE(
   await cognitoClient().send(new AdminDisableUserCommand({
     UserPoolId: USER_POOL_ID, Username: member.email as string,
   })).catch(err => console.error('[team/remove] AdminDisableUser failed', { orgId, sub, error: err }))
+
+  await writeAudit(orgId, claims, 'team.remove', member.email as string)
 
   return NextResponse.json({ ok: true })
 }

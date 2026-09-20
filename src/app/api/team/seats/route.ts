@@ -6,6 +6,7 @@ import { verifyJwtClaims } from '@/lib/token'
 import { forbiddenUnlessAdmin } from '@/lib/roles'
 import { computeSeatCharge, MAX_SEATS } from '@/lib/seat-pricing'
 import { loadTeam, seatAllowance, seatsUsed } from '@/lib/team'
+import { writeAudit } from '@/lib/audit'
 
 // Sets how many seats the org has, priced by position. Admin only, paid plan
 // only (a pilot has one seat and starts the paid plan instead). Takes effect
@@ -55,6 +56,8 @@ export async function POST(req: NextRequest) {
     ConditionExpression:       'attribute_exists(PK)',
     ExpressionAttributeValues: { ':n': seats },
   }))
+
+  await writeAudit(orgId, claims, 'team.seats', `${seats} seat${seats === 1 ? '' : 's'}`)
 
   return NextResponse.json({
     ok:              true,
