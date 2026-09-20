@@ -25,6 +25,14 @@ interface RequestBody {
   sourceDocument?: { sessionId?: string; s3Key?: string; sha256?: string; filename?: string }
 }
 
+const PAGE_DEFAULT = 20
+const PAGE_MAX = 50
+
+// A page of the org's sessions, newest first. The org's pointer items are tiny
+// and are all listed in one query, so the order is exact; only the sessions on
+// the page asked for are then read in full (one read each, in parallel), not
+// every session the org has ever sent. `cursor` is the last item of the
+// previous page ("createdAt|sessionId"); `nextCursor` is null on the last page.
 export async function GET(req: NextRequest) {
   const token = cookies().get('tf_token')?.value
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -34,17 +42,36 @@ export async function GET(req: NextRequest) {
   const orgId  = claims['custom:org_id']
   if (!orgId) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
+  const params = req.nextUrl?.searchParams
+  const asked = Number.parseInt(params?.get('limit') ?? '', 10)
+  const limit = Number.isInteger(asked) && asked >= 1 ? Math.min(asked, PAGE_MAX) : PAGE_DEFAULT
+  const cursor = params?.get('cursor') || null
+
   const db = ddbDocClient()
 
-  const index = await db.send(new QueryCommand({
-    TableName:                 TABLE,
-    KeyConditionExpression:    'PK = :pk AND begins_with(SK, :prefix)',
-    ExpressionAttributeValues: { ':pk': `ORG#${orgId}`, ':prefix': 'SESSION#' },
-  }))
+  const pointers: { sessionId: string; createdAt: string }[] = []
+  let startKey: Record<string, unknown> | undefined
+  do {
+    const index = await db.send(new QueryCommand({
+      TableName:                 TABLE,
+      KeyConditionExpression:    'PK = :pk AND begins_with(SK, :prefix)',
+      ExpressionAttributeValues: { ':pk': `ORG#${orgId}`, ':prefix': 'SESSION#' },
+      ProjectionExpression:      'sessionId, createdAt',
+      ExclusiveStartKey:         startKey,
+    }))
+    for (const p of index.Items ?? []) pointers.push({ sessionId: p.sessionId as string, createdAt: (p.createdAt as string) ?? '' })
+    startKey = index.LastEvaluatedKey
+  } while (startKey)
 
-  const pointers = index.Items ?? []
+  const stamp = (p: { sessionId: string; createdAt: string }) => `${p.createdAt}|${p.sessionId}`
+  pointers.sort((a, b) => (stamp(a) < stamp(b) ? 1 : stamp(a) > stamp(b) ? -1 : 0))
+
+  const remaining = cursor ? pointers.filter(p => stamp(p) < cursor) : pointers
+  const page = remaining.slice(0, limit)
+  const nextCursor = remaining.length > limit ? stamp(page[page.length - 1]) : null
+
   const sessions = await Promise.all(
-    pointers.map(async (p) => {
+    page.map(async (p) => {
       const result = await db.send(new GetCommand({
         TableName: TABLE,
         Key:       { PK: `SESSION#${p.sessionId}`, SK: 'SESSION' },
@@ -68,7 +95,7 @@ export async function GET(req: NextRequest) {
     })
   )
 
-  return NextResponse.json({ sessions: sessions.filter(Boolean) })
+  return NextResponse.json({ sessions: sessions.filter(Boolean), nextCursor })
 }
 
 export async function POST(req: NextRequest) {

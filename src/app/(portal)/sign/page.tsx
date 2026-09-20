@@ -1,7 +1,8 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { useOrg } from '@/lib/org-context'
+import { hasLive, mergeFirstPage } from '@/lib/sign-list'
 
 interface SessionSigner {
   signerId: string
@@ -43,7 +44,7 @@ function StatusPill({ status }: { status: SessionSummary['status'] }) {
   )
 }
 
-function SessionRow({ session }: { session: SessionSummary }) {
+function SessionRow({ session, onChanged }: { session: SessionSummary; onChanged: () => void }) {
   const signedCount = session.signers.filter(s => s.status === 'SIGNED').length
   const declined = session.signers.filter(s => s.status === 'DECLINED')
   const [opening, setOpening] = useState(false)
@@ -62,6 +63,7 @@ function SessionRow({ session }: { session: SessionSummary }) {
       const res = await fetch(`/api/sign/sessions/${session.sessionId}/cancel`, { method: 'POST' })
       const data = await res.json().catch(() => ({}))
       setNotice(res.ok ? 'Session cancelled.' : (data.error ?? 'Could not cancel this session.'))
+      if (res.ok) onChanged()
     } catch {
       setNotice('Could not cancel this session. Please try again.')
     } finally {
@@ -80,6 +82,7 @@ function SessionRow({ session }: { session: SessionSummary }) {
       const res = await fetch(`/api/sign/sessions/${session.sessionId}/documents`, { method: 'DELETE' })
       const data = await res.json().catch(() => ({}))
       setNotice(res.ok ? 'Documents deleted.' : (data.error ?? 'Could not delete the documents.'))
+      if (res.ok) onChanged()
     } catch {
       setNotice('Could not delete the documents. Please try again.')
     } finally {
@@ -103,6 +106,7 @@ function SessionRow({ session }: { session: SessionSummary }) {
       }
       // Copy the new link too, so the org can pass it on by hand if the email is slow.
       await navigator.clipboard.writeText(data.signUrl).catch(() => {})
+      onChanged()
       setNotice(
         data.emailQueued
           ? `New link emailed to ${signer.email} and copied to your clipboard.`
@@ -214,27 +218,60 @@ function SessionRow({ session }: { session: SessionSummary }) {
   )
 }
 
+// Sessions load a page at a time. The list only refreshes itself while
+// something on it is still in progress (a signer can sign at any moment), every
+// 15 seconds, and not at all while the tab is in the background.
+const POLL_MS = 15000
+
 export default function SignSessionsPage() {
   const { orgName, loading: orgLoading } = useOrg()
   const [sessions, setSessions] = useState<SessionSummary[]>([])
+  const [nextCursor, setNextCursor] = useState<string | null>(null)
   const [loading, setLoading]   = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [loadError, setLoadError] = useState(false)
+  const loadedFirst = useRef(false)
 
-  useEffect(() => {
-    function poll() {
-      return fetch('/api/sign/sessions')
-        .then(r => r.ok ? r.json() : null)
-        .then(d => d && setSessions(d.sessions))
-        .catch(() => {})
-        .finally(() => setLoading(false))
-    }
-
-    poll()
-    // Sessions list has no single terminal state to stop on (many sessions,
-    // many statuses) -- keep polling every 5s, same cadence as the Decode
-    // /status page, for as long as the dashboard is mounted.
-    const t = setInterval(poll, 5000)
-    return () => clearInterval(t)
+  // The newest page: the first load, every poll, and after any action.
+  const refresh = useCallback(() => {
+    return fetch('/api/sign/sessions')
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error('load failed'))))
+      .then(d => {
+        setLoadError(false)
+        setSessions(prev => mergeFirstPage(prev, d.sessions))
+        if (!loadedFirst.current) { loadedFirst.current = true; setNextCursor(d.nextCursor ?? null) }
+      })
+      .catch(() => setLoadError(true))
+      .finally(() => setLoading(false))
   }, [])
+
+  useEffect(() => { refresh() }, [refresh])
+
+  const live = hasLive(sessions)
+  useEffect(() => {
+    if (!live) return
+    const tick = () => { if (document.visibilityState === 'visible') refresh() }
+    const t = setInterval(tick, POLL_MS)
+    document.addEventListener('visibilitychange', tick)
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', tick) }
+  }, [live, refresh])
+
+  async function loadMore() {
+    if (!nextCursor) return
+    setLoadingMore(true)
+    try {
+      const res = await fetch(`/api/sign/sessions?cursor=${encodeURIComponent(nextCursor)}`)
+      if (!res.ok) throw new Error('load failed')
+      const d = await res.json()
+      setSessions(prev => mergeFirstPage(prev, d.sessions))
+      setNextCursor(d.nextCursor ?? null)
+      setLoadError(false)
+    } catch {
+      setLoadError(true)
+    } finally {
+      setLoadingMore(false)
+    }
+  }
 
   if (orgLoading || loading) {
     return (
@@ -283,7 +320,19 @@ export default function SignSessionsPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {sessions.map(s => <SessionRow key={s.sessionId} session={s}/>)}
+          {sessions.map(s => <SessionRow key={s.sessionId} session={s} onChanged={refresh}/>)}
+          {loadError && (
+            <p role="alert" className="text-[12px] text-red-500 text-center">Could not load sessions. Please try again.</p>
+          )}
+          {nextCursor && (
+            <div className="text-center pt-2">
+              <button type="button" onClick={loadMore} disabled={loadingMore}
+                      className="px-5 py-2.5 rounded-full border border-black/[0.15] text-black text-[13px] font-semibold
+                                 hover:border-black/40 transition-colors disabled:opacity-50">
+                {loadingMore ? 'Loading…' : 'Load more'}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

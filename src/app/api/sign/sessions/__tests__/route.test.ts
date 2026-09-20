@@ -146,11 +146,87 @@ describe('GET /api/sign/sessions', () => {
     const live = { session_id: 'a', status: 'SIGNED', created_at: 'c', updated_at: 'u', metadata: {}, signers: [] }
     const gone = { session_id: 'b', status: 'SIGNED', created_at: 'c', updated_at: 'u', metadata: { documents_deleted_at: '2026-02-01T00:00:00.000Z' }, signers: [] }
     mockDdbSend.mockImplementation(async (cmd: { __type: string; input: { Key?: { PK: string } } }) => {
-      if (cmd.__type === 'Query') return { Items: [{ sessionId: 'a' }, { sessionId: 'b' }] }
+      if (cmd.__type === 'Query') return { Items: [{ sessionId: 'a', createdAt: '2026-02-02T00:00:00.000Z' }, { sessionId: 'b', createdAt: '2026-02-01T00:00:00.000Z' }] }
       if (cmd.__type === 'Get') return { Item: cmd.input.Key!.PK === 'SESSION#a' ? live : gone }
       return {}
     })
     const { sessions } = await (await GET({} as unknown as NextRequest)).json()
     expect(sessions.map((x: { documentsDeleted: boolean }) => x.documentsDeleted)).toEqual([false, true])
+  })
+
+  describe('paging', () => {
+    // n sessions, s01 the oldest, created a day apart
+    const pointers = (n: number) => Array.from({ length: n }, (_v, i) => {
+      const id = `s${String(i + 1).padStart(2, '0')}`
+      return { sessionId: id, createdAt: `2026-01-${String(i + 1).padStart(2, '0')}T00:00:00.000Z` }
+    })
+    const session = (id: string) => ({ session_id: id, status: 'PENDING', created_at: 'c', updated_at: 'u', metadata: {}, signers: [] })
+
+    function world(items: { sessionId: string; createdAt: string }[], pages = 1) {
+      mockDdbSend.mockImplementation(async (cmd: { __type: string; input: { Key?: { PK: string }; ExclusiveStartKey?: unknown } }) => {
+        if (cmd.__type === 'Query') {
+          // optionally hand the pointers back over several query pages
+          const size = Math.ceil(items.length / pages)
+          const at = cmd.input.ExclusiveStartKey ? Number(cmd.input.ExclusiveStartKey) : 0
+          const slice = items.slice(at, at + size)
+          return { Items: slice, ...(at + size < items.length ? { LastEvaluatedKey: at + size } : {}) }
+        }
+        if (cmd.__type === 'Get') return { Item: session(cmd.input.Key!.PK.replace('SESSION#', '')) }
+        return {}
+      })
+    }
+    const call = (qs = '') => GET({ nextUrl: { searchParams: new URLSearchParams(qs) } } as unknown as NextRequest)
+    const gets = () => mockDdbSend.mock.calls.filter(([c]) => c.__type === 'Get').length
+
+    it('reads only the sessions on the page, newest first, not every session the org has', async () => {
+      world(pointers(45))
+      const body = await (await call()).json()
+      expect(body.sessions).toHaveLength(20)
+      expect(body.sessions[0].sessionId).toBe('s45')
+      expect(body.sessions[19].sessionId).toBe('s26')
+      expect(gets()).toBe(20)
+      expect(body.nextCursor).toBe('2026-01-26T00:00:00.000Z|s26')
+    })
+
+    it('the next page continues exactly after the cursor, and the last page has no cursor', async () => {
+      world(pointers(45))
+      const second = await (await call('cursor=2026-01-26T00:00:00.000Z%7Cs26')).json()
+      expect(second.sessions.map((x: { sessionId: string }) => x.sessionId)[0]).toBe('s25')
+      expect(second.sessions).toHaveLength(20)
+      const third = await (await call(`cursor=${encodeURIComponent(second.nextCursor)}`)).json()
+      expect(third.sessions.map((x: { sessionId: string }) => x.sessionId)).toEqual(['s05', 's04', 's03', 's02', 's01'])
+      expect(third.nextCursor).toBeNull()
+    })
+
+    it('a list that exactly fills the page has no next page', async () => {
+      world(pointers(20))
+      expect((await (await call()).json()).nextCursor).toBeNull()
+    })
+
+    it('honours limit, caps it at 50, and ignores nonsense', async () => {
+      world(pointers(60))
+      expect((await (await call('limit=5')).json()).sessions).toHaveLength(5)
+      expect((await (await call('limit=500')).json()).sessions).toHaveLength(50)
+      for (const bad of ['limit=0', 'limit=-3', 'limit=abc']) expect((await (await call(bad)).json()).sessions).toHaveLength(20)
+    })
+
+    it('orders correctly even when the pointers come back over several query pages', async () => {
+      world(pointers(30), 3)
+      const body = await (await call('limit=3')).json()
+      expect(body.sessions.map((x: { sessionId: string }) => x.sessionId)).toEqual(['s30', 's29', 's28'])
+    })
+
+    it('an empty org gets an empty list and no cursor', async () => {
+      world([])
+      expect(await (await call()).json()).toEqual({ sessions: [], nextCursor: null })
+    })
+
+    it('only ever queries the caller\'s own organisation', async () => {
+      world(pointers(2))
+      await call()
+      const query = mockDdbSend.mock.calls.map(([c]) => c).find(c => c.__type === 'Query')
+      expect(query.input.ExpressionAttributeValues[':pk']).toBe(`ORG#${ORG_ID}`)
+      expect(query.input.ProjectionExpression).toBe('sessionId, createdAt')
+    })
   })
 })
