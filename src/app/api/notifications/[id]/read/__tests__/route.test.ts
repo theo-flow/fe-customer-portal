@@ -60,6 +60,23 @@ describe('POST /api/notifications/[id]/read', () => {
     expect(res.status).toBe(404)
   })
 
+  it("returns 404 for another agent's notification and does not mark it read", async () => {
+    mockSend.mockResolvedValueOnce({
+      Items: [{ PK: `ORG#${ORG_ID}`, SK: 'NOTIFICATION#2026-07-17T10:00:00Z#n1', notificationId: 'n1', target_sub: 'someone-else' }],
+    })
+    const res = await POST(makeRequest(), { params: { id: 'n1' } })
+    expect(res.status).toBe(404)
+    expect(mockSend).toHaveBeenCalledTimes(1)
+  })
+
+  it('marks a notification addressed to the caller as read', async () => {
+    mockSend
+      .mockResolvedValueOnce({ Items: [{ PK: `ORG#${ORG_ID}`, SK: 'NOTIFICATION#2026-07-17T10:00:00Z#n1', notificationId: 'n1', target_sub: 'user-1' }] })
+      .mockResolvedValueOnce({})
+    const res = await POST(makeRequest(), { params: { id: 'n1' } })
+    expect(res.status).toBe(200)
+  })
+
   it('marks the matching notification as read, scoped to the caller org', async () => {
     mockSend
       .mockResolvedValueOnce({ Items: [{ PK: `ORG#${ORG_ID}`, SK: 'NOTIFICATION#2026-07-17T10:00:00Z#n1', notificationId: 'n1' }] })

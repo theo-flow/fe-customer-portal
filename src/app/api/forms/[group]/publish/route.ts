@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { ddbDocClient, TABLE } from '@/lib/aws'
 import { verifyJwtClaims } from '@/lib/token'
+import { orgLocked } from '@/lib/org-access'
 
 export async function POST(
   req: NextRequest,
@@ -15,6 +16,8 @@ export async function POST(
   if (!claims) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const orgId  = claims['custom:org_id']
   if (!orgId) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const locked = await orgLocked(orgId)
+  if (locked) return locked
 
   const { group } = params
 

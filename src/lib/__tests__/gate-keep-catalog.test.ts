@@ -1,12 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import {
   ROOT_FOLDER_ID, MAX_NAME_LENGTH, MAX_FOLDER_DEPTH, MAX_UPLOAD_BYTES, ALLOWED_CONTENT_TYPES,
-  validateName, suffixName, restoredName,
-  wsPk, folderSk, fileSk, nameLockSk, folderIndexPk, trashIndexPk, s3KeyFor,
-  buildFolderItem, buildPendingFile, purgeAtFor, contentDisposition,
+  validateName, suffixName,
+  wsPk, folderSk, fileSk, nameLockSk, folderIndexPk, s3KeyFor,
+  buildFolderItem, buildPendingFile, contentDisposition,
   pathTo, depthOf, canPlaceFolder, checkMove, type FolderNode,
 } from '../gate-keep-catalog'
-import { TRASH_RETENTION_DAYS } from '../gate-keep-view'
 
 const NOW = Date.UTC(2026, 8, 19, 12, 0, 0)   // 2026-09-19T12:00:00Z
 const DAY = 24 * 3600 * 1000
@@ -17,7 +16,6 @@ describe('keys', () => {
     expect(folderSk('f1')).toBe('FOLDER#f1')
     expect(fileSk('x9')).toBe('FILE#x9')
     expect(folderIndexPk('org-1', 'root')).toBe('WS#org-1#F#root')
-    expect(trashIndexPk('org-1')).toBe('WS#org-1#TRASH')
   })
 
   it('name-lock keys are per parent folder and case-insensitive', () => {
@@ -58,7 +56,7 @@ describe('validateName', () => {
   })
 })
 
-describe('suffixName / restoredName', () => {
+describe('suffixName', () => {
   it('puts the counter before the extension', () => {
     expect(suffixName('report.pdf', 1)).toBe('report (1).pdf')
     expect(suffixName('archive.tar.gz', 2)).toBe('archive.tar (2).gz')
@@ -72,10 +70,6 @@ describe('suffixName / restoredName', () => {
   it('a suffixed name stays within the length cap', () => {
     const long = 'a'.repeat(MAX_NAME_LENGTH) + '.pdf'.slice(0, 0)
     expect(suffixName(long, 12).length).toBeLessThanOrEqual(MAX_NAME_LENGTH)
-  })
-
-  it('marks a restored file', () => {
-    expect(restoredName('report.pdf')).toBe('report (restored).pdf')
   })
 })
 
@@ -93,18 +87,6 @@ describe('items', () => {
     expect(p).toMatchObject({ PK: 'WS#org-1', SK: 'FILE#x', status: 'PENDING', size: 10 })
     expect(p).not.toHaveProperty('GSI1PK')
     expect(p.purgeAt).toBe(Math.floor((NOW + DAY) / 1000))
-  })
-})
-
-describe('purgeAtFor', () => {
-  it('is 28 days after removal, in epoch seconds', () => {
-    expect(purgeAtFor(NOW)).toBe(Math.floor((NOW + TRASH_RETENTION_DAYS * DAY) / 1000))
-  })
-
-  it('a later retention date wins: a locked file outlives the trash window', () => {
-    const lockedUntil = NOW + 400 * DAY
-    expect(purgeAtFor(NOW, lockedUntil)).toBe(Math.floor(lockedUntil / 1000))
-    expect(purgeAtFor(NOW, NOW + 3 * DAY)).toBe(Math.floor((NOW + TRASH_RETENTION_DAYS * DAY) / 1000))
   })
 })
 

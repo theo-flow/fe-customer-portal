@@ -2,7 +2,6 @@
 
 export interface FolderRow { id: string; name: string; parentId: string; createdAt: string }
 export interface FileRow   { id: string; name: string; folderId: string; size: number; contentType: string; createdAt: string }
-export interface TrashRow  { id: string; name: string; size: number; deletedAt: string | null; purgeAt: string | null }
 export interface TreeNode  { id: string; parentId: string; name: string }
 
 export interface ListResponse {

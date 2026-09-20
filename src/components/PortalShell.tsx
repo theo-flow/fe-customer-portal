@@ -15,8 +15,13 @@ import { isNavItemActive, navGroupsFor } from '@/lib/portal-nav'
 export function PortalShell({ children }: { children: React.ReactNode }) {
   const path   = usePathname()
   const router = useRouter()
-  const { name, email, initials, orgName, subscribedProducts, loading } = useOrg()
-  const groups = navGroupsFor(loading ? [] : subscribedProducts)
+  const { name, email, initials, orgName, role, access, subscribedProducts, loading } = useOrg()
+  const groups = navGroupsFor(loading ? [] : subscribedProducts, role)
+
+  // A locked org (its pilot was cancelled) can still sign in and reach Billing, where
+  // it restarts on the paid plan. Everything else shows the lock screen.
+  const locked = !loading && access?.state === 'locked' && !path?.startsWith('/billing')
+  const onPilot = !loading && access?.state === 'trial' && access.daysLeft !== null
 
   const [drawerOpen, setDrawerOpen] = useState(false)
 
@@ -130,11 +135,34 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
             </Link>
             {orgName && <span className="truncate text-[13px] text-gray-500">{orgName}</span>}
           </div>
-          {!loading && subscribedProducts.includes('harvest') && <NotificationBell />}
+          <div className="flex items-center gap-3">
+            {onPilot && role === 'admin' && (
+              <Link href="/billing"
+                className="rounded-full bg-amber-50 px-3 py-1 text-[12px] font-medium text-amber-800 hover:bg-amber-100">
+                Pilot: {access.daysLeft === 0 ? 'ends today' : `${access.daysLeft} day${access.daysLeft !== 1 ? 's' : ''} left`}
+              </Link>
+            )}
+            {!loading && subscribedProducts.includes('harvest') && <NotificationBell />}
+          </div>
         </header>
 
         <main className="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-10">
-          {children}
+          {locked ? (
+            <div role="status" className="mx-auto max-w-md rounded-2xl border border-black/[0.08] px-8 py-14 text-center">
+              <p className="text-[17px] font-semibold text-black">Your products are locked</p>
+              <p className="mt-2 text-[13px] leading-relaxed text-gray-500">
+                Your pilot was cancelled. Nothing has been deleted, and everything is here waiting when you carry on.
+              </p>
+              {role === 'admin' ? (
+                <Link href="/billing/upgrade"
+                  className="mt-6 inline-block rounded-full bg-black px-6 py-2.5 text-[13px] font-medium text-white hover:bg-black/85">
+                  Start the paid plan
+                </Link>
+              ) : (
+                <p className="mt-6 text-[13px] text-gray-400">Ask your organisation admin to start the paid plan.</p>
+              )}
+            </div>
+          ) : children}
         </main>
       </div>
     </div>

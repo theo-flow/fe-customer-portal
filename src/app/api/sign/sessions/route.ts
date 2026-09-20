@@ -8,6 +8,7 @@ import { ddbDocClient, s3Client, sqsClient, TABLE, BUCKET } from '@/lib/aws'
 import { verifyJwtClaims } from '@/lib/token'
 import { validateEmail } from '@/lib/validators'
 import { generateToken, hashToken, tokenExpiryIso, type SignSession, type Signer } from '@/lib/sign'
+import { orgLocked } from '@/lib/org-access'
 
 const SQS_SIGN_URL = process.env.SQS_SIGN_URL
 
@@ -74,6 +75,8 @@ export async function POST(req: NextRequest) {
   if (!claims) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const orgId  = claims['custom:org_id']
   if (!orgId) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const locked = await orgLocked(orgId)
+  if (locked) return locked
 
   let body: RequestBody
   try {

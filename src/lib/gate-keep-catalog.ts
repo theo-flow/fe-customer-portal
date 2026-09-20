@@ -1,9 +1,7 @@
-import { TRASH_RETENTION_DAYS } from '@/lib/gate-keep-view'
-
 // Pure rules for the Gate-Keep catalogue. Nothing here touches AWS.
 //
 // The archive bucket holds bytes only, under opaque keys ({workspaceId}/{fileId}).
-// Folders, names and removed-state live in the catalogue table, so moving or
+// Folders, names live in the catalogue table, so moving or
 // renaming a folder is a metadata change that also works on files under Object
 // Lock. Every DynamoDB key below is built from the workspace of the verified
 // login, never from anything the browser sends.
@@ -13,8 +11,6 @@ export const MAX_NAME_LENGTH = 200
 export const MAX_FOLDER_DEPTH = 8
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024   // matches the platform-wide presigned-upload ceiling
 export const PENDING_UPLOAD_TTL_SECONDS = 24 * 3600
-
-const DAY_MS = 24 * 3600 * 1000
 
 export const ALLOWED_CONTENT_TYPES = [
   'application/pdf',
@@ -37,7 +33,6 @@ export const wsPk           = (ws: string) => `WS#${ws}`
 export const folderSk       = (id: string) => `FOLDER#${id}`
 export const fileSk         = (id: string) => `FILE#${id}`
 export const folderIndexPk  = (ws: string, folderId: string) => `WS#${ws}#F#${folderId}`
-export const trashIndexPk   = (ws: string) => `WS#${ws}#TRASH`
 export const s3KeyFor       = (ws: string, fileId: string) => `${ws}/${fileId}`
 
 const nameKey = (name: string) => name.normalize('NFC').toLowerCase()
@@ -72,7 +67,6 @@ function withLabel(name: string, label: string): string {
 }
 
 export const suffixName   = (name: string, n: number) => withLabel(name, String(n))
-export const restoredName = (name: string) => withLabel(name, 'restored')
 
 // ── Items ───────────────────────────────────────────────────────────────────
 
@@ -92,9 +86,7 @@ export interface FileItem {
   createdAt: string; createdBy: string
   versionId?: string
   GSI1PK?: string; GSI1SK?: string
-  deletedAt?: string; deleteMarkerVersionId?: string
-  GSI2PK?: string; GSI2SK?: string
-  purgeAt?: number
+  purgeAt?: number   // TTL for an abandoned upload only; cleared when the file is confirmed
 }
 
 export function folderIndexKeys(ws: string, parentId: string, name: string, kind: 'folder' | 'file', id: string) {
@@ -128,13 +120,6 @@ export function buildPendingFile(
     createdAt: new Date(a.now).toISOString(), createdBy: a.by,
     purgeAt: Math.floor((a.now + PENDING_UPLOAD_TTL_SECONDS * 1000) / 1000),
   }
-}
-
-// When a removed file's catalogue row may disappear: 28 days after removal, or
-// later if a retention lock on it runs longer. Epoch seconds, for DynamoDB TTL.
-export function purgeAtFor(deletedAtMs: number, retainUntilMs?: number): number {
-  const window = deletedAtMs + TRASH_RETENTION_DAYS * DAY_MS
-  return Math.floor(Math.max(window, retainUntilMs ?? 0) / 1000)
 }
 
 // Content-Disposition for a download: an ASCII-safe fallback plus the real
@@ -205,9 +190,4 @@ export const toPublicFolder = (f: FolderItem) => ({ id: f.folderId, name: f.name
 
 export const toPublicFile = (f: FileItem) => ({
   id: f.fileId, name: f.name, folderId: f.folderId, size: f.size, contentType: f.contentType, createdAt: f.createdAt,
-})
-
-export const toPublicTrashFile = (f: FileItem) => ({
-  id: f.fileId, name: f.name, size: f.size, deletedAt: f.deletedAt ?? null,
-  purgeAt: f.purgeAt ? new Date(f.purgeAt * 1000).toISOString() : null,
 })

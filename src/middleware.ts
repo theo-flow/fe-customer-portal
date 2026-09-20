@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 // Routes that require a valid session
-const PROTECTED = ['/dashboard', '/upload', '/status', '/forms', '/submissions', '/templates', '/sign/new', '/clarifications', '/gate-keep']
+const PROTECTED = ['/dashboard', '/upload', '/status', '/forms', '/submissions', '/templates', '/sign/new', '/clarifications', '/gate-keep', '/team', '/billing']
 
 // Exact-match protected routes -- /sign itself (the org's session list) needs auth,
 // but /sign/{sessionId}/{signerId}/{token} (the public signing link) must not, so it
@@ -67,6 +67,8 @@ export const config = {
     '/templates/:path*',
     '/clarifications/:path*',
     '/gate-keep/:path*',
+    '/team/:path*',
+    '/billing/:path*',
     '/sign',
     '/sign/new',
     '/login',

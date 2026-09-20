@@ -25,6 +25,8 @@ vi.mock('@aws-sdk/lib-dynamodb', () => ({
 }))
 
 import { verifyJwtClaims } from '@/lib/token'
+vi.mock('@/lib/org-access', () => ({ orgLocked: vi.fn(async () => null) }))
+
 import { POST } from '../route'
 
 const ORG_ID = 'org-abc123'

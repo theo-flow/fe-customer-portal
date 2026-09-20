@@ -1,15 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
+import fs from 'node:fs'
+import path from 'node:path'
 
 const { mockCtx, s3Send, presign, store } = vi.hoisted(() => ({
   mockCtx: vi.fn(),
   s3Send:  vi.fn(),
   presign: vi.fn(),
   store: {
-    listFolders: vi.fn(), getFolder: vi.fn(), getFile: vi.fn(), listFolderContents: vi.fn(), listTrash: vi.fn(),
+    listFolders: vi.fn(), getFolder: vi.fn(), getFile: vi.fn(), listFolderContents: vi.fn(),
     createFolder: vi.fn(), updateFolder: vi.fn(), deleteFolderIfEmpty: vi.fn(),
     createPendingFile: vi.fn(), confirmFile: vi.fn(), updateFile: vi.fn(),
-    softDeleteFile: vi.fn(), restoreFile: vi.fn(), deleteFileRow: vi.fn(),
+    deleteFile: vi.fn(),
   },
 }))
 
@@ -34,9 +36,6 @@ import { POST as filesPOST }               from '../files/route'
 import { PATCH as filePATCH, DELETE as fileDELETE }     from '../files/[id]/route'
 import { POST as confirmPOST }             from '../files/[id]/confirm/route'
 import { GET as downloadGET }              from '../files/[id]/download/route'
-import { POST as restorePOST }             from '../files/[id]/restore/route'
-import { DELETE as permanentDELETE }       from '../files/[id]/permanent/route'
-import { GET as trashGET, DELETE as trashDELETE } from '../trash/route'
 
 const WS = 'org-1'
 const USER = 'user-1'
@@ -53,7 +52,6 @@ const file = (over: Record<string, unknown> = {}) => ({
 const folder = (over: Record<string, unknown> = {}) => ({
   folderId: 'd1', parentId: 'root', name: 'Legal', createdAt: '2026-09-19T00:00:00.000Z', ...over,
 })
-const trashed = (over = {}) => file({ deletedAt: '2026-09-20T00:00:00.000Z', deleteMarkerVersionId: 'm1', purgeAt: 1_800_000_000, ...over })
 
 const s3Types = () => s3Send.mock.calls.map(c => c[0])
 
@@ -64,7 +62,6 @@ beforeEach(() => {
   s3Send.mockResolvedValue({})
   store.listFolders.mockResolvedValue([])
   store.listFolderContents.mockResolvedValue({ folders: [], files: [] })
-  store.listTrash.mockResolvedValue([])
   store.getFolder.mockResolvedValue(null)
   store.getFile.mockResolvedValue(null)
 })
@@ -82,10 +79,6 @@ describe('every route', () => {
       () => fileDELETE(req('DELETE', '/x'), p('f1')),
       () => confirmPOST(req('POST', '/x'), p('f1')),
       () => downloadGET(req('GET', '/x'), p('f1')),
-      () => restorePOST(req('POST', '/x'), p('f1')),
-      () => permanentDELETE(req('DELETE', '/x'), p('f1')),
-      () => trashGET(),
-      () => trashDELETE(),
     ]
     for (const call of calls) expect((await call()).status).toBe(401)
     expect(s3Send).not.toHaveBeenCalled()
@@ -309,7 +302,7 @@ describe('GET /files/[id]/download', () => {
   })
 
   it.each([
-    ['missing', null], ['still uploading', file({ status: 'PENDING' })], ['removed', trashed()],
+    ['missing', null], ['still uploading', file({ status: 'PENDING' })],
   ])('404s for a file that is %s', async (_label, row) => {
     store.getFile.mockResolvedValue(row)
     expect((await downloadGET(req('GET', '/x'), p('f1'))).status).toBe(404)
@@ -326,8 +319,8 @@ describe('PATCH /files/[id] (rename / move)', () => {
     expect(store.updateFile.mock.calls[0][3]).toEqual({ name: 'b.pdf', folderId: 'd1' })
   })
 
-  it('404s for a removed file or a missing destination', async () => {
-    store.getFile.mockResolvedValue(trashed())
+  it('404s for a missing file or a missing destination', async () => {
+    store.getFile.mockResolvedValue(null)
     expect((await filePATCH(req('PATCH', '/x', { name: 'b' }), p('f1'))).status).toBe(404)
     store.getFile.mockResolvedValue(file())
     store.getFolder.mockResolvedValue(null)
@@ -341,97 +334,69 @@ describe('PATCH /files/[id] (rename / move)', () => {
   })
 })
 
-describe('DELETE /files/[id] (remove)', () => {
-  it('adds a delete marker in S3 (no version id), then records it', async () => {
+describe('DELETE /files/[id] (the user’s own delete)', () => {
+  it('deletes the file’s own version in S3 (no delete marker), then drops the catalogue row', async () => {
     store.getFile.mockResolvedValue(file())
-    s3Send.mockResolvedValue({ DeleteMarker: true, VersionId: 'm-new' })
-    store.softDeleteFile.mockResolvedValue({ purgeAt: 1_800_000_000 })
-
     const res = await fileDELETE(req('DELETE', '/x'), p('f1'))
+
     expect(res.status).toBe(200)
-    expect(s3Types()[0]).toMatchObject({ __type: 'Delete', input: { Bucket: 'bkt', Key: 'org-1/f1' } })
-    expect(s3Types()[0].input).not.toHaveProperty('VersionId')
-    expect(store.softDeleteFile.mock.calls[0][3]).toMatchObject({ deleteMarkerVersionId: 'm-new' })
+    expect(await res.json()).toEqual({ ok: true })
+    expect(s3Send).toHaveBeenCalledTimes(1)
+    expect(s3Types()[0]).toMatchObject({ __type: 'Delete', input: { Bucket: 'bkt', Key: 'org-1/f1', VersionId: 'v1' } })
+    expect(store.deleteFile).toHaveBeenCalledWith({ tag: 'db' }, WS, expect.objectContaining({ fileId: 'f1' }))
   })
 
-  it('puts the file back in view if the catalogue cannot record the removal', async () => {
+  it('deletes in S3 before touching the catalogue, so a retry can finish the job', async () => {
     store.getFile.mockResolvedValue(file())
-    s3Send.mockResolvedValue({ DeleteMarker: true, VersionId: 'm-new' })
-    store.softDeleteFile.mockRejectedValue(new Error('ddb down'))
+    const order: string[] = []
+    s3Send.mockImplementation(async () => { order.push('s3'); return {} })
+    store.deleteFile.mockImplementation(async () => { order.push('db') })
+    await fileDELETE(req('DELETE', '/x'), p('f1'))
+    expect(order).toEqual(['s3', 'db'])
+  })
+
+  it('a retry after a failed catalogue step succeeds (deleting a gone version is fine)', async () => {
+    store.getFile.mockResolvedValue(file())
+    store.deleteFile.mockRejectedValueOnce(new Error('ddb down'))
     vi.spyOn(console, 'error').mockImplementation(() => {})
 
     expect((await fileDELETE(req('DELETE', '/x'), p('f1'))).status).toBe(500)
-    expect(s3Types()[1]).toMatchObject({ __type: 'Delete', input: { Key: 'org-1/f1', VersionId: 'm-new' } })
+    expect((await fileDELETE(req('DELETE', '/x'), p('f1'))).status).toBe(200)
+    expect(store.deleteFile).toHaveBeenCalledTimes(2)
   })
 
-  it('404s for a file that is already removed', async () => {
-    store.getFile.mockResolvedValue(trashed())
-    expect((await fileDELETE(req('DELETE', '/x'), p('f1'))).status).toBe(404)
-    expect(s3Send).not.toHaveBeenCalled()
-  })
-})
-
-describe('POST /files/[id]/restore', () => {
-  it('removes the delete marker by its version id, then records the restore', async () => {
-    store.getFile.mockResolvedValue(trashed())
-    store.restoreFile.mockResolvedValue({ name: 'a (restored).pdf' })
-    const res = await restorePOST(req('POST', '/x'), p('f1'))
-
-    expect(s3Types()[0]).toMatchObject({ __type: 'Delete', input: { Key: 'org-1/f1', VersionId: 'm1' } })
-    expect((await res.json()).file.name).toBe('a (restored).pdf')
-  })
-
-  it('404s for a file that is not in the trash', async () => {
+  it('reports a retention-locked file (S3 refuses) and keeps its row', async () => {
     store.getFile.mockResolvedValue(file())
-    expect((await restorePOST(req('POST', '/x'), p('f1'))).status).toBe(404)
-  })
-})
-
-describe('DELETE /files/[id]/permanent', () => {
-  it('deletes the file\'s own version, tidies the marker, and drops the row', async () => {
-    store.getFile.mockResolvedValue(trashed())
-    const res = await permanentDELETE(req('DELETE', '/x'), p('f1'))
-
-    expect(res.status).toBe(200)
-    expect(s3Types()[0].input).toMatchObject({ Key: 'org-1/f1', VersionId: 'v1' })
-    expect(s3Types()[1].input).toMatchObject({ Key: 'org-1/f1', VersionId: 'm1' })
-    expect(store.deleteFileRow).toHaveBeenCalledWith({ tag: 'db' }, WS, 'f1')
-  })
-
-  it('refuses a file that is not in the trash', async () => {
-    store.getFile.mockResolvedValue(file())
-    expect((await permanentDELETE(req('DELETE', '/x'), p('f1'))).status).toBe(404)
-    expect(s3Send).not.toHaveBeenCalled()
-  })
-
-  it('reports a retention-locked file and keeps its row', async () => {
-    store.getFile.mockResolvedValue(trashed())
     s3Send.mockRejectedValue(Object.assign(new Error('denied'), { name: 'AccessDenied', $metadata: { httpStatusCode: 403 } }))
-    const res = await permanentDELETE(req('DELETE', '/x'), p('f1'))
+    const res = await fileDELETE(req('DELETE', '/x'), p('f1'))
 
     expect(res.status).toBe(409)
     expect((await res.json()).error).toBe('locked')
-    expect(store.deleteFileRow).not.toHaveBeenCalled()
+    expect(store.deleteFile).not.toHaveBeenCalled()
+  })
+
+  it('another S3 failure is a clean 500 and the row is kept', async () => {
+    store.getFile.mockResolvedValue(file())
+    s3Send.mockRejectedValue(new Error('s3 down'))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    expect((await fileDELETE(req('DELETE', '/x'), p('f1'))).status).toBe(500)
+    expect(store.deleteFile).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['missing (or in another workspace)', null], ['still uploading', file({ status: 'PENDING' })],
+  ])('404s for a file that is %s, without touching S3', async (_label, row) => {
+    store.getFile.mockResolvedValue(row)
+    expect((await fileDELETE(req('DELETE', '/x'), p('f1'))).status).toBe(404)
+    expect(s3Send).not.toHaveBeenCalled()
+    expect(store.getFile.mock.calls[0][1]).toBe(WS)
   })
 })
 
-describe('/trash', () => {
-  it('lists removed files with when they will be purged', async () => {
-    store.listTrash.mockResolvedValue([trashed({ name: 'old.pdf' })])
-    const body = await (await trashGET()).json()
-    expect(body.files[0]).toMatchObject({ id: 'f1', name: 'old.pdf', purgeAt: new Date(1_800_000_000 * 1000).toISOString() })
-  })
-
-  it('empty trash deletes what it can and reports the locked files', async () => {
-    store.listTrash.mockResolvedValue([trashed({ fileId: 'a', name: 'a.pdf', versionId: 'va' }), trashed({ fileId: 'b', name: 'b.pdf', versionId: 'vb' })])
-    s3Send.mockImplementation(async (cmd: { input: { VersionId?: string } }) => {
-      if (cmd.input.VersionId === 'vb') throw Object.assign(new Error('denied'), { name: 'AccessDenied' })
-      return {}
-    })
-    const body = await (await trashDELETE()).json()
-
-    expect(body).toEqual({ deleted: 1, locked: ['b.pdf'] })
-    expect(store.deleteFileRow).toHaveBeenCalledTimes(1)
-    expect(store.deleteFileRow.mock.calls[0][2]).toBe('a')
+describe('the system never deletes on its own', () => {
+  it('has no trash, restore or permanent-delete endpoints any more', () => {
+    for (const gone of ['../files/[id]/restore/route', '../files/[id]/permanent/route', '../trash/route']) {
+      expect(fs.existsSync(path.join(__dirname, `${gone}.ts`))).toBe(false)
+    }
   })
 })

@@ -50,7 +50,7 @@ export default function ContactPage() {
 
       <section className="relative overflow-hidden">
         <GradientMesh base="#F5EDD8" colorA="#F0B848" colorB="#4E82CC" />
-        <div className="relative max-w-[560px] mx-auto px-4 sm:px-8 pt-10 pb-16">
+        <div className="relative max-w-[820px] mx-auto px-4 sm:px-8 pt-10 pb-16">
         <div className="text-center mb-6">
           <span className="inline-flex text-[11px] font-semibold text-gray-600 uppercase
                            tracking-[0.10em] border border-black/[0.12] bg-white/70 rounded-full px-3 py-[5px]">
@@ -62,7 +62,7 @@ export default function ContactPage() {
           </p>
         </div>
 
-        <div className="rounded-3xl border border-black/[0.08] bg-white px-5 py-6 sm:px-8 sm:py-8
+        <div className="rounded-3xl border border-black/[0.08] bg-white px-5 py-6 sm:px-12 sm:py-10
                         shadow-[0_24px_60px_-24px_rgba(17,17,17,0.35)]">
         {status === 'sent' ? (
           <div role="status" className="py-6 text-center">
@@ -109,7 +109,7 @@ export default function ContactPage() {
             <Field label={`Additional details (optional) - ${message.length}/${MESSAGE_MAX}`}>
               <textarea value={message}
                 onChange={e => setMessage(e.target.value.slice(0, MESSAGE_MAX))}
-                rows={3} maxLength={MESSAGE_MAX} placeholder="Anything else we should know?"
+                rows={4} maxLength={MESSAGE_MAX} placeholder="Anything else we should know?"
                 className="w-full px-4 py-3 rounded-xl text-[14px] text-black border border-gray-200
                            outline-none focus:border-gray-400 transition-colors resize-none" />
             </Field>

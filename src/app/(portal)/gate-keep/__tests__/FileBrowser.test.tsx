@@ -13,15 +13,14 @@ beforeAll(() => {
 
 interface Folder { id: string; name: string; parentId: string; createdAt: string }
 interface File   { id: string; name: string; folderId: string; size: number; contentType: string; createdAt: string; locked?: boolean }
-interface Trash  { id: string; name: string; size: number; deletedAt: string; purgeAt: string; locked?: boolean }
 
 const DAY = 24 * 3600 * 1000
 const iso = (msAgo: number) => new Date(Date.now() - msAgo).toISOString()
 
 // A small in-memory stand-in for the Gate-Keep API, so the tests exercise the
 // screen's real request/response handling end to end.
-function installFakeServer(seed: { folders: Folder[]; files: File[]; trash?: Trash[] }) {
-  const s = { folders: [...seed.folders], files: [...seed.files], trash: [...(seed.trash ?? [])] }
+function installFakeServer(seed: { folders: Folder[]; files: File[] }) {
+  const s = { folders: [...seed.folders], files: [...seed.files] }
   const calls: string[] = []
   // lets a test keep one folder's listing 'in flight' to reproduce a slow network
   const holds = new Map<string, Promise<void>>()
@@ -54,15 +53,6 @@ function installFakeServer(seed: { folders: Folder[]; files: File[]; trash?: Tra
         tree: s.folders.map(f => ({ id: f.id, parentId: f.parentId, name: f.name })),
       })
     }
-    if (parts[0] === 'trash') {
-      if (method === 'DELETE') {
-        const locked = s.trash.filter(t => t.locked).map(t => t.name)
-        const deleted = s.trash.length - locked.length
-        s.trash = s.trash.filter(t => t.locked)
-        return json({ deleted, locked })
-      }
-      return json({ files: s.trash.map(t => ({ ...t })) })   // a real response is always a fresh object
-    }
     if (parts[0] === 'folders') {
       if (method === 'POST') {
         if (taken(body.parentId, body.name)) return err(409, 'name_taken', 'That name is already used in this folder.')
@@ -82,20 +72,9 @@ function installFakeServer(seed: { folders: Folder[]; files: File[]; trash?: Tra
     }
     if (parts[0] === 'files') {
       const f = s.files.find(x => x.id === parts[1])
-      if (parts[2] === 'restore') {
-        const t = s.trash.find(x => x.id === parts[1])!
-        s.trash = s.trash.filter(x => x.id !== t.id)
-        s.files.push({ id: t.id, name: t.name, folderId: 'root', size: t.size, contentType: 'application/pdf', createdAt: iso(0) })
-        return json({ file: t })
-      }
-      if (parts[2] === 'permanent') {
-        const t = s.trash.find(x => x.id === parts[1])!
-        if (t.locked) return err(409, 'locked', 'This file is protected by a retention lock and cannot be deleted yet.')
-        s.trash = s.trash.filter(x => x.id !== t.id); return json({ ok: true })
-      }
       if (method === 'DELETE' && f) {
+        if (f.locked) return err(409, 'locked', 'This file is protected by a retention lock and cannot be deleted yet.')
         s.files = s.files.filter(x => x.id !== f.id)
-        s.trash.push({ id: f.id, name: f.name, size: f.size, deletedAt: iso(0), purgeAt: new Date(Date.now() + 28 * DAY).toISOString() })
         return json({ ok: true })
       }
       if (method === 'PATCH' && f) {
@@ -139,15 +118,14 @@ describe('FileBrowser', () => {
   beforeEach(() => { server = installFakeServer(SEED()) })
   afterEach(() => { vi.unstubAllGlobals() })
 
-  it('shows folders before files, with the trash count', async () => {
+  it('shows folders before files, with the file count', async () => {
     renderBrowser()
     await screen.findByText('alpha.pdf')
 
     const names = screen.getAllByRole('listitem').map(li => li.textContent ?? '')
     const order = ['HR', 'Legal', 'beta.pdf', 'alpha.pdf'].map(n => names.findIndex(t => t.includes(n)))
     expect(order).toEqual([...order].sort((a, b) => a - b))        // HR, Legal, then files (newest first)
-    expect(screen.getByRole('tab', { name: 'Files (2)' })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'Trash (0)' })).toBeInTheDocument()
+    expect(screen.getByText('2 files')).toBeInTheDocument()
   })
 
   it('opens a folder, shows its breadcrumb, and returns home', async () => {
@@ -304,58 +282,95 @@ describe('FileBrowser', () => {
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Open folder HR' })).not.toBeInTheDocument())
   })
 
-  it('moves a file to trash, then Undo brings it back', async () => {
+  it("deletes a file for good after a confirmation, with no trash and no undo", async () => {
     const user = userEvent.setup()
     renderBrowser()
     await screen.findByText('alpha.pdf')
 
-    await openMenu(user, 'alpha.pdf', 'Move to trash')
+    await openMenu(user, 'alpha.pdf', 'Delete')
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Delete permanently?')).toBeInTheDocument()
+    expect(within(dialog).getByText(/"alpha.pdf" will be deleted for good. This cannot be undone./)).toBeInTheDocument()
+    expect(server.state.files.some(f => f.id === 'f1')).toBe(true)          // nothing happens until confirmed
+
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }))
+
     await waitFor(() => expect(screen.queryByText('alpha.pdf')).not.toBeInTheDocument())
-    expect(await screen.findByRole('tab', { name: 'Trash (1)' })).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'Undo' }))
-    expect(await screen.findByText('alpha.pdf')).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'Trash (0)' })).toBeInTheDocument()
+    expect(server.state.files.some(f => f.id === 'f1')).toBe(false)
+    expect(await screen.findByText('alpha.pdf deleted')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument()
+    expect(server.calls).toContain('DELETE /api/gate-keep/files/f1')
   })
 
-  it('counts down the days left in trash from the server\'s purge date', async () => {
+  it('cancelling the confirmation deletes nothing', async () => {
     const user = userEvent.setup()
     renderBrowser()
     await screen.findByText('alpha.pdf')
-    await openMenu(user, 'alpha.pdf', 'Move to trash')
-    await user.click(await screen.findByRole('tab', { name: /Trash/ }))
 
-    expect(await screen.findByText(/Deletes in 28 days/)).toBeInTheDocument()
+    await openMenu(user, 'alpha.pdf', 'Delete')
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Cancel' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(screen.getByText('alpha.pdf')).toBeInTheDocument()
+    expect(server.calls.some(c => c.startsWith('DELETE'))).toBe(false)
   })
 
-  it('explains a retention-locked file instead of deleting it', async () => {
-    server = installFakeServer({ ...SEED(), trash: [{ id: 'x1', name: 'locked.pdf', size: 100, deletedAt: iso(DAY), purgeAt: new Date(Date.now() + 90 * DAY).toISOString(), locked: true }] })
+  it('deletes several selected files after one confirmation', async () => {
     const user = userEvent.setup()
     renderBrowser()
-    await user.click(await screen.findByRole('tab', { name: /Trash/ }))
+    await screen.findByText('alpha.pdf')
 
-    await openMenu(user, 'locked.pdf', 'Delete permanently')
-    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Delete permanently' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Select all files' }))
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('2 files will be deleted for good. This cannot be undone.')).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }))
+
+    await waitFor(() => expect(screen.queryByText('alpha.pdf')).not.toBeInTheDocument())
+    expect(screen.queryByText('beta.pdf')).not.toBeInTheDocument()
+    expect(server.state.files.map(f => f.id)).toEqual(['f3'])
+    expect(await screen.findByText('2 files deleted')).toBeInTheDocument()
+  })
+
+  it('explains a retention-locked file instead of deleting it, and keeps it', async () => {
+    server = installFakeServer({ ...SEED(), files: [{ id: 'x1', name: 'locked.pdf', folderId: 'root', size: 100, contentType: 'application/pdf', createdAt: iso(DAY), locked: true }] })
+    const user = userEvent.setup()
+    renderBrowser()
+    await screen.findByText('locked.pdf')
+
+    await openMenu(user, 'locked.pdf', 'Delete')
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Delete' }))
 
     expect(await screen.findByText('This file is protected by a retention lock and cannot be deleted yet.')).toBeInTheDocument()
     expect(screen.getByText('locked.pdf')).toBeInTheDocument()
-    expect(screen.getByText(/Deletes in 90 days/)).toBeInTheDocument()
   })
 
-  it('empty trash reports what a lock kept', async () => {
-    server = installFakeServer({ ...SEED(), trash: [
-      { id: 'x1', name: 'gone.pdf',   size: 1, deletedAt: iso(DAY), purgeAt: new Date(Date.now() + 27 * DAY).toISOString() },
-      { id: 'x2', name: 'locked.pdf', size: 1, deletedAt: iso(DAY), purgeAt: new Date(Date.now() + 90 * DAY).toISOString(), locked: true },
+  it('in a bulk delete, only the refused file stays', async () => {
+    server = installFakeServer({ ...SEED(), files: [
+      { id: 'x1', name: 'gone.pdf',   folderId: 'root', size: 1, contentType: 'application/pdf', createdAt: iso(DAY) },
+      { id: 'x2', name: 'locked.pdf', folderId: 'root', size: 1, contentType: 'application/pdf', createdAt: iso(DAY), locked: true },
     ] })
     const user = userEvent.setup()
     renderBrowser()
-    await user.click(await screen.findByRole('tab', { name: /Trash/ }))
-    await user.click(await screen.findByRole('button', { name: 'Empty trash' }))
-    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Empty trash' }))
+    await screen.findByText('gone.pdf')
 
-    expect(await screen.findByText(/1 file could not be deleted yet because of a retention lock/)).toBeInTheDocument()
+    await user.click(screen.getByRole('checkbox', { name: 'Select all files' }))
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Delete' }))
+
+    expect(await screen.findByText('This file is locked')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByText('gone.pdf')).not.toBeInTheDocument())
     expect(screen.getByText('locked.pdf')).toBeInTheDocument()
-    expect(screen.queryByText('gone.pdf')).not.toBeInTheDocument()
+  })
+
+  it('has no trash: no tab, no restore, no countdown', async () => {
+    renderBrowser()
+    await screen.findByText('alpha.pdf')
+
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument()
+    expect(screen.queryByText(/trash/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/restore/i)).not.toBeInTheDocument()
+    expect(server.calls.some(c => c.includes('/trash'))).toBe(false)
   })
 
   it('search filters folders and files in the current folder', async () => {

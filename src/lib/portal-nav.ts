@@ -1,5 +1,5 @@
 import {
-  LayoutDashboard, FileText, Send, Inbox, UploadCloud, MessageSquareWarning, PenLine, FolderLock,
+  LayoutDashboard, FileText, Send, Inbox, UploadCloud, MessageSquareWarning, PenLine, FolderLock, Users,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -20,7 +20,7 @@ export interface NavGroup {
 // gating the old top bar used. Gate-Keep is a baseline capability every org has.
 // Groups follow the product's own workflow (forms in, documents in, sign, store)
 // so the sidebar reads as the product, not a flat list. Empty groups are dropped.
-export function navGroupsFor(products: string[]): NavGroup[] {
+export function navGroupsFor(products: string[], role: string = 'agent'): NavGroup[] {
   const has = (p: string) => products.includes(p)
 
   const groups: NavGroup[] = [
@@ -45,6 +45,8 @@ export function navGroupsFor(products: string[]): NavGroup[] {
       items: has('sign') ? [{ href: '/sign', label: 'Sign', icon: PenLine }] : [],
     },
     { label: 'Files', items: [{ href: '/gate-keep', label: 'Gate-Keep', icon: FolderLock }] },
+    // Managing users is an admin action, so agents never see this item.
+    { label: 'Organisation', items: role === 'admin' ? [{ href: '/team', label: 'Team', icon: Users }] : [] },
   ]
 
   return groups.filter(g => g.items.length > 0)

@@ -10,7 +10,7 @@ import { MAX_UPLOAD_BYTES, ROOT_FOLDER_ID, s3KeyFor, toPublicFile } from '@/lib/
 export async function POST(_req: Request, { params }: { params: { id: string } }) {
   return gateKeep('files/confirm', async ({ ws, s3, db }) => {
     const file = await getFile(db, ws, params.id)
-    if (!file || file.deletedAt) throw notFound()
+    if (!file) throw notFound()
     if (file.status === 'READY') return NextResponse.json({ file: toPublicFile(file) })
 
     const key = s3KeyFor(ws, file.fileId)

@@ -1,19 +1,15 @@
 'use client'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronRight, Download, Folder, FolderInput, FolderPlus, Pencil, RotateCcw, Search, Trash2 } from 'lucide-react'
+import { ChevronRight, Download, Folder, FolderInput, FolderPlus, Pencil, Search, Trash2 } from 'lucide-react'
 import { ConfirmDialog } from '@/components/crud/ConfirmDialog'
 import { PromptDialog } from '@/components/crud/PromptDialog'
 import { RowMenu } from '@/components/crud/RowMenu'
-import { ToastAction } from '@/components/ui/toast'
 import { toast } from '@/hooks/use-toast'
-import {
-  TRASH_RETENTION_DAYS, daysUntil, filterAndSort, formatFileSize, type SortMode, type StoredFile,
-} from '@/lib/gate-keep-view'
-import { ApiError, api, type FileRow, type FolderRow, type ListResponse, type TrashRow } from './api'
+import { filterAndSort, formatFileSize, type SortMode, type StoredFile } from '@/lib/gate-keep-view'
+import { ApiError, api, type FileRow, type FolderRow, type ListResponse } from './api'
 import { MoveDialog } from './MoveDialog'
 import { UploadPanel } from './UploadPanel'
 
-type Tab = 'files' | 'trash'
 type Target = { kind: 'file' | 'folder'; id: string; name: string; parentId: string }
 
 const FILE_ICON = (
@@ -30,15 +26,13 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
 
 const errorMessage = (err: unknown) => (err instanceof ApiError ? err.message : 'Something went wrong. Please try again.')
 
-// A folder of the caller's own archive: breadcrumbs, folders, files, move/rename,
-// and a trash where removed files wait 28 days before they are deleted for good.
+// A folder of the caller's own archive: breadcrumbs, folders, files, move/rename
+// and delete. Deleting a file is immediate and final (after a confirmation).
 export function FileBrowser() {
   const [folderId, setFolderId] = useState('root')
   const [data, setData]         = useState<ListResponse | null>(null)
-  const [trash, setTrash]       = useState<TrashRow[]>([])
   const [loading, setLoading]   = useState(true)
 
-  const [tab, setTab]     = useState<Tab>('files')
   const [query, setQuery] = useState('')
   const [sort, setSort]   = useState<SortMode>('newest')
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -47,8 +41,7 @@ export function FileBrowser() {
   const [renameTarget, setRenameTarget]   = useState<Target | null>(null)
   const [moveTarget, setMoveTarget]       = useState<Target | null>(null)
   const [deleteFolder, setDeleteFolder]   = useState<Target | null>(null)
-  const [deleteTarget, setDeleteTarget]   = useState<TrashRow | null>(null)
-  const [emptyTrashOpen, setEmptyTrashOpen] = useState(false)
+  const [deleteFilesTarget, setDeleteFilesTarget] = useState<FileRow[] | null>(null)
   const [busy, setBusy] = useState(false)
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
@@ -76,18 +69,13 @@ export function FileBrowser() {
     }
   }, [])
 
-  const loadTrash = useCallback(async () => {
-    try { setTrash((await api<{ files: TrashRow[] }>('GET', '/api/gate-keep/trash')).files) } catch { /* keep what we have */ }
-  }, [])
-
   const refresh = useCallback(async () => {
-    await Promise.all([load(folderId), loadTrash()])
+    await load(folderId)
     setSelected(new Set())
-  }, [load, loadTrash, folderId])
+  }, [load, folderId])
 
-  useEffect(() => { load(folderId); loadTrash() }, [reloadToken]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(folderId) }, [reloadToken]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const inTrash = tab === 'trash'
   const folders = data?.folders ?? []
   const files   = data?.files ?? []
 
@@ -101,12 +89,6 @@ export function FileBrowser() {
     const items: StoredFile[] = files.map(f => ({ key: f.id, filename: f.name, size: f.size, lastModified: f.createdAt }))
     return filterAndSort(items, query, sort).map(i => byId.get(i.key)!)
   }, [files, query, sort])
-
-  const visibleTrash = useMemo(() => {
-    const byId = new Map(trash.map(f => [f.id, f]))
-    const items: StoredFile[] = trash.map(f => ({ key: f.id, filename: f.name, size: f.size, lastModified: f.deletedAt }))
-    return filterAndSort(items, query, sort).map(i => byId.get(i.key)!)
-  }, [trash, query, sort])
 
   const here = data?.breadcrumb.at(-1)
   // Actions always apply to the folder whose contents are on screen, never to one that is still loading.
@@ -165,54 +147,29 @@ export function FileBrowser() {
     }
   }
 
-  async function restoreIds(ids: string[]) {
-    const results = await Promise.allSettled(ids.map(id => api('POST', `/api/gate-keep/files/${id}/restore`)))
-    const bad = results.filter(r => r.status === 'rejected').length
-    await refresh()
-    if (bad > 0) failed(`${plural(bad, 'file')} could not be restored`)
-    else toast({ title: ids.length === 1 ? 'File restored' : `${plural(ids.length, 'file')} restored` })
-  }
-
-  async function trashFiles(targets: FileRow[]) {
-    setBusy(true)
+  // The user's own delete: final. Each file is deleted independently; anything the
+  // server refuses (for example a retention lock) stays, with the server's reason.
+  const handleDeleteFiles = () => run(async () => {
+    const targets = deleteFilesTarget
+    if (!targets) return
     const results = await Promise.allSettled(targets.map(t => api('DELETE', `/api/gate-keep/files/${t.id}`)))
-    const okIds = targets.filter((_, i) => results[i].status === 'fulfilled').map(t => t.id)
-    const bad = targets.length - okIds.length
-
+    setDeleteFilesTarget(null)   // on a refusal too, so the explanation isn't hidden behind the dialog
     await refresh()
-    setBusy(false)
 
-    if (bad > 0) failed(`${plural(bad, 'file')} could not be moved to trash`)
-    if (okIds.length > 0) {
+    const rejected = results.flatMap(r => (r.status === 'rejected' ? [r.reason] : []))
+    const ok = targets.length - rejected.length
+    // One toast only (the toaster shows one at a time, so a success toast would hide the failure).
+    if (rejected.length > 0) {
+      const locked = rejected.find(e => e instanceof ApiError && e.code === 'locked')
       toast({
-        title: okIds.length === 1 && targets.length === 1 ? `${targets[0].name} moved to trash` : `${plural(okIds.length, 'file')} moved to trash`,
-        duration: 8000,
-        action: <ToastAction altText="Undo move to trash" onClick={() => restoreIds(okIds)}>Undo</ToastAction>,
+        variant: 'destructive',
+        title: locked ? 'This file is locked' : `${plural(rejected.length, 'file')} could not be deleted`,
+        description: `${errorMessage(locked ?? rejected[0])}${ok > 0 ? ` ${plural(ok, 'other file')} deleted.` : ''}`,
       })
+    } else {
+      toast({ title: targets.length === 1 ? `${targets[0].name} deleted` : `${plural(ok, 'file')} deleted` })
     }
-  }
-
-  const handleDeletePermanently = () => run(async () => {
-    if (!deleteTarget) return
-    try {
-      await api('DELETE', `/api/gate-keep/files/${deleteTarget.id}/permanent`)
-      toast({ title: 'File deleted permanently' })
-    } catch (err) {
-      if (err instanceof ApiError && err.code === 'locked') failed('This file is locked', err)
-      else throw err
-    }
-    setDeleteTarget(null)
-    await refresh()
   }, 'Could not delete the file')
-
-  const handleEmptyTrash = () => run(async () => {
-    const { deleted, locked } = await api<{ deleted: number; locked: string[] }>('DELETE', '/api/gate-keep/trash')
-    setEmptyTrashOpen(false)
-    await refresh()
-    toast(locked.length === 0
-      ? { title: 'Trash emptied' }
-      : { title: `${plural(deleted, 'file')} deleted`, description: `${plural(locked.length, 'file')} could not be deleted yet because of a retention lock.` })
-  }, 'Could not empty the trash')
 
   // ── selection ──────────────────────────────────────────────────────────────
 
@@ -224,12 +181,6 @@ export function FileBrowser() {
     return next
   })
 
-  function switchTab(next: Tab) {
-    setTab(next)
-    setSelected(new Set())
-    setQuery('')
-  }
-
   function open(id: string) {
     setQuery('')
     setSelected(new Set())
@@ -238,15 +189,9 @@ export function FileBrowser() {
     load(id)
   }
 
-  const tabClass = (t: Tab) =>
-    `px-4 py-2 text-[13px] font-medium rounded-full transition-colors ${tab === t ? 'bg-black text-white' : 'text-gray-500 hover:bg-gray-100'}`
-
-  const emptyHere = folders.length === 0 && files.length === 0
   const emptyMessage = query.trim()
-    ? `No ${inTrash ? 'files' : 'files or folders'} match "${query.trim()}".`
-    : inTrash
-      ? `Trash is empty. Files you delete stay here for ${TRASH_RETENTION_DAYS} days.`
-      : folderId === 'root' ? 'No files stored yet.' : 'This folder is empty.'
+    ? `No files or folders match "${query.trim()}".`
+    : folderId === 'root' ? 'No files stored yet.' : 'This folder is empty.'
 
   const folderMenu = (f: FolderRow) => [
     { label: 'Rename',    icon: <Pencil className="h-3.5 w-3.5"/>,      onSelect: () => setRenameTarget({ kind: 'folder', id: f.id, name: f.name, parentId: f.parentId }) },
@@ -258,7 +203,7 @@ export function FileBrowser() {
     { label: 'Download',      icon: <Download className="h-3.5 w-3.5"/>,    onSelect: () => handleDownload(f.id) },
     { label: 'Rename',        icon: <Pencil className="h-3.5 w-3.5"/>,      onSelect: () => setRenameTarget({ kind: 'file', id: f.id, name: f.name, parentId: f.folderId }) },
     { label: 'Move to…',      icon: <FolderInput className="h-3.5 w-3.5"/>, onSelect: () => setMoveTarget({ kind: 'file', id: f.id, name: f.name, parentId: f.folderId }) },
-    { label: 'Move to trash', danger: true, icon: <Trash2 className="h-3.5 w-3.5"/>, onSelect: () => trashFiles([f]) },
+    { label: 'Delete', danger: true, icon: <Trash2 className="h-3.5 w-3.5"/>, onSelect: () => setDeleteFilesTarget([f]) },
   ]
 
   return (
@@ -269,14 +214,9 @@ export function FileBrowser() {
         <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-400">Your stored files</p>
 
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div role="tablist" aria-label="File views" className="flex gap-1">
-            <button role="tab" aria-selected={tab === 'files'} onClick={() => switchTab('files')} className={tabClass('files')}>
-              Files{data && ` (${files.length})`}
-            </button>
-            <button role="tab" aria-selected={tab === 'trash'} onClick={() => switchTab('trash')} className={tabClass('trash')}>
-              Trash{` (${trash.length})`}
-            </button>
-          </div>
+          <p className="text-[13px] font-medium text-gray-700">
+            {data ? plural(files.length, 'file') : ' '}
+          </p>
 
           <div className="flex items-center gap-2">
             <div className="relative">
@@ -294,8 +234,7 @@ export function FileBrowser() {
           </div>
         </div>
 
-        {!inTrash && (
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <nav aria-label="Breadcrumb" className="flex min-w-0 flex-wrap items-center gap-1 text-[13px]">
               {data && data.breadcrumb.length > 0 ? (
                 <button onClick={() => open('root')} className="text-gray-500 hover:text-black">Home</button>
@@ -315,26 +254,16 @@ export function FileBrowser() {
               className="flex items-center gap-1.5 rounded-full border border-black/[0.12] px-4 py-1.5 text-[12px] font-semibold transition-colors hover:border-black/30 disabled:opacity-50">
               <FolderPlus className="h-3.5 w-3.5"/> New folder
             </button>
-          </div>
-        )}
+        </div>
 
-        {inTrash && trash.length > 0 && (
-          <div className="mb-3 flex items-center justify-between gap-3 rounded-xl bg-gray-50 px-4 py-3">
-            <p className="text-[12px] text-gray-500">Files in trash are deleted permanently after {TRASH_RETENTION_DAYS} days.</p>
-            <button onClick={() => setEmptyTrashOpen(true)} className="whitespace-nowrap text-[12px] font-semibold text-red-600 hover:text-red-700">
-              Empty trash
-            </button>
-          </div>
-        )}
-
-        {!inTrash && selected.size > 0 && (
+        {selected.size > 0 && (
           <div className="mb-3 flex items-center justify-between gap-3 rounded-xl bg-gray-50 px-4 py-3">
             <p className="text-[13px] font-medium text-gray-700">{selected.size} selected</p>
             <div className="flex items-center gap-3">
               <button onClick={() => setSelected(new Set())} className="text-[12px] text-gray-500 hover:text-gray-900">Clear</button>
-              <button onClick={() => trashFiles(files.filter(f => selected.has(f.id)))} disabled={busy}
-                className="rounded-full bg-black px-4 py-1.5 text-[12px] font-medium text-white hover:bg-gray-900 disabled:opacity-50">
-                Move to trash
+              <button onClick={() => setDeleteFilesTarget(files.filter(f => selected.has(f.id)))} disabled={busy}
+                className="rounded-full bg-red-600 px-4 py-1.5 text-[12px] font-medium text-white hover:bg-red-700 disabled:opacity-50">
+                Delete
               </button>
             </div>
           </div>
@@ -344,36 +273,8 @@ export function FileBrowser() {
           <div className="space-y-2">
             {[1, 2].map(i => <div key={i} className="h-[52px] animate-pulse rounded-xl border border-black/[0.06] bg-gray-50"/>)}
           </div>
-        ) : inTrash ? (
-          visibleTrash.length === 0 ? (
-            <p className="py-6 text-[13px] text-gray-400">{emptyMessage}</p>
-          ) : (
-            <ul className="space-y-2">
-              {visibleTrash.map(f => {
-                const left = daysUntil(f.purgeAt)
-                return (
-                  <li key={f.id} className="flex items-center gap-3 rounded-xl border border-black/[0.08] px-4 py-3">
-                    {FILE_ICON}
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-[13px] font-medium text-black">{f.name}</p>
-                      <p className="text-[11px] text-gray-400">
-                        {formatFileSize(f.size)}{left !== null && ` · Deletes in ${plural(left, 'day')}`}
-                      </p>
-                    </div>
-                    <button onClick={() => restoreIds([f.id])}
-                      className="flex items-center gap-1.5 whitespace-nowrap rounded-full border border-black/[0.12] px-3 py-1.5 text-[11px] font-semibold transition-colors hover:border-black/30">
-                      <RotateCcw className="h-3 w-3"/> Restore
-                    </button>
-                    <RowMenu label={`Actions for ${f.name}`} items={[
-                      { label: 'Delete permanently', danger: true, icon: <Trash2 className="h-3.5 w-3.5"/>, onSelect: () => setDeleteTarget(f) },
-                    ]}/>
-                  </li>
-                )
-              })}
-            </ul>
-          )
         ) : (visibleFolders.length === 0 && visibleFiles.length === 0) ? (
-          <p className="py-6 text-[13px] text-gray-400">{emptyHere || !query.trim() ? emptyMessage : emptyMessage}</p>
+          <p className="py-6 text-[13px] text-gray-400">{emptyMessage}</p>
         ) : (
           <div>
             {visibleFiles.length > 0 && (
@@ -431,13 +332,12 @@ export function FileBrowser() {
         title="Delete folder?" description={`"${deleteFolder?.name ?? ''}" will be deleted. It must be empty first.`}
         confirmLabel="Delete folder" destructive busy={busy} onConfirm={handleDeleteFolder}/>
 
-      <ConfirmDialog open={deleteTarget !== null} onOpenChange={o => { if (!o) setDeleteTarget(null) }}
-        title="Delete permanently?" description={`"${deleteTarget?.name ?? ''}" will be deleted for good. This cannot be undone.`}
-        confirmLabel="Delete permanently" destructive busy={busy} onConfirm={handleDeletePermanently}/>
-
-      <ConfirmDialog open={emptyTrashOpen} onOpenChange={setEmptyTrashOpen}
-        title="Empty trash?" description={`${plural(trash.length, 'file')} will be deleted for good. This cannot be undone.`}
-        confirmLabel="Empty trash" destructive busy={busy} onConfirm={handleEmptyTrash}/>
+      <ConfirmDialog open={deleteFilesTarget !== null} onOpenChange={o => { if (!o) setDeleteFilesTarget(null) }}
+        title="Delete permanently?"
+        description={deleteFilesTarget && deleteFilesTarget.length > 1
+          ? `${plural(deleteFilesTarget.length, 'file')} will be deleted for good. This cannot be undone.`
+          : `"${deleteFilesTarget?.[0]?.name ?? ''}" will be deleted for good. This cannot be undone.`}
+        confirmLabel="Delete" destructive busy={busy} onConfirm={handleDeleteFiles}/>
     </div>
   )
 }

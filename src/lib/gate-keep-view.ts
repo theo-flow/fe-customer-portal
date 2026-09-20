@@ -7,11 +7,6 @@ export interface StoredFile {
 
 export type SortMode = 'newest' | 'oldest' | 'name' | 'largest'
 
-// Must match the lifecycle rule on gate-keep-trash/ in the core terraform stack.
-export const TRASH_RETENTION_DAYS = 28
-
-const DAY_MS = 24 * 60 * 60 * 1000
-
 export function formatFileSize(bytes: number): string {
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
@@ -40,21 +35,6 @@ export function filterAndSort(files: StoredFile[], query: string, mode: SortMode
     case 'largest': return shown.sort((a, b) => b.size - a.size)
     default:        return shown.sort(byDate(-1))
   }
-}
-
-// A trashed file's lastModified is the moment it was moved to trash (copying
-// creates a new object), so the retention window runs from there.
-export function daysLeftInTrash(trashedAt: string | null, now: number = Date.now()): number | null {
-  if (!trashedAt) return null
-  const expires = new Date(trashedAt).getTime() + TRASH_RETENTION_DAYS * DAY_MS
-  return Math.max(0, Math.ceil((expires - now) / DAY_MS))
-}
-
-// Days until an ISO date (rounded up, never negative). Used for the trash countdown,
-// driven by the server's purgeAt so a file kept longer by a retention lock shows the truth.
-export function daysUntil(iso: string | null, now: number = Date.now()): number | null {
-  if (!iso) return null
-  return Math.max(0, Math.ceil((new Date(iso).getTime() - now) / DAY_MS))
 }
 
 export interface TreeRow { id: string; name: string; depth: number }

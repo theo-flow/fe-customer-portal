@@ -83,4 +83,27 @@ describe('GET /api/notifications', () => {
     expect(call.ExpressionAttributeValues[':pk']).toBe(`ORG#${ORG_ID}`)
     expect(call.ScanIndexForward).toBe(false)
   })
+
+  it('filters to org-wide notifications plus ones addressed to the caller', async () => {
+    mockSend.mockResolvedValueOnce({ Items: [] })
+    await GET()
+
+    const call = mockSend.mock.calls[0][0].input
+    expect(call.FilterExpression).toBe('attribute_not_exists(target_sub) OR target_sub = :sub')
+    expect(call.ExpressionAttributeValues[':sub']).toBe('user-1')
+    // A Limit would cap items examined before the filter, hiding this
+    // agent's notifications behind other agents'.
+    expect(call.Limit).toBeUndefined()
+  })
+
+  it('caps the returned list at 20 after filtering', async () => {
+    const items = Array.from({ length: 25 }, (_, i) => ({
+      notificationId: `n${i}`, submissionId: `s${i}`, group: 'claim', groupLabel: 'Claim',
+      message: 'm', status: 'DONE', read: false, createdAt: '2026-07-17T10:00:00Z',
+    }))
+    mockSend.mockResolvedValueOnce({ Items: items })
+
+    const body = await (await GET()).json()
+    expect(body.notifications).toHaveLength(20)
+  })
 })

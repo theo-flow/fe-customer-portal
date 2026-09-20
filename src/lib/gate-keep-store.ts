@@ -1,10 +1,10 @@
 import {
-  DeleteCommand, GetCommand, PutCommand, QueryCommand, TransactWriteCommand, type QueryCommandInput,
+  GetCommand, PutCommand, QueryCommand, TransactWriteCommand, type QueryCommandInput,
 } from '@aws-sdk/lib-dynamodb'
 import { GATE_KEEP_TABLE } from '@/lib/aws'
 import {
-  fileSk, folderIndexKeys, folderIndexPk, folderSk, nameLockSk, purgeAtFor, restoredName, suffixName,
-  trashIndexPk, wsPk, type FileItem, type FolderItem,
+  fileSk, folderIndexKeys, folderIndexPk, folderSk, nameLockSk, suffixName,
+  wsPk, type FileItem, type FolderItem,
 } from '@/lib/gate-keep-catalog'
 
 // All DynamoDB access for the Gate-Keep catalogue. Every function takes the
@@ -93,13 +93,15 @@ export async function listFolders(db: Db, ws: string): Promise<FolderItem[]> {
   })
 }
 
+// Point lookups are strongly consistent: they decide whether a change is allowed, and a user
+// who has just deleted or renamed something must not be told it is still there.
 export async function getFolder(db: Db, ws: string, id: string): Promise<FolderItem | null> {
-  const res = await db.send(new GetCommand({ TableName: T, Key: { PK: wsPk(ws), SK: folderSk(id) } }))
+  const res = await db.send(new GetCommand({ TableName: T, Key: { PK: wsPk(ws), SK: folderSk(id) }, ConsistentRead: true }))
   return (res.Item as FolderItem | undefined) ?? null
 }
 
 export async function getFile(db: Db, ws: string, id: string): Promise<FileItem | null> {
-  const res = await db.send(new GetCommand({ TableName: T, Key: { PK: wsPk(ws), SK: fileSk(id) } }))
+  const res = await db.send(new GetCommand({ TableName: T, Key: { PK: wsPk(ws), SK: fileSk(id) }, ConsistentRead: true }))
   return (res.Item as FileItem | undefined) ?? null
 }
 
@@ -114,15 +116,6 @@ export async function listFolderContents(db: Db, ws: string, folderId: string) {
     folders: items.filter((i): i is FolderItem => i.type === 'FOLDER'),
     files:   items.filter((i): i is FileItem => i.type === 'FILE'),
   }
-}
-
-export async function listTrash(db: Db, ws: string): Promise<FileItem[]> {
-  return queryAll<FileItem>(db, {
-    TableName: T,
-    IndexName: 'trash-index',
-    KeyConditionExpression: 'GSI2PK = :g',
-    ExpressionAttributeValues: { ':g': trashIndexPk(ws) },
-  })
 }
 
 // ── Folders ─────────────────────────────────────────────────────────────────
@@ -210,7 +203,7 @@ export async function confirmFile(
   })
 }
 
-// ── Rename / move / remove / restore / delete ───────────────────────────────
+// ── Rename / move / delete ──────────────────────────────────────────────────
 
 export async function updateFile(
   db: Db, ws: string, file: FileItem, to: { name: string; folderId: string },
@@ -228,7 +221,7 @@ export async function updateFile(
       TableName: T,
       Key: { PK: wsPk(ws), SK: fileSk(file.fileId) },
       UpdateExpression: 'SET #n = :name, folderId = :fid, GSI1PK = :g1p, GSI1SK = :g1s',
-      ConditionExpression: '#st = :ready AND attribute_not_exists(deletedAt)',
+      ConditionExpression: '#st = :ready',
       ExpressionAttributeNames: { '#n': 'name', '#st': 'status' },
       ExpressionAttributeValues: { ':name': to.name, ':fid': to.folderId, ':ready': 'READY', ':g1p': keys.GSI1PK, ':g1s': keys.GSI1SK },
     },
@@ -236,63 +229,19 @@ export async function updateFile(
   await transact(db, ops)
 }
 
-// Records a removal that has already happened in S3 (a delete marker was added).
-export async function softDeleteFile(
-  db: Db, ws: string, file: FileItem, a: { deleteMarkerVersionId: string; now: number; retainUntilMs?: number },
-): Promise<{ purgeAt: number }> {
-  const purgeAt = purgeAtFor(a.now, a.retainUntilMs)
+// Removes a file's catalogue row and its unique-name lock, after its bytes were
+// deleted from S3. This is the user's own delete: final, with nothing kept behind.
+export async function deleteFile(db: Db, ws: string, file: FileItem): Promise<void> {
   await transact(db, [
     {
-      Update: {
+      Delete: {
         TableName: T,
         Key: { PK: wsPk(ws), SK: fileSk(file.fileId) },
-        UpdateExpression:
-          'SET deletedAt = :d, deleteMarkerVersionId = :m, purgeAt = :p, GSI2PK = :g2p, GSI2SK = :g2s REMOVE GSI1PK, GSI1SK',
-        ConditionExpression: '#st = :ready AND attribute_not_exists(deletedAt)',
+        ConditionExpression: '#st = :ready',
         ExpressionAttributeNames: { '#st': 'status' },
-        ExpressionAttributeValues: {
-          ':d': new Date(a.now).toISOString(), ':m': a.deleteMarkerVersionId, ':p': purgeAt,
-          ':g2p': trashIndexPk(ws), ':g2s': new Date(a.now).toISOString(), ':ready': 'READY',
-        },
+        ExpressionAttributeValues: { ':ready': 'READY' },
       },
     },
     lockDelete(ws, file.folderId, file.name),
   ])
-  return { purgeAt }
-}
-
-// Records a restore that has already happened in S3 (the delete marker was removed).
-export async function restoreFile(db: Db, ws: string, file: FileItem): Promise<{ name: string }> {
-  return tryNames(withSuffixes([file.name, restoredName(file.name)], file.name), async name => {
-    const keys = folderIndexKeys(ws, file.folderId, name, 'file', file.fileId)
-    await transact(db, [
-      {
-        Update: {
-          TableName: T,
-          Key: { PK: wsPk(ws), SK: fileSk(file.fileId) },
-          UpdateExpression:
-            'SET #n = :name, GSI1PK = :g1p, GSI1SK = :g1s REMOVE deletedAt, deleteMarkerVersionId, purgeAt, GSI2PK, GSI2SK',
-          ConditionExpression: 'attribute_exists(deletedAt)',
-          ExpressionAttributeNames: { '#n': 'name' },
-          ExpressionAttributeValues: { ':name': name, ':g1p': keys.GSI1PK, ':g1s': keys.GSI1SK },
-        },
-      },
-      lockPut(ws, file.folderId, name, file.fileId),
-    ])
-    return { name }
-  })
-}
-
-// Removes the catalogue row of a file that is already in the trash.
-export async function deleteFileRow(db: Db, ws: string, fileId: string): Promise<void> {
-  try {
-    await db.send(new DeleteCommand({
-      TableName: T,
-      Key: { PK: wsPk(ws), SK: fileSk(fileId) },
-      ConditionExpression: 'attribute_exists(deletedAt)',
-    }))
-  } catch (err) {
-    if ((err as { name?: string }).name === 'ConditionalCheckFailedException') throw new StaleItemError()
-    throw err
-  }
 }

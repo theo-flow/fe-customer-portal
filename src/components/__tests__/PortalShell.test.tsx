@@ -48,6 +48,85 @@ describe('PortalShell', () => {
     expect(screen.getByText('page body')).toBeInTheDocument()
   })
 
+  it('shows the Team link to admins only', () => {
+    mockOrg.current = org({ role: 'admin' })
+    const { unmount } = render(<PortalShell><p/></PortalShell>)
+    expect(within(mainNav()).getByRole('link', { name: 'Team' })).toHaveAttribute('href', '/team')
+    unmount()
+
+    for (const role of ['agent', undefined]) {
+      mockOrg.current = org({ role })
+      const r = render(<PortalShell><p/></PortalShell>)
+      expect(within(mainNav()).queryByRole('link', { name: 'Team' })).not.toBeInTheDocument()
+      r.unmount()
+    }
+  })
+
+  describe('pilot and lock state', () => {
+    const locked = { access: { state: 'locked', daysLeft: null, trialEndsAt: null }, subscribedProducts: [] }
+
+    it('shows an admin how long their pilot has left, and nobody else', () => {
+      mockOrg.current = org({ role: 'admin', access: { state: 'trial', daysLeft: 3, trialEndsAt: null } })
+      const admin = render(<PortalShell><p/></PortalShell>)
+      expect(screen.getByRole('link', { name: 'Pilot: 3 days left' })).toHaveAttribute('href', '/billing')
+      admin.unmount()
+
+      mockOrg.current = org({ role: 'agent', access: { state: 'trial', daysLeft: 3, trialEndsAt: null } })
+      render(<PortalShell><p/></PortalShell>)
+      expect(screen.queryByText(/Pilot:/)).not.toBeInTheDocument()
+    })
+
+    it('words the last days properly', () => {
+      mockOrg.current = org({ role: 'admin', access: { state: 'trial', daysLeft: 0, trialEndsAt: null } })
+      const zero = render(<PortalShell><p/></PortalShell>)
+      expect(screen.getByText('Pilot: ends today')).toBeInTheDocument()
+      zero.unmount()
+
+      mockOrg.current = org({ role: 'admin', access: { state: 'trial', daysLeft: 1, trialEndsAt: null } })
+      render(<PortalShell><p/></PortalShell>)
+      expect(screen.getByText('Pilot: 1 day left')).toBeInTheDocument()
+    })
+
+    it('shows no pilot pill on the paid plan', () => {
+      mockOrg.current = org({ role: 'admin', access: { state: 'active', daysLeft: null, trialEndsAt: null } })
+      render(<PortalShell><p>page body</p></PortalShell>)
+      expect(screen.queryByText(/Pilot:/)).not.toBeInTheDocument()
+      expect(screen.getByText('page body')).toBeInTheDocument()
+    })
+
+    it("replaces a locked org's pages with a lock screen and a way back for the admin", () => {
+      mockOrg.current = org({ role: 'admin', ...locked })
+      render(<PortalShell><p>page body</p></PortalShell>)
+
+      expect(screen.queryByText('page body')).not.toBeInTheDocument()
+      expect(screen.getByText('Your products are locked')).toBeInTheDocument()
+      expect(screen.getByRole('link', { name: 'Start the paid plan' })).toHaveAttribute('href', '/billing/upgrade')
+    })
+
+    it("tells a locked org's member to ask their admin instead", () => {
+      mockOrg.current = org({ role: 'agent', ...locked })
+      render(<PortalShell><p>page body</p></PortalShell>)
+
+      expect(screen.getByText(/Ask your organisation admin to start the paid plan/)).toBeInTheDocument()
+      expect(screen.queryByRole('link', { name: 'Start the paid plan' })).not.toBeInTheDocument()
+    })
+
+    it('still shows Billing to a locked org, so it can start again', () => {
+      mockPath.current = '/billing'
+      mockOrg.current = org({ role: 'admin', ...locked })
+      render(<PortalShell><p>billing page</p></PortalShell>)
+
+      expect(screen.getByText('billing page')).toBeInTheDocument()
+      expect(screen.queryByText('Your products are locked')).not.toBeInTheDocument()
+    })
+
+    it('does not flash the lock screen while the org is still loading', () => {
+      mockOrg.current = org({ role: 'admin', loading: true, ...locked })
+      render(<PortalShell><p>page body</p></PortalShell>)
+      expect(screen.getByText('page body')).toBeInTheDocument()
+    })
+  })
+
   it('only shows what the org is subscribed to (plus Home and Gate-Keep)', () => {
     mockOrg.current = org({ subscribedProducts: ['sign'] })
     render(<PortalShell><p/></PortalShell>)

@@ -4,8 +4,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { ddbDocClient, TABLE } from '@/lib/aws'
 import { validateField } from '@/lib/validators'
 import { notifyHarvestSubmission } from '@/lib/notifications'
+import { enqueueSubmissionReplyEmail } from '@/lib/notify-queue'
 import { hashToken } from '@/lib/sign'
 import type { RecipientLink } from '@/lib/recipients'
+import { orgLocked } from '@/lib/org-access'
 
 interface Field {
   key:        string
@@ -20,6 +22,12 @@ export async function POST(
   { params }: { params: { orgId: string; group: string; recipientId: string; token: string } },
 ) {
   const { orgId, group, recipientId, token } = params
+
+  // A locked org's form links stop accepting submissions. Deliberately says nothing
+  // about why: the person filling in the form is not the org's admin.
+  if (await orgLocked(orgId)) {
+    return NextResponse.json({ error: 'Form not available' }, { status: 404 })
+  }
   const db = ddbDocClient()
 
   // Re-verify the token against a fresh read -- never trust the page-load
@@ -98,7 +106,46 @@ export async function POST(
     ExpressionAttributeValues: { ':submitted': 'SUBMITTED', ':submissionId': submissionId, ':now': now },
   }))
 
-  await notifyHarvestSubmission(orgId, { submissionId, group, groupLabel })
+  // Personal-link submissions notify only the agent who sent the link. Links
+  // created before sent_by_* was recorded have no owner, and neither does a
+  // link whose sender has since been removed (they can't sign in to see it),
+  // so those fall back to the org-wide notification.
+  const sender = await _activeSender(db, recipient)
+
+  await notifyHarvestSubmission(orgId, {
+    submissionId, group, groupLabel,
+    targetSub:     sender?.sub ?? null,
+    recipientName: recipient.name,
+  })
+
+  if (sender?.email) {
+    await enqueueSubmissionReplyEmail({
+      correlationId: submissionId,
+      toEmail:       sender.email,
+      recipientName: recipient.name,
+      groupLabel,
+      submissionUrl: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://theoflow.bytheodore.co.za'}/submissions/${submissionId}`,
+    })
+  }
 
   return NextResponse.json({ referenceId: submissionId }, { status: 201 })
+}
+
+// The sending agent, if they still belong to the org. A failed lookup counts
+// as "not active": an org-wide notification is a safe default, a lost one isn't.
+async function _activeSender(
+  db: ReturnType<typeof ddbDocClient>, recipient: RecipientLink,
+): Promise<{ sub: string; email: string | null } | null> {
+  if (!recipient.sent_by_sub) return null
+  try {
+    const membership = await db.send(new GetCommand({
+      TableName: TABLE,
+      Key:       { PK: `USER#${recipient.sent_by_sub}`, SK: 'ORG_MEMBERSHIP' },
+    }))
+    if (!membership.Item || membership.Item.status === 'removed') return null
+    return { sub: recipient.sent_by_sub, email: recipient.sent_by_email ?? null }
+  } catch (err) {
+    console.error('[recipient-submit] Sender membership lookup failed', { error: err })
+    return null
+  }
 }

@@ -5,14 +5,13 @@ vi.mock('@aws-sdk/lib-dynamodb', () => ({
   GetCommand:           vi.fn(function (this: unknown, input: unknown) { return { __type: 'Get',      input } }),
   QueryCommand:         vi.fn(function (this: unknown, input: unknown) { return { __type: 'Query',    input } }),
   PutCommand:           vi.fn(function (this: unknown, input: unknown) { return { __type: 'Put',      input } }),
-  DeleteCommand:        vi.fn(function (this: unknown, input: unknown) { return { __type: 'Delete',   input } }),
   TransactWriteCommand: vi.fn(function (this: unknown, input: unknown) { return { __type: 'Transact', input } }),
 }))
 
 import {
   NameTakenError, StaleItemError,
-  listFolders, listFolderContents, getFile, createFolder, updateFolder, deleteFolderIfEmpty,
-  createPendingFile, confirmFile, updateFile, softDeleteFile, restoreFile, deleteFileRow, listTrash,
+  listFolders, listFolderContents, getFile, getFolder, createFolder, updateFolder, deleteFolderIfEmpty,
+  createPendingFile, confirmFile, updateFile, deleteFile,
 } from '../gate-keep-store'
 import { buildFolderItem, buildPendingFile, type FileItem } from '../gate-keep-catalog'
 
@@ -64,11 +63,10 @@ describe('reads', () => {
     expect(sent()[0].input.Key).toEqual({ PK: 'WS#org-1', SK: 'FILE#f1' })
   })
 
-  it('listTrash queries the sparse trash index', async () => {
-    db.send.mockResolvedValueOnce({ Items: [] })
-    await listTrash(db, WS)
-    expect(sent()[0].input.IndexName).toBe('trash-index')
-    expect(sent()[0].input.ExpressionAttributeValues[':g']).toBe('WS#org-1#TRASH')
+  it('point lookups are strongly consistent, so a just-deleted item is never reported as still there', async () => {
+    await getFile(db, WS, 'f1')
+    await getFolder(db, WS, 'd1')
+    expect(sent().map(c => c.input.ConsistentRead)).toEqual([true, true])
   })
 })
 
@@ -183,45 +181,24 @@ describe('rename / move file', () => {
   })
 })
 
-describe('remove / restore / delete', () => {
-  it('softDeleteFile hides the file, starts the 28-day clock, and frees the name', async () => {
-    await softDeleteFile(db, WS, readyFile(), { deleteMarkerVersionId: 'm1', now: NOW })
+describe('delete file', () => {
+  it('deleteFile removes the row and frees the name in one transaction', async () => {
+    await deleteFile(db, WS, readyFile())
 
-    const [upd, lock] = lastTransact()
-    expect(upd.Update.ConditionExpression).toContain('attribute_not_exists(deletedAt)')
-    expect(upd.Update.UpdateExpression).toContain('REMOVE GSI1PK, GSI1SK')
-    expect(upd.Update.ExpressionAttributeValues).toMatchObject({
-      ':m': 'm1', ':g2p': 'WS#org-1#TRASH',
-      ':p': Math.floor((NOW + 28 * 24 * 3600 * 1000) / 1000),
-    })
-    expect(lock.Delete.Key.SK).toBe('NAME#root#a.pdf')
+    const [row, lock] = lastTransact()
+    expect(row.Delete.Key).toEqual({ PK: 'WS#org-1', SK: 'FILE#f1' })
+    expect(row.Delete.ConditionExpression).toBe('#st = :ready')
+    expect(row.Delete.ExpressionAttributeValues).toEqual({ ':ready': 'READY' })
+    expect(lock.Delete.Key).toEqual({ PK: 'WS#org-1', SK: 'NAME#root#a.pdf' })
   })
 
-  it('softDeleteFile on an already-removed file is a stale-item error', async () => {
+  it('leaves nothing behind: no trash keys, no retention clock', async () => {
+    await deleteFile(db, WS, readyFile())
+    expect(JSON.stringify(lastTransact())).not.toMatch(/TRASH|deletedAt|purgeAt|GSI2/)
+  })
+
+  it('a row that is gone or not READY is a stale-item error', async () => {
     db.send.mockRejectedValueOnce(cancelled('ConditionalCheckFailed', 'None'))
-    await expect(softDeleteFile(db, WS, readyFile(), { deleteMarkerVersionId: 'm1', now: NOW })).rejects.toBeInstanceOf(StaleItemError)
-  })
-
-  const removed = (): FileItem => readyFile({ deletedAt: new Date(NOW).toISOString(), deleteMarkerVersionId: 'm1', GSI1PK: undefined, GSI1SK: undefined })
-
-  it('restoreFile brings the file back under its own name when free', async () => {
-    const out = await restoreFile(db, WS, removed())
-    expect(out.name).toBe('a.pdf')
-    const [upd, lock] = lastTransact()
-    expect(upd.Update.UpdateExpression).toContain('REMOVE deletedAt')
-    expect(upd.Update.UpdateExpression).toContain('GSI2PK')
-    expect(lock.Put.Item.SK).toBe('NAME#root#a.pdf')
-  })
-
-  it('restoreFile falls back to "(restored)" when the name was reused meanwhile', async () => {
-    db.send.mockRejectedValueOnce(cancelled('None', 'ConditionalCheckFailed'))
-    const out = await restoreFile(db, WS, removed())
-    expect(out.name).toBe('a (restored).pdf')
-  })
-
-  it('deleteFileRow only deletes a row that is already in the trash', async () => {
-    await deleteFileRow(db, WS, 'f1')
-    expect(sent()[0].input.Key).toEqual({ PK: 'WS#org-1', SK: 'FILE#f1' })
-    expect(sent()[0].input.ConditionExpression).toBe('attribute_exists(deletedAt)')
+    await expect(deleteFile(db, WS, readyFile())).rejects.toBeInstanceOf(StaleItemError)
   })
 })

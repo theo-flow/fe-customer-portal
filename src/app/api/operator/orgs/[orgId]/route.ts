@@ -37,15 +37,23 @@ export async function PATCH(req: NextRequest, { params }: { params: { orgId: str
     return NextResponse.json({ error: `Unknown product: ${invalidProduct}` }, { status: 400 })
   }
 
-  await ddbDocClient().send(new UpdateCommand({
-    TableName: TABLE,
-    Key: { PK: `ORG#${orgId}`, SK: 'PROFILE' },
-    UpdateExpression: 'SET subscribed_products = :p',
-    ExpressionAttributeValues: { ':p': subscribedProducts },
-  })).catch(err => {
+  try {
+    await ddbDocClient().send(new UpdateCommand({
+      TableName: TABLE,
+      Key: { PK: `ORG#${orgId}`, SK: 'PROFILE' },
+      UpdateExpression: 'SET subscribed_products = :p',
+      ExpressionAttributeValues: { ':p': subscribedProducts },
+      // Without this an update to an unknown org ID would quietly create a
+      // stray PROFILE item.
+      ConditionExpression: 'attribute_exists(PK)',
+    }))
+  } catch (err) {
+    if ((err as { name?: string })?.name === 'ConditionalCheckFailedException') {
+      return NextResponse.json({ error: 'Org not found' }, { status: 404 })
+    }
     console.error('[operator/orgs/:orgId] Update failed', { orgId, error: err })
     throw err
-  })
+  }
 
   return NextResponse.json({ ok: true })
 }

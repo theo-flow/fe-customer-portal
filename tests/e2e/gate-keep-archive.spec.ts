@@ -3,7 +3,7 @@ import * as fs   from 'fs'
 import * as os   from 'os'
 import * as path from 'path'
 
-// Gate-Keep archive: folders, uploads, move/rename, remove/restore/delete, and
+// Gate-Keep archive: folders, uploads, move/rename, delete, and
 // isolation between workspaces. Runs against real infrastructure (the
 // theoflow-gate-keep-archive bucket and the daai-insure-gate-keep table), so the
 // terraform in daai-insure-platform/infrastructure/terraform/{gate-keep,cognito}
@@ -61,14 +61,6 @@ async function enter(page: Page, name: string) {
   await expect(page.getByRole('button', { name: 'New folder' })).toBeEnabled({ timeout: 15_000 })
 }
 
-// Notifications pause their own timeout while the browser window is unfocused, which is always the
-// case in headless runs, so they can sit on top of a row's menu button. Close them explicitly.
-async function dismissToasts(page: Page) {
-  const closers = page.locator('[toast-close]')
-  for (let i = await closers.count(); i > 0; i--) await closers.first().click({ force: true })
-  await expect(closers).toHaveCount(0, { timeout: 10_000 })
-}
-
 async function newFolder(page: Page, name: string) {
   await page.getByRole('button', { name: 'New folder' }).click()
   await page.getByLabel('Folder name').fill(name)
@@ -92,8 +84,6 @@ async function cleanup(page: Page, folderName: string) {
     const inFolder = (await api<ListBody>(page, 'GET', `/api/gate-keep/list?folder=${id}`)).body
     for (const f of inFolder?.files ?? []) await api(page, 'DELETE', `/api/gate-keep/files/${f.id}`)
   }
-  const trash = (await api<{ files: { id: string }[] }>(page, 'GET', '/api/gate-keep/trash')).body
-  for (const f of trash?.files ?? []) await api(page, 'DELETE', `/api/gate-keep/files/${f.id}/permanent`)
   // deepest folders first (children must go before their parent, whatever order the list came back in)
   const depth = (id: string): number => { const n = root.tree.find(x => x.id === id); return n && ids.has(n.parentId) ? 1 + depth(n.parentId) : 0 }
   for (const n of root.tree.filter(n => ids.has(n.id)).sort((a, b) => depth(b.id) - depth(a.id))) {
@@ -107,14 +97,12 @@ async function sweep(page: Page) {
   for (const f of root?.files ?? []) {
     if (/^(keep|lease|secret)-\d+/.test(f.name)) await api(page, 'DELETE', `/api/gate-keep/files/${f.id}`)
   }
-  const trash = (await api<{ files: { id: string }[] }>(page, 'GET', '/api/gate-keep/trash')).body
-  for (const f of trash?.files ?? []) await api(page, 'DELETE', `/api/gate-keep/files/${f.id}/permanent`)
 }
 
 test.describe('Gate-Keep archive', () => {
   test.skip(!A.email || !A.password, 'Set GK_USER_A_EMAIL and GK_USER_A_PASSWORD to run these tests.')
 
-  test('folders, upload, move, rename, remove, restore and delete permanently', async ({ browser }) => {
+  test('folders, upload, move, rename and delete', async ({ browser }) => {
     const stamp = Date.now()
     const top = `e2e-${stamp}`
     const ctx = await browser.newContext()
@@ -154,27 +142,31 @@ test.describe('Gate-Keep archive', () => {
       await page.getByRole('button', { name: 'Save' }).click()
       await expect(row(page, renamed)).toBeVisible({ timeout: 15_000 })
 
-      // Remove, then Undo from the toast.
-      await rowMenu(page, renamed).click()
-      await page.getByRole('menuitem', { name: 'Move to trash' }).click()
-      await expect(page.getByText(`${renamed} moved to trash`, { exact: true })).toBeVisible({ timeout: 15_000 })
-      await expect(row(page, renamed)).toHaveCount(0)
-      await page.getByRole('button', { name: 'Undo' }).click()
-      await expect(row(page, renamed)).toBeVisible({ timeout: 15_000 })
-      await dismissToasts(page)
+      // Delete: asks first, and cancelling changes nothing.
+      const list = async () => (await api<ListBody>(page, 'GET', `/api/gate-keep/list?folder=${folderId}`)).body
+      const folderId = (await api<ListBody>(page, 'GET', '/api/gate-keep/list')).body.folders.find(f => f.name === top)!.id
+      const fileId = (await list()).files.find(f => f.name === renamed)!.id
 
-      // Remove again, check the 28-day countdown, then delete it for good.
       await rowMenu(page, renamed).click()
-      await page.getByRole('menuitem', { name: 'Move to trash' }).click()
-      await expect(page.getByText(`${renamed} moved to trash`, { exact: true })).toBeVisible({ timeout: 15_000 })
-      await dismissToasts(page)
-      await page.getByRole('tab', { name: /Trash/ }).click()
-      await expect(row(page, renamed)).toBeVisible({ timeout: 15_000 })
-      await expect(page.getByText(/Deletes in (27|28) days/).first()).toBeVisible()
+      await page.getByRole('menuitem', { name: 'Delete', exact: true }).click()
+      await expect(page.getByRole('dialog').getByText(`"${renamed}" will be deleted for good. This cannot be undone.`)).toBeVisible()
+      await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click()
+      await expect(row(page, renamed)).toBeVisible()
+      expect((await api(page, 'GET', `/api/gate-keep/files/${fileId}/download`)).status).toBe(200)
+
+      // Confirm: it is gone at once, with no trash and nothing to restore.
       await rowMenu(page, renamed).click()
-      await page.getByRole('menuitem', { name: 'Delete permanently' }).click()
-      await page.getByRole('dialog').getByRole('button', { name: 'Delete permanently' }).click()
+      await page.getByRole('menuitem', { name: 'Delete', exact: true }).click()
+      await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click()
+      // Wait for the confirmation first: while the dialog is closing the rest of the page is hidden
+      // from role queries, so a row count of 0 would pass before the request has even been sent.
+      await expect(page.getByText(`${renamed} deleted`, { exact: true })).toBeVisible({ timeout: 15_000 })
+      await expect(page.getByRole('dialog')).toHaveCount(0)
       await expect(row(page, renamed)).toHaveCount(0, { timeout: 15_000 })
+      await expect(page.getByRole('tab')).toHaveCount(0)
+      await expect(page.getByText(/trash/i)).toHaveCount(0)
+      expect((await api(page, 'GET', `/api/gate-keep/files/${fileId}/download`)).status).toBe(404)
+      expect((await list()).files.some(f => f.id === fileId)).toBe(false)
     } finally {
       await cleanup(page, top)
       await sweep(page)
@@ -267,8 +259,6 @@ test.describe('Gate-Keep archive', () => {
           await api(pageB, 'DELETE', `/api/gate-keep/files/${fileId}`),
           await api(pageB, 'GET',    `/api/gate-keep/files/${fileId}/download`),
           await api(pageB, 'POST',   `/api/gate-keep/files/${fileId}/confirm`),
-          await api(pageB, 'POST',   `/api/gate-keep/files/${fileId}/restore`),
-          await api(pageB, 'DELETE', `/api/gate-keep/files/${fileId}/permanent`),
         ]
         expect(probes.map(p => p.status)).toEqual(probes.map(() => 404))
 

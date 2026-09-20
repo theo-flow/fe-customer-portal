@@ -9,7 +9,7 @@ import { contentDisposition, s3KeyFor } from '@/lib/gate-keep-catalog'
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   return gateKeep('files/download', async ({ ws, s3, db }) => {
     const file = await getFile(db, ws, params.id)
-    if (!file || file.status !== 'READY' || file.deletedAt) throw notFound()
+    if (!file || file.status !== 'READY') throw notFound()
 
     const downloadUrl = await getSignedUrl(
       s3,

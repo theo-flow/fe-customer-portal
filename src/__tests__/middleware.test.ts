@@ -66,6 +66,21 @@ describe('middleware — protected routes', () => {
     expect(mockNext).toHaveBeenCalled()
   })
 
+  it('redirects unauthenticated users from /team to /login', () => {
+    middleware(makeRequest('/team'))
+    expect(mockRedirect).toHaveBeenCalledTimes(1)
+    expect(mockRedirect.mock.calls[0][0].toString()).toContain('/login')
+  })
+
+  it('redirects unauthenticated users from /billing and /billing/upgrade to /login', () => {
+    for (const path of ['/billing', '/billing/upgrade']) {
+      mockRedirect.mockClear()
+      middleware(makeRequest(path))
+      expect(mockRedirect).toHaveBeenCalledTimes(1)
+      expect(mockRedirect.mock.calls[0][0].toString()).toContain('/login')
+    }
+  })
+
   it('redirects unauthenticated users from /dashboard to /login', () => {
     middleware(makeRequest('/dashboard'))
     expect(mockRedirect).toHaveBeenCalledTimes(1)

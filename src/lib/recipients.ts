@@ -16,6 +16,10 @@ export interface RecipientLink {
   token_expires_at:   string
   status:             RecipientStatus
   submission_id:      string | null
+  // The agent who created the link. Absent on links created before this was
+  // recorded, and those fall back to the org-wide notification.
+  sent_by_sub?:       string | null
+  sent_by_email?:     string | null
   created_at:         string
   updated_at:         string
 }

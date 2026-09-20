@@ -13,6 +13,8 @@ vi.mock('@aws-sdk/lib-dynamodb', () => ({
   PutCommand: vi.fn(function (this: unknown, input: unknown) { return { __type: 'Put', input } }),
 }))
 
+vi.mock('@/lib/org-access', () => ({ orgLocked: vi.fn(async () => null) }))
+
 import { POST } from '../route'
 
 function makeRequest(body: unknown): NextRequest {

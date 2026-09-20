@@ -55,6 +55,9 @@ export async function GET() {
       overageDocs:        item.overage_docs        as number,
       baseAmountZar:      Number(item.base_amount_zar),
       overageAmountZar:   Number(item.overage_amount_zar),
+      // 0 seats means an invoice from before per-seat billing: no seat line.
+      seats:              Number(item.seats ?? 0),
+      seatsAmountZar:     Number(item.seats_amount_zar ?? 0),
       totalAmountZar:     Number(item.total_amount_zar),
       currency:          (item.currency ?? 'ZAR') as string,
       status:            item.status             as string,

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { filterAndSort, daysLeftInTrash, daysUntil, flattenTree, formatFileSize, TRASH_RETENTION_DAYS, type StoredFile } from '../gate-keep-view'
+import { filterAndSort, flattenTree, formatFileSize, type StoredFile } from '../gate-keep-view'
 
 const f = (filename: string, size: number, lastModified: string | null): StoredFile =>
   ({ key: `k/${filename}`, filename, size, lastModified })
@@ -41,43 +41,12 @@ describe('filterAndSort', () => {
   })
 })
 
-describe('daysLeftInTrash', () => {
-  const now = new Date('2026-09-10T00:00:00Z').getTime()
-
-  it('counts down from the retention window', () => {
-    expect(daysLeftInTrash('2026-09-10T00:00:00Z', now)).toBe(TRASH_RETENTION_DAYS)
-    expect(daysLeftInTrash('2026-09-01T00:00:00Z', now)).toBe(TRASH_RETENTION_DAYS - 9)
-  })
-
-  it('rounds a partial day up and never goes below zero', () => {
-    const DAY = 24 * 60 * 60 * 1000
-    // trashed (retention - half a day) ago, so half a day is left: rounds up to 1
-    const halfDayLeft = new Date(now - (TRASH_RETENTION_DAYS - 0.5) * DAY).toISOString()
-    expect(daysLeftInTrash(halfDayLeft, now)).toBe(1)
-    expect(daysLeftInTrash('2026-07-01T00:00:00Z', now)).toBe(0)
-  })
-
-  it('is null when the date is unknown', () => {
-    expect(daysLeftInTrash(null, now)).toBeNull()
-  })
-})
-
 describe('formatFileSize', () => {
   it('shows KB for small files (never 0) and MB for large ones', () => {
     expect(formatFileSize(10)).toBe('1 KB')
     expect(formatFileSize(2048)).toBe('2 KB')
     expect(formatFileSize(5 * 1024 * 1024)).toBe('5.0 MB')
   })
-})
-
-describe('daysUntil', () => {
-  const now = new Date('2026-09-10T00:00:00Z').getTime()
-  it('rounds a partial day up and never goes below zero', () => {
-    expect(daysUntil('2026-09-13T00:00:00Z', now)).toBe(3)
-    expect(daysUntil('2026-09-10T06:00:00Z', now)).toBe(1)
-    expect(daysUntil('2026-09-01T00:00:00Z', now)).toBe(0)
-  })
-  it('is null when there is no date', () => { expect(daysUntil(null, now)).toBeNull() })
 })
 
 describe('flattenTree', () => {

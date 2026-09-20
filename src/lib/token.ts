@@ -5,6 +5,8 @@ export interface JwtClaims {
   email:           string
   name?:           string
   'custom:org_id'?: string
+  // Set by fn-21 from the membership record, never from a user-editable attribute.
+  'custom:role'?:   string
   exp:             number
 }
 

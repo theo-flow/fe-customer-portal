@@ -4,10 +4,11 @@ import { cookies } from 'next/headers'
 import { ddbDocClient, TABLE } from '@/lib/aws'
 import { verifyJwtClaims } from '@/lib/token'
 import { getPlan } from '@/lib/plans'
+import { computeSeatCharge, docsIncludedFor } from '@/lib/seat-pricing'
 
-// Read-only. Billing here is contractual/EFT-settled, not self-service --
-// there is no subscribe/upgrade/cancel action on this route, only visibility
-// into what an org is currently contracted for and its usage so far this period.
+// Read-only. Billing here is contractual/EFT-settled: this route only shows what an
+// org is currently on, its seats and its usage so far this period. Starting the paid
+// plan is POST /api/billing/subscribe; changing seats is POST /api/team/seats.
 export async function GET() {
   const token = cookies().get('tf_token')?.value
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -37,7 +38,6 @@ export async function GET() {
   const plan = getPlan(sub.plan_id)
 
   const effectiveBasePriceZar   = sub.override_base_price_zar   ?? plan?.basePriceZar   ?? 0
-  const effectiveDocsIncluded   = sub.override_docs_included    ?? plan?.docsIncluded   ?? 0
   const effectiveOverageRateZar = sub.override_overage_rate_zar ?? plan?.overageRateZar ?? 0
 
   // Live usage this period -- same org-scoped-by-construction DOC# query
@@ -58,6 +58,18 @@ export async function GET() {
     return { Items: [] }
   })
 
+  // Seats are priced by position (seat-pricing.ts); each includes a document
+  // allowance. Same rules fn-16 applies when it invoices.
+  const profile = await db.send(new GetCommand({
+    TableName: TABLE,
+    Key: { PK: `ORG#${orgId}`, SK: 'PROFILE' },
+    ProjectionExpression: 'seats',
+  })).catch(() => null)
+  const seatsRaw = Number(profile?.Item?.seats)
+  const seats = Number.isInteger(seatsRaw) && seatsRaw >= 1 ? seatsRaw : 1
+  const seatCharge = computeSeatCharge(seats)
+  const effectiveDocsIncluded = sub.override_docs_included ?? plan?.docsIncluded ?? docsIncludedFor(seats)
+
   const docsUsed = docsResult.Items?.length ?? 0
   const overageDocs = Math.max(0, docsUsed - effectiveDocsIncluded)
 
@@ -74,6 +86,11 @@ export async function GET() {
       docsUsed,
       overageDocs,
       estimatedOverageZar:  overageDocs * effectiveOverageRateZar,
+      seats,
+      seatLines:            seatCharge.lines,
+      seatsChargeZar:       seatCharge.totalZar,
+      nextInvoiceAt:        sub.next_invoice_at ?? null,
+      estimatedTotalZar:    effectiveBasePriceZar + overageDocs * effectiveOverageRateZar + seatCharge.totalZar,
     },
   })
 }
