@@ -114,6 +114,9 @@ export interface FormLayout {
   fields:      FormField[]
   anchors:     FormAnchor[]
   role_defaults: RoleDefault[]
+  // One standard document, the same for everyone (a consent, an acknowledgement): it holds no
+  // personal details, so sending it needs no upload. The form's saved copy is the document.
+  standard_document?: boolean
 }
 
 // ---- ids ------------------------------------------------------------------
@@ -368,6 +371,8 @@ export function validateLayout(input: unknown): LayoutResult {
 
   if (errors.length) return { ok: false, errors }
 
+  const standardDocument = raw.standard_document === true
+
   const warnings: string[] = []
   if (fields.length === 0) warnings.push('No boxes yet. Nothing would be asked of the signer.')
   for (const role of roles) {
@@ -387,6 +392,7 @@ export function validateLayout(input: unknown): LayoutResult {
       fields,
       anchors,
       role_defaults: roleDefaults,
+      standard_document: standardDocument,
     },
     warnings,
     // Ready to send only if every role signs somewhere and there is something to do.

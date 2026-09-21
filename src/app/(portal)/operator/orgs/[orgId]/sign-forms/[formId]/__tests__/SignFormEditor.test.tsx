@@ -227,6 +227,26 @@ describe('SignFormEditor', () => {
     expect(screen.getByRole('button', { name: 'Save version' })).toBeDisabled()   // nothing unsaved now
   })
 
+  it('marks a form as one standard document, sent with no upload, and saves that with the layout', async () => {
+    const fetchMock = vi.mocked(fetch)
+    fetchMock.mockResolvedValue(jsonResponse({ version: 2, valid: true, warnings: [] }))
+    render(<SignFormEditor orgId="org-1" formId="f1" initial={initial()} />)
+    const box = screen.getByRole('checkbox', { name: /Same document for everyone/ }) as HTMLInputElement
+    expect(box.checked).toBe(false)
+    fireEvent.click(box)
+    expect(screen.getByRole('button', { name: 'Save version' })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Save version' }))
+    await waitFor(() => expect(screen.getByText('Saved as version 2.')).toBeInTheDocument())
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)
+    expect(body.layout.standard_document).toBe(true)
+  })
+
+  it('shows the saved setting when a standard-document form is opened', () => {
+    const init = initial()
+    render(<SignFormEditor orgId="org-1" formId="f1" initial={{ ...init, layout: { ...init.layout, standard_document: true } }} />)
+    expect((screen.getByRole('checkbox', { name: /Same document for everyone/ }) as HTMLInputElement).checked).toBe(true)
+  })
+
   it('shows the reasons when a saved form is not ready to send', async () => {
     vi.mocked(fetch).mockResolvedValue(jsonResponse({ version: 2, valid: false, warnings: ['Witness 1 has no signature box.'] }))
     render(<SignFormEditor orgId="org-1" formId="f1" initial={initial()} />)

@@ -306,3 +306,23 @@ describe('people who are always the same (role defaults)', () => {
     expect(r.ok && r.layout.role_defaults[0]).toEqual({ role: 'Seller', name: 'Anele Botha', email: '' })
   })
 })
+
+describe('standard_document', () => {
+  const base = {
+    name: 'POPI Agreement', page_count: 2, page_width: 612, page_height: 792, roles: ['Signer'],
+    fields: [{ field_id: 'a', field_type: 'signature', role: 'Signer', page: 2, x: 0.5, y: 0.8, width: 0.3, height: 0.05, instruction: 'Sign', required: true }],
+  }
+  it('is off unless the form says so', () => {
+    const r = validateLayout(base)
+    expect(r.ok && r.layout.standard_document).toBe(false)
+  })
+  it('is kept when the form says so', () => {
+    const r = validateLayout({ ...base, standard_document: true })
+    expect(r.ok && r.layout.standard_document).toBe(true)
+  })
+  it('only a real true counts, never a string', () => {
+    const r = validateLayout({ ...base, standard_document: 'true' })
+    expect(r.ok && r.layout.standard_document).toBe(false)
+  })
+})
+

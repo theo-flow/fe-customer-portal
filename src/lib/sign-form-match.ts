@@ -28,6 +28,7 @@ export interface FormSummary {
   anchors:    FormAnchor[]
   reads?:        ReadBox[]            // where the form prints who it is for
   roleDefaults?: RoleDefaultPerson[]  // roles that are always the same person
+  standardDocument?: boolean          // the same document for everyone: nothing is uploaded to send it
 }
 
 // 'match'    fits and every recognition phrase was found

@@ -397,4 +397,63 @@ describe('SendFormPage', () => {
       ])
     })
   })
+
+  describe('a standard document (the same for everyone)', () => {
+    const popi = {
+      formId: 'popi', name: 'POPI Agreement', currentVersion: 1, pageCount: 2, pageWidth: 612, pageHeight: 792,
+      roles: ['Signer'], anchors: [], standardDocument: true,
+    }
+    const chooseStandard = async () => { fireEvent.click(await screen.findByRole('radio', { name: /POPI Agreement/ })); await screen.findByLabelText('Name for Signer') }
+
+    it('says no upload is needed, and shows no upload box', async () => {
+      withForms([popi])
+      render(<SendFormPage />)
+      expect(await screen.findByText(/no upload needed/)).toBeInTheDocument()
+      await chooseStandard()
+      expect(screen.queryByLabelText('Choose the PDF')).not.toBeInTheDocument()
+      expect(screen.getByText(/nothing to upload/)).toBeInTheDocument()
+      expect(screen.getByText('2. Who signs')).toBeInTheDocument()
+    })
+
+    it('can be sent with just the signer, and nothing is uploaded', async () => {
+      withForms([popi])
+      render(<SendFormPage />)
+      await chooseStandard()
+      expect(sendBtn()).toBeDisabled()
+      fillPeople({ Signer: { name: 'Thandi Nkosi', email: 'thandi@example.com' } })
+      expect(sendBtn()).toBeEnabled()
+
+      fetchMock.mockImplementation(async (url: string) => {
+        if (url === '/api/sign/forms') return json({ forms: [popi] })
+        if (url === '/api/sign/forms/popi/send') return json({ sessionId: 's1', emailQueued: true, signers: [{ signerId: 'g1', role: 'Signer', name: 'Thandi Nkosi', email: 'thandi@example.com', signUrl: 'https://x/sign/s1/g1/t' }] }, true, 201)
+        return json({})
+      })
+      fireEvent.click(sendBtn())
+      await screen.findByText('Form sent')
+      const urls = fetchMock.mock.calls.map(c => String(c[0]))
+      expect(urls).not.toContain('/api/sign/upload/presign')
+      const sent = JSON.parse((fetchMock.mock.calls.find(c => String(c[0]) === '/api/sign/forms/popi/send')![1] as RequestInit).body as string)
+      expect(sent.sourceDocument).toBeUndefined()
+      expect(sent.formVersion).toBe(1)
+      expect(sent.signers).toEqual([{ role: 'Signer', name: 'Thandi Nkosi', email: 'thandi@example.com' }])
+      expect(readUploadInfo).not.toHaveBeenCalled()
+    })
+
+    it('still needs a valid name and email', async () => {
+      withForms([popi])
+      render(<SendFormPage />)
+      await chooseStandard()
+      fillPeople({ Signer: { name: 'Thandi Nkosi', email: 'not-an-email' } })
+      expect(sendBtn()).toBeDisabled()
+    })
+
+    it('an ordinary form next to it still asks for its upload', async () => {
+      withForms([popi, aoa])
+      render(<SendFormPage />)
+      await clickForm('New AOA')
+      expect(screen.getByLabelText('Choose the PDF')).toBeInTheDocument()
+      expect(screen.queryByText(/nothing to upload/)).not.toBeInTheDocument()
+    })
+  })
 })
+

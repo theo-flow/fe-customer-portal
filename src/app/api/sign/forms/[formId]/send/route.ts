@@ -1,9 +1,9 @@
-import { GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3'
+import { GetObjectCommand, HeadObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3'
 import { GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb'
 import { SendMessageCommand } from '@aws-sdk/client-sqs'
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
-import { randomUUID } from 'crypto'
+import { createHash, randomUUID } from 'crypto'
 import { ddbDocClient, s3Client, sqsClient, TABLE, SIGN_BUCKET } from '@/lib/aws'
 import { verifyJwtClaims } from '@/lib/token'
 import { validateEmail } from '@/lib/validators'
@@ -24,6 +24,10 @@ interface Body {
 }
 
 const bad = (error: string, status = 400) => NextResponse.json({ error }, { status })
+
+// The name the sealed copy and the emails show for a standard document.
+const standardFilename = (name: string) =>
+  (name.replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 80) || 'document') + '.pdf'
 
 // Sends one saved Sign form to one set of people. The customer's staff have
 // uploaded THIS person's PDF (different name, amounts) and named who signs
@@ -81,19 +85,42 @@ export async function POST(req: NextRequest, { params }: { params: { formId: str
     seenEmails.add(key)
   }
 
-  // ---- the uploaded document ----
-  const src = body.sourceDocument
-  if (!src?.sessionId || !src.s3Key || !src.sha256 || !isSafeId(src.sessionId)) return bad('Incomplete document')
-  if (src.s3Key.split('/').slice(0, 3).join('/') !== `sign/source/${src.sessionId}`) return bad('Invalid document')
+  // ---- the document ----
   const s3 = s3Client()
-  const head = await s3.send(new HeadObjectCommand({ Bucket: SIGN_BUCKET, Key: src.s3Key })).catch(() => null)
-  if (!head) return bad('Uploaded document not found. The upload may have failed.')
-  const first = await s3.send(new GetObjectCommand({ Bucket: SIGN_BUCKET, Key: src.s3Key, Range: 'bytes=0-4' }))
-    .then(r => r.Body!.transformToByteArray()).catch(() => null)
-  if (!first || !hasPdfHeader(first)) return bad('Only PDF documents can be sent for signature.')
+  let sessionId: string
+  let sourceKey: string
+  let sourceSha: string
+  if (form.standard_document === true) {
+    // A standard document is the same for everyone (a consent, an acknowledgement) and holds no personal
+    // details, so nothing is uploaded: the form's own saved copy is the document. The browser is not asked
+    // for one and anything it sends is ignored.
+    const saved = await s3.send(new GetObjectCommand({ Bucket: SIGN_BUCKET, Key: form.sample_key as string }))
+      .then(r => r.Body!.transformToByteArray()).catch(() => null)
+    if (!saved || !hasPdfHeader(saved.subarray(0, 5))) return bad('The document for this form could not be loaded. Please contact TheoFlow.', 500)
+    sessionId = randomUUID()
+    sourceKey = `sign/source/${sessionId}/${standardFilename(form.name as string)}`
+    sourceSha = createHash('sha256').update(saved).digest('hex')
+    try {
+      await s3.send(new PutObjectCommand({ Bucket: SIGN_BUCKET, Key: sourceKey, Body: saved, ContentType: 'application/pdf' }))
+    } catch (err) {
+      console.error('[sign/forms/send] Failed to copy the standard document', { orgId, formId, error: err })
+      return bad('Failed to prepare the document', 500)
+    }
+  } else {
+    const src = body.sourceDocument
+    if (!src?.sessionId || !src.s3Key || !src.sha256 || !isSafeId(src.sessionId)) return bad('Incomplete document')
+    if (src.s3Key.split('/').slice(0, 3).join('/') !== `sign/source/${src.sessionId}`) return bad('Invalid document')
+    const head = await s3.send(new HeadObjectCommand({ Bucket: SIGN_BUCKET, Key: src.s3Key })).catch(() => null)
+    if (!head) return bad('Uploaded document not found. The upload may have failed.')
+    const first = await s3.send(new GetObjectCommand({ Bucket: SIGN_BUCKET, Key: src.s3Key, Range: 'bytes=0-4' }))
+      .then(r => r.Body!.transformToByteArray()).catch(() => null)
+    if (!first || !hasPdfHeader(first)) return bad('Only PDF documents can be sent for signature.')
+    sessionId = src.sessionId
+    sourceKey = src.s3Key
+    sourceSha = src.sha256
+  }
 
   // ---- build the session from the layout ----
-  const sessionId = src.sessionId
   const now = new Date().toISOString()
 
   const orgName = await lookupOrgName(orgId)
@@ -126,7 +153,7 @@ export async function POST(req: NextRequest, { params }: { params: { formId: str
 
   const session: SignSession = {
     session_id: sessionId,
-    source_document: { s3_key: src.s3Key, sha256: src.sha256, uploaded_at: now },
+    source_document: { s3_key: sourceKey, sha256: sourceSha, uploaded_at: now },
     working_document: {
       detected_fields: detected, detection_status: 'DONE', detected_at: now,
       form: { form_id: formId, version: form.version as number, name: form.name as string },

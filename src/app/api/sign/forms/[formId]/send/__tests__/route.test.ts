@@ -19,6 +19,7 @@ vi.mock('@aws-sdk/lib-dynamodb', () => ({
 vi.mock('@aws-sdk/client-s3', () => ({
   HeadObjectCommand: vi.fn(function (this: unknown, input: unknown) { return { __type: 'S3Head', input } }),
   GetObjectCommand:  vi.fn(function (this: unknown, input: unknown) { return { __type: 'S3Get', input } }),
+  PutObjectCommand:  vi.fn(function (this: unknown, input: unknown) { return { __type: 'S3Put', input } }),
 }))
 vi.mock('@aws-sdk/client-sqs', () => ({
   SendMessageCommand: vi.fn(function (this: unknown, input: unknown) { return { __type: 'Sqs', input } }),
@@ -286,4 +287,66 @@ describe('POST /api/sign/forms/[formId]/send', () => {
       expect(mockSqsSend).not.toHaveBeenCalled()
     })
   })
+
+  describe('a standard document (the same for everyone, nothing uploaded)', () => {
+    const STANDARD_FORM = { version: 3, name: 'POPI Agreement', valid: true, standard_document: true, sample_key: 'sign/forms/org-abc123/form-aoa/sample.pdf',
+      roles: ['Signer'], page_count: 2,
+      fields: [{ field_id: 's1', field_type: 'signature', role: 'Signer', page: 2, x: 0.5, y: 0.8, width: 0.3, height: 0.05, instruction: 'Sign', required: true }] }
+    const standardBody = (over: Record<string, unknown> = {}) => ({
+      formVersion: 3, signers: [{ role: 'Signer', name: 'Thandi Nkosi', email: 'thandi@example.com' }], ...over,
+    })
+    const s3Puts = () => mockS3Send.mock.calls.map(([c]) => c).filter(c => c.__type === 'S3Put')
+
+    it('sends with no upload: the saved copy becomes the session document', async () => {
+      ddb({ version: STANDARD_FORM })
+      const res = await POST(req(standardBody()), params)
+      expect(res.status).toBe(201)
+      const put = s3Puts()[0]
+      expect(put.input.Bucket).toBe('daai-insure-sign')
+      expect(put.input.Key).toMatch(/^sign\/source\/[0-9a-f-]{36}\/POPI_Agreement\.pdf$/)
+      expect(put.input.ContentType).toBe('application/pdf')
+      const session = sessionPut().input.Item
+      expect(session.source_document.s3_key).toBe(put.input.Key)
+      expect(session.source_document.sha256).toMatch(/^[0-9a-f]{64}$/)
+      expect(session.session_id).toBe(put.input.Key.split('/')[2])
+      expect(session.metadata.form_page_count).toBe(2)
+    })
+
+    it('reads the form\'s own saved copy, not anything the browser names', async () => {
+      ddb({ version: STANDARD_FORM })
+      await POST(req(standardBody({ sourceDocument: { sessionId: 'x', s3Key: 'sign/source/x/evil.pdf', sha256: 'zzz' } })), params)
+      const gets = mockS3Send.mock.calls.map(([c]) => c).filter(c => c.__type === 'S3Get')
+      expect(gets.map(g => g.input.Key)).toEqual(['sign/forms/org-abc123/form-aoa/sample.pdf'])
+      expect(sessionPut().input.Item.source_document.s3_key).not.toContain('evil')
+    })
+
+    it('a saved copy that is not a PDF is refused, and nothing is created', async () => {
+      ddb({ version: STANDARD_FORM }); s3(PNG)
+      const res = await POST(req(standardBody()), params)
+      expect(res.status).toBe(500)
+      expect(puts()).toHaveLength(0)
+      expect(s3Puts()).toHaveLength(0)
+    })
+
+    it('still needs a valid name and email for the signer', async () => {
+      ddb({ version: STANDARD_FORM })
+      expect((await POST(req(standardBody({ signers: [{ role: 'Signer', name: '', email: 'a@b.com' }] })), params)).status).toBe(400)
+      expect(puts()).toHaveLength(0)
+    })
+
+    it('each send makes its own session and copy', async () => {
+      ddb({ version: STANDARD_FORM })
+      await POST(req(standardBody()), params)
+      await POST(req(standardBody()), params)
+      const keys = s3Puts().map(p => p.input.Key)
+      expect(new Set(keys).size).toBe(2)
+    })
+
+    it('an ordinary form still needs its upload, and a browser cannot claim otherwise', async () => {
+      const res = await POST(req(body({ sourceDocument: undefined, standard_document: true })), params)
+      expect(res.status).toBe(400)
+      expect(puts()).toHaveLength(0)
+    })
+  })
 })
+

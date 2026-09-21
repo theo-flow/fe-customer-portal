@@ -53,6 +53,8 @@ export default function SendFormPage() {
   }, [])
 
   const selected = forms?.find(f => f.formId === selectedId) ?? null
+  // A standard document is the same for everyone, so there is nothing to upload.
+  const standard = !!selected?.standardDocument
 
   // Fills the people from what the form says about who it is for: read from the
   // uploaded document first, then the form's fixed default person for a role.
@@ -99,7 +101,7 @@ export default function SendFormPage() {
     setSelectedId(id); setError('')
     const form = forms?.find(f => f.formId === id)
     // keep anything already typed for roles the new form also has
-    prefill(form, info, people)
+    prefill(form, form?.standardDocument ? null : info, people)
   }
 
   // What the agent should know about a role's pre-filled details.
@@ -122,12 +124,26 @@ export default function SendFormPage() {
     const p = people[r]
     return p && p.name.trim() && looksLikeEmail(p.email)
   })
-  const canSend = !!file && !!info && !!selected && peopleComplete && !sending
+  const canSend = !!selected && (standard || (!!file && !!info)) && peopleComplete && !sending
 
   async function send() {
-    if (!canSend || !file || !selected) return
+    if (!canSend || !selected) return
     setError(''); setSending(true)
     try {
+      if (standard) {
+        const res = await fetch(`/api/sign/forms/${selected.formId}/send`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            formVersion: selected.currentVersion,
+            signers: selected.roles.map(role => ({ role, name: people[role].name.trim(), email: people[role].email.trim() })),
+          }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) { setError(data.error ?? 'Failed to send the form.'); return }
+        setResult({ signers: data.signers, emailQueued: !!data.emailQueued })
+        return
+      }
+      if (!file) return
       const presignRes = await fetch('/api/sign/upload/presign', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filename: file.name, contentType: file.type, contentLength: file.size }),
@@ -239,6 +255,7 @@ export default function SendFormPage() {
                   <span className="block text-[14px] font-semibold text-black">{f.name}</span>
                   <span className="block text-[12px] text-gray-400">
                     {f.pageCount} page{f.pageCount !== 1 ? 's' : ''} &middot; signed by {f.roles.join(', ')}
+                    {f.standardDocument && <> &middot; no upload needed</>}
                   </span>
                 </span>
               </label>
@@ -247,6 +264,8 @@ export default function SendFormPage() {
 
           {selected && (
             <>
+              {!standard && (
+                <>
               <p className="text-[13px] font-semibold text-black mt-6 mb-2">2. Add this person's document</p>
               <div
                 onDragOver={e => e.preventDefault()}
@@ -267,11 +286,17 @@ export default function SendFormPage() {
               {reading && <p className="text-[12px] text-gray-400 mb-2" role="status">Reading the document…</p>}
               {fileError && <p role="alert" className="text-[12px] text-red-500 mb-2">{fileError}</p>}
 
-              {info && (
+                </>
+              )}
+              {standard && (
+                <p className="text-[12px] text-gray-400 mt-4">This form is one standard document, so there is nothing to upload.</p>
+              )}
+
+              {(standard || info) && (
                 <>
                   {selected && (
                     <>
-                      <p className="text-[13px] font-semibold text-black mt-6 mb-1">3. Who signs</p>
+                      <p className="text-[13px] font-semibold text-black mt-6 mb-1">{standard ? '2' : '3'}. Who signs</p>
                       <p className="text-[12px] text-gray-400 mb-3">Each person gets their own link and only sees what they need to do.</p>
                       {Object.values(sources).some(s => s.name === 'document' || s.email === 'document') && (
                         <p role="status" className="text-[12px] text-green-700 bg-green-50 rounded-xl px-3 py-2 mb-3">
