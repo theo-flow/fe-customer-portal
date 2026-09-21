@@ -36,4 +36,6 @@ export interface FormField {
   confidence?: number
   source?:     string
   table_name?: string | null
+  section?:       string | null   // printed heading the field sits under
+  section_group?: string | null   // larger printed part holding it, e.g. "Section A"
 }
