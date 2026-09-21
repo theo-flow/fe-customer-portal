@@ -49,8 +49,10 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (lastPath.current === path) return
     lastPath.current = path
-    setDepth(d => (poppedBack.current ? Math.max(0, d - 1) : d + 1))
+    // Read the flag NOW: React may run the update below after the flag has been cleared.
+    const wentBack = poppedBack.current
     poppedBack.current = false
+    setDepth(d => (wentBack ? Math.max(0, d - 1) : d + 1))
   }, [path])
   const fallback = parentPathOf(path, groups)
   const canGoBack = depth > 0 || fallback !== null
