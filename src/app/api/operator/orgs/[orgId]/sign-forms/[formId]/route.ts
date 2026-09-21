@@ -79,6 +79,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
       fields:      version.fields ?? [],
       anchors:     version.anchors ?? [],
       role_defaults: version.role_defaults ?? [],
+      standard_document: version.standard_document === true,
     },
   })
 }
@@ -150,12 +151,12 @@ export async function PUT(req: NextRequest, { params }: Params) {
             TableName: TABLE,
             Key: pointerKey(orgId, formId),
             UpdateExpression:
-              'SET current_version = :next, #n = :name, #roles = :roles, anchors = :anchors, read_boxes = :reads, role_defaults = :rd, field_count = :fc, #valid = :valid, updated_at = :now, updated_by = :by',
+              'SET current_version = :next, #n = :name, #roles = :roles, anchors = :anchors, read_boxes = :reads, role_defaults = :rd, standard_document = :sd, field_count = :fc, #valid = :valid, updated_at = :now, updated_by = :by',
             ConditionExpression: 'current_version = :base',
             // name and roles are DynamoDB reserved words (a bare one is rejected by the real service, which mocked tests cannot catch)
             ExpressionAttributeNames: { '#n': 'name', '#roles': 'roles', '#valid': 'valid' },
             ExpressionAttributeValues: {
-              ':next': next, ':base': body.baseVersion, ':name': layout.name, ':roles': layout.roles, ':anchors': layout.anchors, ':reads': readBoxes(layout.fields), ':rd': layout.role_defaults,
+              ':next': next, ':base': body.baseVersion, ':name': layout.name, ':roles': layout.roles, ':anchors': layout.anchors, ':reads': readBoxes(layout.fields), ':rd': layout.role_defaults, ':sd': layout.standard_document === true,
               ':fc': layout.fields.length, ':valid': checked.valid, ':now': now, ':by': auth.claims.email,
             },
           },

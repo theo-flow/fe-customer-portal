@@ -29,6 +29,7 @@ export interface EditorInitial {
     fields:      FormField[]
     anchors?:    FormAnchor[]
     role_defaults?: RoleDefault[]
+    standard_document?: boolean
   }
 }
 
@@ -56,6 +57,7 @@ export default function SignFormEditor({ orgId, formId, initial }: { orgId: stri
   const [roles, setRoles]       = useState(initial.layout.roles)
   const [fields, setFields]     = useState<FormField[]>(initial.layout.fields)
   const [anchors, setAnchors]   = useState<FormAnchor[]>(initial.layout.anchors ?? [])
+  const [standardDocument, setStandardDocument] = useState(initial.layout.standard_document === true)
   const [suggesting, setSuggesting] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [roleDefaults, setRoleDefaults] = useState<RoleDefault[]>(initial.layout.role_defaults ?? [])
@@ -274,7 +276,7 @@ export default function SignFormEditor({ orgId, formId, initial }: { orgId: stri
   // ---- save ----
   async function save() {
     setNotice(null)
-    const payload = { name, page_count: pageCount, page_width: pageWidth, page_height: pageHeight, roles, fields, anchors, role_defaults: roleDefaults.filter(d => d.name.trim() || d.email.trim()) }
+    const payload = { name, page_count: pageCount, page_width: pageWidth, page_height: pageHeight, roles, fields, anchors, role_defaults: roleDefaults.filter(d => d.name.trim() || d.email.trim()), standard_document: standardDocument }
     const checked = validateLayout(payload)
     if (!checked.ok) { setNotice({ kind: 'error', text: checked.errors[0], warnings: checked.errors.slice(1) }); return }
 
@@ -384,6 +386,11 @@ export default function SignFormEditor({ orgId, formId, initial }: { orgId: stri
           <label className={labelCls} htmlFor="sf-name">Form name</label>
           <input id="sf-name" className={inputCls} value={name} maxLength={80}
                  onChange={e => { setName(e.target.value); setDirty(true) }} />
+          <label className="flex items-start gap-2 mt-3 text-[12px] text-gray-600 cursor-pointer">
+            <input type="checkbox" checked={standardDocument} className="mt-0.5"
+                   onChange={e => { setStandardDocument(e.target.checked); setDirty(true) }} />
+            <span>Same document for everyone. Nothing is uploaded when it is sent (a consent or an acknowledgement).</span>
+          </label>
           <div className="flex items-center justify-between gap-3 mt-3">
             <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold ${
               valid && !dirty ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`}>

@@ -45,7 +45,7 @@ describe('GET /api/sign/forms', () => {
     expect(forms).toEqual([{
       formId: 'f1', name: 'New AOA', currentVersion: 3, pageCount: 3, pageWidth: 595.32, pageHeight: 841.92,
       roles: ['Customer', 'Seller'], anchors: [{ page: 1, text: 'AMENDMENT OF AGREEMENT' }],
-      reads: [], roleDefaults: [],
+      reads: [], roleDefaults: [], standardDocument: false,
     }])
   })
 
@@ -62,6 +62,13 @@ describe('GET /api/sign/forms', () => {
     const { forms } = await (await GET()).json()
     expect(forms[0].reads).toEqual([])
     expect(forms[0].roleDefaults).toEqual([])
+  })
+
+  it('says which forms are one standard document, sent with no upload', async () => {
+    mockDdbSend.mockResolvedValue({ Items: [pointer({ standard_document: true }), pointer({ form_id: 'f2', name: 'Other' })] })
+    const forms = (await (await GET()).json()).forms as { formId: string; standardDocument: boolean }[]
+    expect(forms.find(f => f.formId !== 'f2')?.standardDocument).toBe(true)
+    expect(forms.find(f => f.formId === 'f2')?.standardDocument).toBe(false)
   })
 
   it('hides forms that are not ready and archived ones, and sorts by name', async () => {
