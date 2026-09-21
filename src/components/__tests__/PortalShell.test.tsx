@@ -255,6 +255,18 @@ describe('PortalShell: Back', () => {
     expect(mockPush).not.toHaveBeenCalled()
   })
 
+  it('going back with our own Back button counts as going back, even when the page changes before the browser says so', async () => {
+    const { rerender } = render(<PortalShell><p>body</p></PortalShell>)
+    mockPath.current = '/sign'
+    rerender(<PortalShell><p>body</p></PortalShell>)
+    await userEvent.click(backButton()!)
+    expect(mockBack).toHaveBeenCalledTimes(1)
+    // the page changes back to Home with NO popstate event seen first (the real browser can order it this way)
+    mockPath.current = '/dashboard'
+    rerender(<PortalShell><p>body</p></PortalShell>)
+    expect(backButton()).not.toBeInTheDocument()
+  })
+
   it('once the person has gone all the way back, Back stops using the history', async () => {
     const { rerender } = render(<PortalShell><p>body</p></PortalShell>)
     mockPath.current = '/sign'

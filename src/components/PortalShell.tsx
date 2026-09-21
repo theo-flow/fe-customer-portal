@@ -42,8 +42,9 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
   const poppedBack = useRef(false)
   useEffect(() => {
     const onPop = () => { poppedBack.current = true }
-    window.addEventListener('popstate', onPop)
-    return () => window.removeEventListener('popstate', onPop)
+    // capture phase: React can update the page before a normal listener has run
+    window.addEventListener('popstate', onPop, true)
+    return () => window.removeEventListener('popstate', onPop, true)
   }, [])
   useEffect(() => {
     if (lastPath.current === path) return
@@ -54,7 +55,8 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
   const fallback = parentPathOf(path, groups)
   const canGoBack = depth > 0 || fallback !== null
   function goBack() {
-    if (depth > 0) router.back()
+    // Our own Back marks itself: the page can change before the browser reports the back step.
+    if (depth > 0) { poppedBack.current = true; router.back() }
     else if (fallback) router.push(fallback)
   }
 
