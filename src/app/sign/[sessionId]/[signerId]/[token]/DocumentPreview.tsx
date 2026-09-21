@@ -114,7 +114,9 @@ export default function DocumentPreview({
                         height: `${field.height * 100}%`,
                       }}
                     >
-                      {!review && <span className={`absolute -top-[1px] -left-[1px] text-[10px] font-semibold text-white px-1.5 py-0.5 rounded-br-md whitespace-nowrap ${done ? 'bg-green-600' : 'bg-indigo-500'}`}>
+                      {/* The label only names a box that is still empty. Once it holds its value the value is
+                          its own label, and a label on top would cover it (small boxes stacked close together). */}
+                      {!review && !done && <span className={`absolute -top-[1px] -left-[1px] text-[10px] font-semibold text-white px-1.5 py-0.5 rounded-br-md whitespace-nowrap ${done ? 'bg-green-600' : 'bg-indigo-500'}`}>
                         {ordered.indexOf(field) + 1}. {FIELD_TYPE_LABELS[field.field_type]}
                       </span>}
                       {value?.kind === 'image' && (
