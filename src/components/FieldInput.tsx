@@ -1,3 +1,5 @@
+import { sanitizeNumeric } from '@/lib/numeric-input'
+
 export interface FieldPosition {
   page:   number
   x:      number
@@ -113,17 +115,25 @@ export default function FieldInput({ field, value, error, onChange, flag, compac
       // spinner on them, which reads as a counter rather than an ID. Use
       // a numeric-keyboard text input instead, same treatment as sa_id.
       number:   'text',
-      currency: 'number',
+      // Amounts are text with a decimal keypad, not type="number": that draws
+      // +/- spin arrows and changes the value on scroll. sanitizeNumeric keeps
+      // the box to digits and one decimal point.
+      currency: 'text',
       sa_id:    'text',
       text:     'text',
     }
     input = (
       <input
         type={typeMap[field.field_type] ?? 'text'}
-        inputMode={field.field_type === 'number' ? 'numeric' : undefined}
+        inputMode={field.field_type === 'number' ? 'numeric' : field.field_type === 'currency' ? 'decimal' : undefined}
+        autoComplete={field.field_type === 'currency' || field.field_type === 'number' ? 'off' : undefined}
         className={base}
         value={value}
-        onChange={e => onChange(e.target.value)}
+        onChange={e => onChange(
+          field.field_type === 'currency' || field.field_type === 'number'
+            ? sanitizeNumeric(e.target.value, field.field_type)
+            : e.target.value
+        )}
         placeholder={row ? undefined : field.label}
         maxLength={field.field_type === 'sa_id' ? 13 : field.field_type === 'number' ? 13 : undefined}
         pattern={field.field_type === 'sa_id' ? '\\d{13}' : field.field_type === 'number' ? '\\d*' : undefined}
