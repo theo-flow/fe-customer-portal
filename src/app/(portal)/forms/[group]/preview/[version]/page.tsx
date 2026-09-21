@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation'
 import { useOrg } from '@/lib/org-context'
 import FillForm from '@/app/fill/[orgId]/[group]/FillForm'
 import type { Field } from '@/components/FieldInput'
+import { hasSections } from '@/lib/form-sections'
 
 interface Branding {
   source:        string
@@ -78,7 +79,7 @@ export default function PreviewVersionPage() {
   const logoUrl    = hasLogo ? `/api/public/branding/${orgId}/${group}/${data.version}` : null
 
   return (
-    <div className="max-w-lg mx-auto">
+    <div className={`${hasSections(data.fields) ? 'max-w-5xl' : 'max-w-lg'} mx-auto`}>
       <Link href={`/forms/${group}/history`} className="text-[12px] font-medium text-gray-400 hover:text-black transition-colors">
         ← Back to history
       </Link>

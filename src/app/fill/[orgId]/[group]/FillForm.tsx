@@ -3,6 +3,8 @@ import { useState } from 'react'
 import { validateField } from '@/lib/validators'
 import FieldInput, { type Field } from '@/components/FieldInput'
 import PositionedFormCanvas from '@/components/PositionedFormCanvas'
+import SectionedFormCanvas from '@/components/SectionedFormCanvas'
+import { hasSections } from '@/lib/form-sections'
 
 interface SubmitResult {
   success: boolean
@@ -104,10 +106,22 @@ export default function FillForm({ orgId, group, groupLabel, fields, brandColor,
 
   return (
     <form onSubmit={handleSubmit} noValidate className="space-y-5">
+      {/* Forms Forge extracted with printed sections are drawn as those
+          sections at every width (two columns wide, stacked narrow). */}
+      {hasSections(fields) && (
+        <SectionedFormCanvas
+          fields={fields}
+          values={values}
+          errors={errors}
+          onChange={setValue}
+          brandColor={brandColor}
+        />
+      )}
+
       {/* Mobile: the original clean stacked list -- absolute positioning
           from PositionedFormCanvas isn't legible at this width, and a
           plain list is also just more usable for actual mobile filling. */}
-      <div className="md:hidden space-y-5">
+      <div className={hasSections(fields) ? 'hidden' : 'md:hidden space-y-5'}>
         {fields.map(field => (
           <FieldInput
             key={field.key}
@@ -121,7 +135,7 @@ export default function FillForm({ orgId, group, groupLabel, fields, brandColor,
 
       {/* Desktop/tablet: fields laid out at their real extracted positions,
           so the form actually resembles the original document. */}
-      <div className="hidden md:block">
+      <div className={hasSections(fields) ? 'hidden' : 'hidden md:block'}>
         <PositionedFormCanvas
           fields={fields}
           values={values}

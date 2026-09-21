@@ -17,6 +17,10 @@ export interface Field {
   // original document instead of a generic linear list. Absent on older/
   // migrated records, which fall back to the linear list entirely.
   position?:  FieldPosition
+  // Printed heading the field sits under, and the larger printed part that
+  // holds it ("Section A"). Set by Forge; drives SectionedFormCanvas.
+  section?:       string | null
+  section_group?: string | null
 }
 
 export type FieldFlag = 'ai' | 'missing' | 'low_confidence'
@@ -27,7 +31,7 @@ const FLAG_COPY: Record<FieldFlag, string> = {
   low_confidence:  'Low-confidence match — please confirm',
 }
 
-export default function FieldInput({ field, value, error, onChange, flag, compact }: {
+export default function FieldInput({ field, value, error, onChange, flag, compact, row }: {
   field:    Field
   value:    string
   error?:   string
@@ -36,16 +40,24 @@ export default function FieldInput({ field, value, error, onChange, flag, compac
   // Tighter label/spacing for use inside a small positioned chip on
   // PositionedFormCanvas -- same input/validation behavior, less chrome.
   compact?: boolean
+  // Label on the left, a small input on the right -- the row shape of a
+  // printed statement. Used inside SectionedFormCanvas.
+  row?: boolean
 }) {
   const base = `w-full rounded-xl border bg-white outline-none transition-all
-               ${compact ? 'px-2.5 py-1.5 text-[13px]' : 'px-4 py-3 text-[14px]'}
+               ${compact || row ? 'px-2.5 py-1.5 text-[13px]' : 'px-4 py-3 text-[14px]'}
                ${error
                  ? 'border-red-400 focus:border-red-500 focus:ring-2 focus:ring-red-100'
                  : flag
                  ? 'border-amber-300 focus:border-amber-400 focus:ring-2 focus:ring-amber-100'
                  : 'border-black/[0.12] focus:border-black/40 focus:ring-2 focus:ring-black/5'}`
 
-  const label = (
+  const label = row ? (
+    <label className="block text-[13px] text-black leading-snug">
+      {field.label}
+      {field.required && <span className="text-red-500 ml-1">*</span>}
+    </label>
+  ) : (
     <label className={`block font-medium text-black ${compact ? 'text-[11px] mb-0.5 truncate' : 'text-[13px] mb-1.5'}`}>
       {field.label}
       {field.required && <span className="text-red-500 ml-1">*</span>}
@@ -112,10 +124,22 @@ export default function FieldInput({ field, value, error, onChange, flag, compac
         className={base}
         value={value}
         onChange={e => onChange(e.target.value)}
-        placeholder={field.label}
+        placeholder={row ? undefined : field.label}
         maxLength={field.field_type === 'sa_id' ? 13 : field.field_type === 'number' ? 13 : undefined}
         pattern={field.field_type === 'sa_id' ? '\\d{13}' : field.field_type === 'number' ? '\\d*' : undefined}
       />
+    )
+  }
+
+  if (row) {
+    return (
+      <div className="grid grid-cols-[1fr_9.5rem] items-center gap-2">
+        {label}
+        <div>
+          {input}
+          {error && <p className="mt-0.5 text-[10px] text-red-500">{error}</p>}
+        </div>
+      </div>
     )
   }
 

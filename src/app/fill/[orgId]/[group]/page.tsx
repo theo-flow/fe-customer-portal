@@ -2,6 +2,7 @@ import { GetCommand } from '@aws-sdk/lib-dynamodb'
 import { ddbDocClient, TABLE } from '@/lib/aws'
 import FillForm from './FillForm'
 import type { Field } from '@/components/FieldInput'
+import { hasSections } from '@/lib/form-sections'
 
 interface Branding {
   source:       string
@@ -88,7 +89,7 @@ export default async function FillPage({
       </div>
 
       {/* Form body */}
-      <div className="max-w-lg mx-auto px-4 py-8">
+      <div className={`${hasSections(fields) ? 'max-w-5xl' : 'max-w-lg'} mx-auto px-4 py-8`}>
         <div className="bg-white rounded-2xl border border-black/[0.08] shadow-sm px-6 py-7"
              style={brandColor ? { borderTopWidth: '3px', borderTopColor: brandColor } : undefined}>
           <h1 className="text-[20px] font-semibold text-black mb-1">{groupLabel}</h1>
