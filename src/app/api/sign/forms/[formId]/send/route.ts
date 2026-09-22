@@ -139,6 +139,10 @@ export async function POST(req: NextRequest, { params }: { params: { formId: str
       form_name: form.name, form_page_count: form.page_count,
       // shown on the audit page appended to the sealed document
       org_name: orgName,
+      // fn-13 loads the session by SESSION#{id} alone, so this is the only way
+      // it learns which org a session belongs to -- needed to publish
+      // SigningCompleted onto the Integration Hub once sealing finishes.
+      org_id: orgId,
     },
   }
 
