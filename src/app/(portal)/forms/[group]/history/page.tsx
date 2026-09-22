@@ -91,9 +91,10 @@ function StatusPill({ status }: { status: string }) {
   )
 }
 
-function VersionRow({ v, group, onPublish, publishing }: {
+function VersionRow({ v, group, isLatest, onPublish, publishing }: {
   v:          VersionRow
   group:      string
+  isLatest:   boolean
   onPublish:  (version: number) => void
   publishing: number | null
 }) {
@@ -112,6 +113,13 @@ function VersionRow({ v, group, onPublish, publishing }: {
           {v.published && (
             <span className="ml-2 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">
               Published
+            </span>
+          )}
+          {/* The one thing that actually answers "what does the form look
+              like right now" without having to compare version numbers. */}
+          {isLatest && (
+            <span className="ml-2 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-gray-900 text-white">
+              Latest
             </span>
           )}
         </p>
@@ -222,6 +230,10 @@ export default function VersionHistoryPage({ params }: { params: { group: string
   const groupLabel  = formGroups.find(fg => fg.group === group)?.groupLabel ?? group
   const errorCount  = versions.filter(v => v.status === 'ERROR').length
   const visibleVersions = showErrors ? versions : versions.filter(v => v.status !== 'ERROR')
+  // Highest version number, forged attempt or not -- the row this badges
+  // is "what re-forging the template just produced", independent of
+  // whether it's ever been published.
+  const latestVersion = versions.reduce((max, v) => Math.max(max, v.version), 0)
 
   if (orgLoading || loading) {
     return (
@@ -277,7 +289,8 @@ export default function VersionHistoryPage({ params }: { params: { group: string
           ) : (
             <div className="space-y-3">
               {visibleVersions.map(v => (
-                <VersionRow key={v.version} v={v} group={group} onPublish={handlePublish} publishing={publishing}/>
+                <VersionRow key={v.version} v={v} group={group} isLatest={v.version === latestVersion}
+                            onPublish={handlePublish} publishing={publishing}/>
               ))}
             </div>
           )}

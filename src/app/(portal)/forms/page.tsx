@@ -163,7 +163,10 @@ function GroupRow({ group, groupLabel, schema, orgId, onPublished }: {
             )}
             {canPublish && (
               <>
-                <Link href={`/forms/${group}/preview/${schema.latestVersion}`}
+                {/* Version-less: always the current forged version, so re-forging
+                    while still configuring never leaves this link stale or makes
+                    someone guess which numbered version is the latest one. */}
+                <Link href={`/forms/${group}/preview`}
                       className="text-[12px] font-medium text-black hover:text-gray-500 transition-colors whitespace-nowrap">
                   Preview →
                 </Link>
