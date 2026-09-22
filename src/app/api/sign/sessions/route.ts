@@ -147,7 +147,12 @@ export async function POST(req: NextRequest) {
   let sessionId: string
   let sourceKey: string
   let sourceSha256: string
-  let metadata: Record<string, unknown> = { created_by_email: claims.email }
+  // org_id is duplicated onto the session's own metadata (not just the ORG#
+  // pointer item below) because fn-13 loads the session by SESSION#{id} alone
+  // and has no other way to learn which org it belongs to -- needed so it can
+  // publish a SigningCompleted event onto the Integration Hub once sealing
+  // finishes (see docs/integration-hub-status-and-next-steps.md).
+  let metadata: Record<string, unknown> = { created_by_email: claims.email, org_id: orgId }
 
   try {
     if (sourceDocument) {

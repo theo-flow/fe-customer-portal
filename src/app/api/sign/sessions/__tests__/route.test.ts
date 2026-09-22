@@ -78,14 +78,14 @@ describe('POST /api/sign/sessions', () => {
     const res = await POST(makeReq({ signers, sourceDocument: standalone }))
     expect(res.status).toBe(201)
     const [put] = sessionPuts()
-    expect(put.input.Item.metadata).toEqual({ created_by_email: 'owner@example.com' })
+    expect(put.input.Item.metadata).toEqual({ created_by_email: 'owner@example.com', org_id: ORG_ID })
   })
 
   it('keeps the submission id alongside the requester when attached to a Decode document', async () => {
     const res = await POST(makeReq({ signers, submissionId: 'DAI-1' }))
     expect(res.status).toBe(201)
     const [put] = sessionPuts()
-    expect(put.input.Item.metadata).toEqual({ created_by_email: 'owner@example.com', submission_id: 'DAI-1' })
+    expect(put.input.Item.metadata).toEqual({ created_by_email: 'owner@example.com', org_id: ORG_ID, submission_id: 'DAI-1' })
   })
 
   it('checks an uploaded document in the Sign bucket, never the intake bucket', async () => {
