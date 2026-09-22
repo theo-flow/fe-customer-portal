@@ -1,4 +1,5 @@
 import { sanitizeNumeric } from '@/lib/numeric-input'
+import SignaturePad from '@/components/SignaturePad'
 
 export interface FieldPosition {
   page:   number
@@ -69,6 +70,21 @@ export default function FieldInput({ field, value, error, onChange, flag, compac
   )
 
   let input: React.ReactNode
+
+  // A signature is a real field on the form (Forge keeps it, typed
+  // "signature" -- docs/forge-design-method.md), not a plain text box, and
+  // not squeezed into SectionedFormCanvas's row layout: it needs real width
+  // regardless of `row`/`compact`, same as the checkbox early-return below.
+  if (field.field_type === 'signature') {
+    return (
+      <SignaturePad
+        value={value}
+        onChange={onChange}
+        label={`${field.label}${field.required ? ' *' : ''}`}
+        error={error}
+      />
+    )
+  }
 
   if (field.field_type === 'select' && field.options?.length) {
     input = (
