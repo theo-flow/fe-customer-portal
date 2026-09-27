@@ -84,6 +84,31 @@ describe('SendFormPage', () => {
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('could not be loaded'))
   })
 
+  it('starts with the form chosen when opened from its Send button (?form=)', async () => {
+    window.history.pushState({}, '', '/sign/send?form=consent')
+    try {
+      withForms([aoa, consent])
+      render(<SendFormPage />)
+      await waitFor(() => expect(screen.getByRole('radio', { name: /Consent/ })).toBeChecked())
+      expect(screen.getByRole('radio', { name: /New AOA/ })).not.toBeChecked()
+      await screen.findByLabelText('Choose the PDF')
+    } finally {
+      window.history.pushState({}, '', '/')
+    }
+  })
+
+  it('ignores a ?form= that is not one of the organisation\'s forms', async () => {
+    window.history.pushState({}, '', '/sign/send?form=someone-else')
+    try {
+      withForms([aoa])
+      render(<SendFormPage />)
+      await screen.findByRole('radio', { name: /New AOA/ })
+      expect(screen.getByRole('radio', { name: /New AOA/ })).not.toBeChecked()
+    } finally {
+      window.history.pushState({}, '', '/')
+    }
+  })
+
   it('shows the forms to click before any document is added', async () => {
     withForms([aoa])
     render(<SendFormPage />)
