@@ -4,8 +4,8 @@ import dynamic from 'next/dynamic'
 import type SignatureCanvas from 'react-signature-canvas'
 import type { DetectedField } from '@/lib/sign'
 import {
-  boxesOf, buildGroups, cleanPlace, dateBounds, dateProblem, formatChosenDate, GROUP_TITLES, initialsFromName,
-  instructionOf, pagesPhrase, summariseGroups, todaySAST, validateSubmission,
+  boxesOf, buildGroups, choiceQuestions, cleanPlace, cleanText, dateBounds, dateProblem, formatChosenDate, groupOf, GROUP_TITLES,
+  initialsFromName, instructionOf, MAX_TEXT_CHARS, pagesPhrase, summariseGroups, todaySAST, validateSubmission,
   type GroupId, type MarkType, type Submission,
 } from '@/lib/sign-tasks'
 import { CONSENT_TEXT, CONSENT_VERSION, MAX_DECLINE_REASON_CHARS } from '@/lib/sign-consent'
@@ -75,6 +75,9 @@ export default function SignCapture({
   const [dateApplied, setDateApplied] = useState<string | null>(null)
   const [placeDraft, setPlaceDraft]     = useState('')
   const [placeApplied, setPlaceApplied] = useState<string | null>(null)
+  // their own details: typed answers by box, and the option picked per question
+  const [texts, setTexts]     = useState<Record<string, string>>({})
+  const [choices, setChoices] = useState<Record<string, string>>({})
 
   useEffect(() => {
     fetch(`/api/public/sign/${sessionId}/${signerId}/${token}/document`)
@@ -121,10 +124,16 @@ export default function SignCapture({
         const text = cleanPlace(group === 'place' ? placeDraft : (placeApplied ?? ''))
         if (text) v = { kind: 'text', value: text }
       } else if (box.field_type === 'name' && data?.signerName) v = { kind: 'text', value: data.signerName }
+      else if (box.field_type === 'text') {
+        const text = cleanText(texts[box.field_id])
+        if (text) v = { kind: 'text', value: text }
+      } else if (box.field_type === 'choice' && box.choice_group && choices[box.choice_group]) {
+        v = choices[box.choice_group] === box.field_id ? { kind: 'circle', value: box.option ?? '' } : { kind: 'blank', value: '' }
+      }
       if (v) out[box.field_id] = v
     }
     return out
-  }, [fields, group, sigApplied, sigMode, sigTyped, iniApplied, iniMode, iniTyped, dateDraft, dateApplied, placeDraft, placeApplied, data?.signerName])
+  }, [fields, group, sigApplied, sigMode, sigTyped, iniApplied, iniMode, iniTyped, dateDraft, dateApplied, placeDraft, placeApplied, texts, choices, data?.signerName])
 
   // ---- reading a drawn or typed mark ----
   function readMark(mode: MarkMode, typed: string, ref: React.RefObject<SignatureCanvas>): Mark | null {
@@ -139,7 +148,10 @@ export default function SignCapture({
   // then moves to the next task.
   function applyAndContinue() {
     if (!group) return
-    if (group === 'signature') {
+    if (group === 'details') {
+      const problem = validateSubmission(boxesOf(fields, 'details'), { textValues: texts, choices })
+      if (problem) { setError(problem); return }
+    } else if (group === 'signature') {
       const m = readMark(sigMode, sigTyped, sigRef)
       if (!m) { setError('Please add your signature.'); return }
       setSigApplied(m)
@@ -165,7 +177,8 @@ export default function SignCapture({
 
   // Clicking a box on the document jumps to the task it belongs to.
   function onBoxClick(field: DetectedField) {
-    const target = (groups as string[]).indexOf(field.field_type)
+    const g = groupOf(field.field_type)
+    const target = g ? groups.indexOf(g) : -1
     if (target < 0) return
     setError(null)
     setStepIndex((hasBoxes ? 1 : 0) + target)
@@ -182,6 +195,8 @@ export default function SignCapture({
       placeValues,
       // older boxes have no id, so they take the single place answer
       placeData:     placeApplied ?? undefined,
+      textValues:    texts,
+      choices,
       consent:       true,
       consentVersion: CONSENT_VERSION,
     }
@@ -300,6 +315,10 @@ export default function SignCapture({
       ['Initials', markView(iniApplied)],
       ['Date', dateText],
       ['Place', placeApplied ?? ''],
+      ...boxesOf(fields, 'details').filter(b => b.field_type === 'text' && b.field_id && cleanText(texts[b.field_id]))
+        .map(b => [instructionOf(b), cleanText(texts[b.field_id as string])] as [string, React.ReactNode]),
+      ...choiceQuestions(fields).filter(q => choices[q.group])
+        .map(q => [q.question, q.options.find(o => o.field_id === choices[q.group])?.option ?? ''] as [string, React.ReactNode]),
     ]
     return (
       <div className="space-y-4">
@@ -404,7 +423,9 @@ export default function SignCapture({
               <p className="text-[11px] text-gray-400">{boxes.length > 0 ? `Applies to ${pagesPhrase(boxes)}` : ''}</p>
             </div>
             <h2 className="text-[16px] font-semibold text-black mb-0.5">{GROUP_TITLES[group]}</h2>
-            {instruction && <p className="text-[13px] text-gray-500 mb-3">{instruction}</p>}
+            {group === 'details'
+              ? <p className="text-[13px] text-gray-500 mb-3">Type each answer below. It appears on the form as you type.</p>
+              : instruction && <p className="text-[13px] text-gray-500 mb-3">{instruction}</p>}
           </div>
         )}
 
@@ -430,6 +451,43 @@ export default function SignCapture({
             {written.length > 0 && (
               <p className="text-[12px] text-gray-500 mt-2">It will be written on the form as: <span className="font-medium text-black">{written.join(' and ')}</span></p>
             )}
+          </div>
+        )}
+        {group === 'details' && (
+          <div className="space-y-3 max-h-[45vh] overflow-y-auto pr-1">
+            {boxesOf(fields, 'details').map(b => {
+              if (b.field_type === 'text' && b.field_id) {
+                const id = b.field_id
+                return (
+                  <div key={id}>
+                    <label className="block text-[13px] font-medium text-black mb-1.5" htmlFor={`answer-${id}`}>
+                      {instructionOf(b)}{b.required === false ? ' (optional)' : ''}
+                    </label>
+                    <input id={`answer-${id}`} type="text" value={texts[id] ?? ''} maxLength={MAX_TEXT_CHARS}
+                           onChange={e => setTexts(t => ({ ...t, [id]: e.target.value }))} className={smallInput} />
+                  </div>
+                )
+              }
+              // one fieldset per question, shown where its first option sits
+              const q = choiceQuestions(fields).find(x => x.options[0].field_id === b.field_id)
+              if (!q) return null
+              return (
+                <fieldset key={q.group}>
+                  <legend className="block text-[13px] font-medium text-black mb-1.5">{q.question}</legend>
+                  <div className="flex flex-wrap gap-2">
+                    {q.options.map(o => (
+                      <label key={o.field_id}
+                             className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-[13px] cursor-pointer ${
+                               choices[q.group] === o.field_id ? 'border-black bg-gray-50' : 'border-black/[0.12]'}`}>
+                        <input type="radio" name={`choice-${q.group}`} checked={choices[q.group] === o.field_id}
+                               onChange={() => setChoices(c => ({ ...c, [q.group]: o.field_id as string }))} />
+                        {o.option}
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+              )
+            })}
           </div>
         )}
         {group === 'place' && (
@@ -491,7 +549,7 @@ export default function SignCapture({
             ) : (
               <button type="button" onClick={applyAndContinue}
                       className="flex-1 py-3 rounded-xl bg-black text-white text-[14px] font-semibold hover:bg-gray-800 active:bg-gray-900 transition-colors">
-                {group === 'signature' ? 'Use this signature' : group === 'initials' ? 'Use these initials' : group === 'date' ? 'Use this date' : 'Use this place'}
+                {group === 'details' ? 'Use these details' : group === 'signature' ? 'Use this signature' : group === 'initials' ? 'Use these initials' : group === 'date' ? 'Use this date' : 'Use this place'}
               </button>
             )}
           </div>

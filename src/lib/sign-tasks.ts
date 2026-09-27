@@ -15,6 +15,7 @@ import { DEFAULT_INSTRUCTIONS } from './sign-form'
 export const MAX_MARK_CHARS  = 400_000   // a drawn signature or initials, as a data URL
 export const MAX_TYPED_CHARS = 80
 export const MAX_PLACE_CHARS = 100
+export const MAX_TEXT_CHARS  = 120
 
 export interface Task {
   n:     number
@@ -48,21 +49,43 @@ export function buildTasks(fields: DetectedField[]): Task[] {
   }))
 }
 
+// One question made of choice boxes: the options, in reading order.
+export interface ChoiceQuestion {
+  group:    string
+  question: string
+  options:  DetectedField[]
+  required: boolean
+}
+
+export function choiceQuestions(fields: DetectedField[]): ChoiceQuestion[] {
+  const out: ChoiceQuestion[] = []
+  for (const f of orderFields(fields.filter(x => x.field_type === 'choice' && x.choice_group && x.field_id))) {
+    const q = out.find(x => x.group === f.choice_group)
+    if (q) { q.options.push(f); q.required = q.required || isRequired(f) }
+    else out.push({ group: f.choice_group as string, question: instructionOf(f), options: [f], required: isRequired(f) })
+  }
+  return out
+}
+
 export interface Requirements {
   signature: boolean
   initials:  boolean
   dates:     DetectedField[]
   places:    DetectedField[]
+  texts:     DetectedField[]
+  choices:   ChoiceQuestion[]
 }
 
 export function requirements(fields: DetectedField[]): Requirements {
   // No boxes for this signer at all (an older session): ask for a signature.
-  if (fields.length === 0) return { signature: true, initials: false, dates: [], places: [] }
+  if (fields.length === 0) return { signature: true, initials: false, dates: [], places: [], texts: [], choices: [] }
   return {
     signature: fields.some(f => f.field_type === 'signature' && isRequired(f)),
     initials:  fields.some(f => f.field_type === 'initials' && isRequired(f)),
     dates:     orderFields(fields.filter(f => f.field_type === 'date' && isRequired(f))),
     places:    orderFields(fields.filter(f => f.field_type === 'place' && isRequired(f))),
+    texts:     orderFields(fields.filter(f => f.field_type === 'text' && isRequired(f))),
+    choices:   choiceQuestions(fields).filter(q => q.required),
   }
 }
 
@@ -71,13 +94,21 @@ export function requirements(fields: DetectedField[]): Requirements {
 // applies it to every box of that kind, so a form with initials on seven pages
 // is still one task.
 
-export type GroupId = 'signature' | 'initials' | 'date' | 'place'
+export type GroupId = 'details' | 'signature' | 'initials' | 'date' | 'place'
 
-// Which kinds of task this person has, in the order they are asked.
+// Typed answers and choices are asked together, as "Your details".
+export function groupOf(type: DetectedField['field_type']): GroupId | null {
+  if (type === 'text' || type === 'choice') return 'details'
+  return type === 'name' ? null : type
+}
+
+// Which kinds of task this person has, in the order they are asked. Their
+// details come first, the way a paper form is filled in before it is signed.
 export function buildGroups(fields: DetectedField[]): GroupId[] {
   if (fields.length === 0) return ['signature']   // an older session: just a signature
   const need = requirements(fields)
   const groups: GroupId[] = []
+  if (fields.some(f => groupOf(f.field_type) === 'details')) groups.push('details')
   if (need.signature) groups.push('signature')
   if (need.initials) groups.push('initials')
   if (need.dates.length > 0) groups.push('date')
@@ -87,7 +118,7 @@ export function buildGroups(fields: DetectedField[]): GroupId[] {
 
 // The boxes a group applies to, in reading order.
 export function boxesOf(fields: DetectedField[], group: GroupId): DetectedField[] {
-  return orderFields(fields.filter(f => f.field_type === group))
+  return orderFields(fields.filter(f => groupOf(f.field_type) === group))
 }
 
 // "page 2", "pages 1 and 2", "pages 1, 2 and 3"
@@ -99,6 +130,7 @@ export function pagesPhrase(fields: DetectedField[]): string {
 }
 
 export const GROUP_TITLES: Record<GroupId, string> = {
+  details:   'Your details',
   signature: 'Your signature',
   initials:  'Your initials',
   date:      'The date',
@@ -111,7 +143,8 @@ export function summariseGroups(fields: DetectedField[]): { group: GroupId; text
     const boxes = boxesOf(fields, group)
     const where = pagesPhrase(boxes)
     const text =
-      group === 'signature' ? (boxes.length ? `Sign on ${where}` : 'Sign the document')
+      group === 'details'   ? `Fill in your details, on ${where}`
+      : group === 'signature' ? (boxes.length ? `Sign on ${where}` : 'Sign the document')
       : group === 'initials' ? `Initial on ${where}`
       : group === 'date'     ? `Choose the date, it is written on ${where}`
       :                        `Write where you are signing, on ${where}`
@@ -180,10 +213,28 @@ export interface Submission {
   placeData?:     string
   // the date the signer chose (YYYY-MM-DD), written into every date box in that box's format
   signingDate?:   string
+  // the signer's own answers for typed-answer boxes, keyed by the box's field_id
+  textValues?:    Record<string, string>
+  // for each choice question (its choice_group), the field_id of the option picked
+  choices?:       Record<string, string>
 }
 
 export function cleanPlace(v: unknown): string {
   return (typeof v === 'string' ? v : '').replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_PLACE_CHARS)
+}
+
+export function cleanText(v: unknown): string {
+  return (typeof v === 'string' ? v : '').replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_TEXT_CHARS)
+}
+
+export function textValueFor(f: DetectedField, s: Submission): string {
+  return f.field_id ? cleanText(s.textValues?.[f.field_id]) : ''
+}
+
+// The option box picked for a question, only if it really is one of its options.
+export function chosenOption(q: ChoiceQuestion, s: Submission): DetectedField | null {
+  const id = s.choices?.[q.group]
+  return (id && q.options.find(o => o.field_id === id)) || null
 }
 
 export function placeValueFor(f: DetectedField, s: Submission): string {
@@ -220,6 +271,14 @@ export function validateSubmission(fields: DetectedField[], s: Submission): stri
   }
   for (const f of need.places) {
     if (!placeValueFor(f, s)) return `Please say where you are signing (page ${f.page}).`
+  }
+  for (const f of need.texts) {
+    if (!textValueFor(f, s)) return `Please fill in: ${instructionOf(f)} (page ${f.page}).`
+  }
+  for (const q of choiceQuestions(fields)) {
+    const picked = s.choices?.[q.group]
+    if (picked !== undefined && !chosenOption(q, s)) return `Please choose again: ${q.question}.`
+    if (q.required && !chosenOption(q, s)) return `Please choose: ${q.question}.`
   }
   // Optional (an older signing page never sent one and the day of signing is
   // used), but a date that was sent must be a real date inside the window.

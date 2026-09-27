@@ -273,6 +273,7 @@ describe('SignCapture: the signer works on the document', () => {
         initialsType: 'TYPED', initialsData: 'TN',
         signingDate: yesterday(),
         placeValues: { p1: 'Cape Town' }, placeData: 'Cape Town',
+        textValues: {}, choices: {},
         consent: true, consentVersion: CONSENT_VERSION,
       })
     })

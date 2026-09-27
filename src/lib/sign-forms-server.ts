@@ -51,6 +51,19 @@ export const versionKey = (orgId: string, formId: string, version: number) =>
   ({ PK: `ORG#${orgId}`, SK: `SIGNFORMV#${formId}#${String(version).padStart(4, '0')}` })
 export const sampleKey  = (orgId: string, formId: string) => `sign/forms/${orgId}/${formId}/sample.pdf`
 
+// The pointer and the current version of one form, or null if it does not
+// exist or was archived.
+export async function loadCurrentForm(orgId: string, formId: string) {
+  const db = ddbDocClient()
+  const pointer = await db.send(new GetCommand({ TableName: TABLE, Key: pointerKey(orgId, formId) }))
+  if (!pointer.Item || pointer.Item.form_status === 'ARCHIVED') return null
+  const version = await db.send(new GetCommand({
+    TableName: TABLE, Key: versionKey(orgId, formId, pointer.Item.current_version as number),
+  }))
+  if (!version.Item) return null
+  return { pointer: pointer.Item, version: version.Item }
+}
+
 export function isTransactionConflict(err: unknown): boolean {
   const name = (err as { name?: string } | null)?.name
   return name === 'TransactionCanceledException' || name === 'ConditionalCheckFailedException'

@@ -3,7 +3,7 @@ import { SendMessageCommand } from '@aws-sdk/client-sqs'
 import { NextRequest, NextResponse } from 'next/server'
 import { ddbDocClient, sqsClient, TABLE } from '@/lib/aws'
 import { hashToken, type SignSession, type Signer } from '@/lib/sign'
-import { requirements, placeValueFor, validateSubmission, type Submission } from '@/lib/sign-tasks'
+import { requirements, placeValueFor, textValueFor, choiceQuestions, chosenOption, validateSubmission, type Submission } from '@/lib/sign-tasks'
 import { isConditionalCheckFailure } from '@/lib/sign-server'
 import { CONSENT_VERSION, consentProblem, type ConsentInput } from '@/lib/sign-consent'
 
@@ -73,6 +73,16 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
     const fieldValues: Signer['field_values'] = {}
     for (const box of placeBoxes) {
       if (box.field_id) fieldValues[box.field_id] = { value: placeValueFor(box, body), at: now }
+    }
+    // Typed answers and the option picked for each choice, per box, for the sealer.
+    for (const box of mine) {
+      if (box.field_type !== 'text' || !box.field_id) continue
+      const value = textValueFor(box, body)
+      if (value) fieldValues[box.field_id] = { value, at: now }
+    }
+    for (const q of choiceQuestions(mine)) {
+      const picked = chosenOption(q, body)
+      if (picked?.field_id) fieldValues[picked.field_id] = { value: picked.option ?? 'chosen', at: now }
     }
     const firstPlace = placeBoxes.length > 0 ? placeValueFor(placeBoxes[0], body) : ''
 

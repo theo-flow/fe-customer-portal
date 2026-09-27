@@ -165,6 +165,8 @@ describe('Sign sessions page: available forms', () => {
     expect(screen.getByText(/1 page · signed by Customer · no upload needed/)).toBeInTheDocument()
     expect(screen.getAllByRole('link', { name: 'Send' }).map(a => a.getAttribute('href')))
       .toEqual(['/sign/send?form=aoa', '/sign/send?form=popi'])
+    expect(screen.getAllByRole('link', { name: 'Preview' }).map(a => a.getAttribute('href')))
+      .toEqual(['/sign/forms/aoa/preview', '/sign/forms/popi/preview'])
   })
 
   it('says when no forms are set up yet', async () => {

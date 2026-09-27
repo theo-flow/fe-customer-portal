@@ -131,10 +131,12 @@ export default function SignFormEditor({ orgId, formId, initial }: { orgId: stri
     // Keep a hand-written instruction; swap a default for the new type's default.
     if (field.instruction === DEFAULT_INSTRUCTIONS[field.field_type]) next.instruction = DEFAULT_INSTRUCTIONS[type]
     if (type === 'date') next.date_format = field.date_format ?? 'iso'
+    if (type === 'choice') { next.choice_group = field.choice_group ?? ''; next.option = field.option ?? '' }
     setFields(fs => fs.map(f => {
       if (f.field_id !== field.field_id) return f
       const merged = { ...f, ...next }
       if (type !== 'date') delete merged.date_format
+      if (type !== 'choice') { delete merged.choice_group; delete merged.option }
       return merged
     }))
     setDirty(true)
@@ -528,6 +530,20 @@ export default function SignFormEditor({ orgId, formId, initial }: { orgId: stri
                         onChange={e => patchField(selected.field_id, { date_format: e.target.value as DateFormat })}>
                   {DATE_FORMATS.map(d => <option key={d} value={d}>{DATE_FORMAT_LABELS[d]}</option>)}
                 </select>
+              </div>
+            )}
+            {selected.field_type === 'choice' && (
+              <div className="grid grid-cols-2 gap-2 mb-2">
+                <div>
+                  <label className={labelCls} htmlFor="sf-sel-option">Printed option under this box</label>
+                  <input id="sf-sel-option" className={inputCls} value={selected.option ?? ''} maxLength={40} placeholder="For example is not"
+                         onChange={e => patchField(selected.field_id, { option: e.target.value })} />
+                </div>
+                <div>
+                  <label className={labelCls} htmlFor="sf-sel-group">Question name (same for each option)</label>
+                  <input id="sf-sel-group" className={inputCls} value={selected.choice_group ?? ''} maxLength={40} placeholder="For example occupied"
+                         onChange={e => patchField(selected.field_id, { choice_group: e.target.value })} />
+                </div>
               </div>
             )}
             {isReadType(selected.field_type) ? (

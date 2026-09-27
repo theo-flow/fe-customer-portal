@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import { Document, Page, pdfjs } from 'react-pdf'
 import type { DetectedField } from '@/lib/sign'
-import { orderFields } from '@/lib/sign-tasks'
+import { groupOf, orderFields, type GroupId } from '@/lib/sign-tasks'
 
 // Must be set in this same module (react-pdf's requirement) -- setting it
 // elsewhere and importing this component later can let the default value
@@ -18,11 +18,14 @@ const FIELD_TYPE_LABELS: Record<DetectedField['field_type'], string> = {
   name: 'Printed name',
   date: 'Date',
   place: 'Place',
+  text: 'Your details',
+  choice: 'Choose',
 }
 
 // What has been put into a box so far: a drawn image, or text.
 export interface BoxValue {
-  kind:  'image' | 'text'
+  // 'circle': the option picked for a choice; 'blank': an option left as printed
+  kind:  'image' | 'text' | 'circle' | 'blank'
   value: string
 }
 
@@ -41,7 +44,7 @@ export default function DocumentPreview({
   url:          string
   fields:       DetectedField[]
   values?:      Record<string, BoxValue>
-  activeType?:  DetectedField['field_type'] | null
+  activeType?:  GroupId | null
   /** The final check: every page, and only what has been entered, as it will be stamped. */
   review?:      boolean
   onError:      () => void
@@ -66,7 +69,7 @@ export default function DocumentPreview({
   // Bring the boxes being asked for into view as the signer moves on.
   useEffect(() => {
     if (!activeType) return
-    const first = ordered.find(f => f.field_type === activeType)
+    const first = ordered.find(f => groupOf(f.field_type) === activeType)
     if (first?.field_id) document.getElementById(`sbox-${first.field_id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeType, numPages])
@@ -89,7 +92,7 @@ export default function DocumentPreview({
                 {fields.filter(f => f.page === pageNum).map((field, i) => {
                   const value = field.field_id ? values[field.field_id] : undefined
                   const done = !!value
-                  const active = !done && activeType === field.field_type
+                  const active = !done && activeType !== null && groupOf(field.field_type) === activeType
                   const tone = review
                     ? 'border-transparent'
                     : done
@@ -120,6 +123,9 @@ export default function DocumentPreview({
                       {value?.kind === 'image' && (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={value.value} alt="" className="w-full h-full object-contain" />
+                      )}
+                      {value?.kind === 'circle' && (
+                        <span className="absolute inset-0 rounded-[50%] border-2 border-black" aria-hidden="true" />
                       )}
                       {value?.kind === 'text' && (
                         <span className="px-1 text-[12px] italic text-black whitespace-nowrap overflow-hidden text-ellipsis">{value.value}</span>
