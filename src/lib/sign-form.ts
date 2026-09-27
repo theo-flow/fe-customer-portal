@@ -13,7 +13,7 @@
  * no Node APIs, so the editor and the API routes share it.
  */
 
-export const FIELD_TYPES = ['signature', 'initials', 'name', 'date', 'place', 'read_name', 'read_email'] as const
+export const FIELD_TYPES = ['signature', 'initials', 'name', 'date', 'place', 'text', 'choice', 'read_name', 'read_email'] as const
 export type FieldType = (typeof FIELD_TYPES)[number]
 
 // Boxes that are READ from the uploaded document instead of being filled in by
@@ -32,6 +32,8 @@ export const FIELD_TYPE_LABELS: Record<FieldType, string> = {
   name:      'Printed name',
   date:      'Date',
   place:     'Place signed',
+  text:      'Typed answer',
+  choice:    'Choice (one option)',
   read_name:  'Name (read from the document)',
   read_email: 'Email (read from the document)',
 }
@@ -50,6 +52,8 @@ export const DEFAULT_INSTRUCTIONS: Record<FieldType, string> = {
   name:      'Print your full name',
   date:      'Choose the date',
   place:     'Write where you are signing',
+  text:      'Type your answer',
+  choice:    'Choose one',
   read_name:  'Read from the document',
   read_email: 'Read from the document',
 }
@@ -61,6 +65,8 @@ export const DEFAULT_SIZES: Record<FieldType, { width: number; height: number }>
   name:      { width: 0.30, height: 0.03 },
   date:      { width: 0.20, height: 0.03 },
   place:     { width: 0.30, height: 0.03 },
+  text:      { width: 0.35, height: 0.025 },
+  choice:    { width: 0.06, height: 0.02 },
   read_name:  { width: 0.40, height: 0.03 },
   read_email: { width: 0.35, height: 0.03 },
 }
@@ -74,6 +80,7 @@ export const MIN_BOX = 0.01
 export const MAX_ANCHORS = 12
 export const MIN_ANCHOR_CHARS = 8
 export const MAX_ANCHOR_CHARS = 80
+export const MAX_OPTION_CHARS = 40
 
 export interface FormField {
   field_id:     string
@@ -87,6 +94,11 @@ export interface FormField {
   instruction:  string
   required:     boolean
   date_format?: DateFormat
+  // choice boxes: each sits over one printed option ("is" / "is not"); boxes
+  // with the same choice_group (and role) are one question, and the signer
+  // picks exactly one of them. Its instruction is the question they are asked.
+  choice_group?: string
+  option?:       string
 }
 
 // A fixed phrase that always appears on a given page of this form (a heading
@@ -189,6 +201,7 @@ export function newField(
     instruction: DEFAULT_INSTRUCTIONS[type],
     required:    true,
     ...(type === 'date' ? { date_format: dateFormat } : {}),
+    ...(type === 'choice' ? { choice_group: '', option: '' } : {}),
   }
 }
 
@@ -333,7 +346,29 @@ export function validateLayout(input: unknown): LayoutResult {
     if (type === 'date') {
       field.date_format = DATE_FORMATS.includes(f.date_format as DateFormat) ? (f.date_format as DateFormat) : 'iso'
     }
+    if (type === 'choice') {
+      const option = cleanLabel(f.option, MAX_OPTION_CHARS)
+      const group  = cleanLabel(f.choice_group, MAX_OPTION_CHARS)
+      if (!option) { errors.push(`${where} is a choice with no option text (for example "is not").`); return }
+      if (!group)  { errors.push(`${where} is a choice with no question name (for example "occupied").`); return }
+      field.option = option
+      field.choice_group = group
+    }
     fields.push(field)
+  })
+
+  // A question needs at least two options to choose between, all different.
+  const questions = new Map<string, FormField[]>()
+  for (const f of fields) {
+    if (f.field_type !== 'choice') continue
+    const key = `${f.role}|${(f.choice_group as string).toLowerCase()}`
+    questions.set(key, [...(questions.get(key) ?? []), f])
+  }
+  questions.forEach(boxes => {
+    const label = `The choice "${boxes[0].choice_group}" for ${boxes[0].role}`
+    if (boxes.length < 2) errors.push(`${label} needs at least two options.`)
+    const opts = boxes.map(b => (b.option as string).toLowerCase())
+    if (new Set(opts).size !== opts.length) errors.push(`${label} has the same option twice.`)
   })
 
   const anchors: FormAnchor[] = []

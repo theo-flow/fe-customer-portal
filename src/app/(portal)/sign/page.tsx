@@ -259,6 +259,10 @@ function AvailableForms() {
                   {f.standardDocument && <> &middot; no upload needed</>}
                 </p>
               </div>
+              <Link href={`/sign/forms/${encodeURIComponent(f.formId)}/preview`}
+                    className="text-[12px] font-medium text-gray-500 hover:text-black transition-colors whitespace-nowrap">
+                Preview
+              </Link>
               <Link href={`/sign/send?form=${encodeURIComponent(f.formId)}`}
                     aria-label={`Send ${f.name}`}
                     className="text-[12px] font-semibold px-4 py-2 rounded-full bg-black text-white

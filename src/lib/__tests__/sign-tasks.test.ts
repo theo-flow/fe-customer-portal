@@ -3,6 +3,7 @@ import {
   orderFields, instructionOf, buildTasks, requirements, initialsFromName, formatChosenDate,
   cleanPlace, placeValueFor, validateSubmission, MAX_MARK_CHARS, MAX_TYPED_CHARS, MAX_PLACE_CHARS,
   buildGroups, boxesOf, pagesPhrase, summariseGroups, todaySAST, dateBounds, isRealDate, dateProblem, DATE_WINDOW_DAYS,
+  choiceQuestions, textValueFor, cleanText, MAX_TEXT_CHARS,
 } from '../sign-tasks'
 import type { DetectedField } from '../sign'
 
@@ -72,7 +73,7 @@ describe('what each person is asked for', () => {
   })
 
   it('an older session with no boxes for the signer still asks for a signature, as before', () => {
-    expect(requirements([])).toEqual({ signature: true, initials: false, dates: [], places: [] })
+    expect(requirements([])).toEqual({ signature: true, initials: false, dates: [], places: [], texts: [], choices: [] })
   })
 })
 
@@ -270,5 +271,52 @@ describe('formatChosenDate (what the signer sees in the box)', () => {
     expect(formatChosenDate('', 'day_month')).toBe('')
     expect(formatChosenDate('2026-02-30', 'day_month')).toBe('')
     expect(formatChosenDate('nonsense', 'long')).toBe('')
+  })
+})
+
+describe('the signer\'s own details: typed answers and choices', () => {
+  const consent: DetectedField[] = [
+    f({ field_id: 'sig', page: 2, y: 0.5, instruction: 'Sign here' }),
+    f({ field_id: 'id', field_type: 'text', page: 1, y: 0.2, instruction: 'Identity number' }),
+    f({ field_id: 'emp2', field_type: 'text', page: 1, y: 0.8, instruction: 'Employer, line 2', required: false }),
+    f({ field_id: 'is', field_type: 'choice', page: 2, y: 0.3, x: 0.5, choice_group: 'occupied', option: 'is', instruction: 'Is the property occupied by you?' }),
+    f({ field_id: 'isnot', field_type: 'choice', page: 2, y: 0.3, x: 0.56, choice_group: 'occupied', option: 'is not' }),
+  ]
+
+  it('asks for the details first, as one step, before signing', () => {
+    expect(buildGroups(consent)).toEqual(['details', 'signature'])
+    expect(boxesOf(consent, 'details').map(b => b.field_id)).toEqual(['id', 'emp2', 'is', 'isnot'])
+    expect(summariseGroups(consent)[0].text).toBe('Fill in your details, on pages 1 and 2')
+  })
+
+  it('a choice is one question, asked with the first option\'s wording', () => {
+    const [q] = choiceQuestions(consent)
+    expect(q).toMatchObject({ group: 'occupied', question: 'Is the property occupied by you?', required: true })
+    expect(q.options.map(o => o.option)).toEqual(['is', 'is not'])
+  })
+
+  const signed = { signatureType: 'TYPED', signatureData: 'Thandi' } as const
+
+  it('needs every required answer, and says which one is missing', () => {
+    expect(validateSubmission(consent, { ...signed, choices: { occupied: 'is' } }))
+      .toBe('Please fill in: Identity number (page 1).')
+    expect(validateSubmission(consent, { ...signed, textValues: { id: '   ' }, choices: { occupied: 'is' } }))
+      .toBe('Please fill in: Identity number (page 1).')
+  })
+
+  it('needs one option picked for each question, and only one of its own options', () => {
+    expect(validateSubmission(consent, { ...signed, textValues: { id: '8001015009087' } }))
+      .toBe('Please choose: Is the property occupied by you?.')
+    expect(validateSubmission(consent, { ...signed, textValues: { id: '8001015009087' }, choices: { occupied: 'sig' } }))
+      .toBe('Please choose again: Is the property occupied by you?.')
+  })
+
+  it('is complete with the required answers; optional lines may stay empty', () => {
+    expect(validateSubmission(consent, { ...signed, textValues: { id: '8001015009087' }, choices: { occupied: 'isnot' } })).toBeNull()
+  })
+
+  it('cleans a typed answer and caps its length', () => {
+    expect(textValueFor(consent[1], { textValues: { id: '  8001\n015009087 ' } })).toBe('8001 015009087')
+    expect(cleanText('x'.repeat(500))).toHaveLength(MAX_TEXT_CHARS)
   })
 })

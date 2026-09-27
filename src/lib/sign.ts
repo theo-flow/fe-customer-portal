@@ -45,7 +45,7 @@ export interface Signer {
 // Populated by fn-13's document_locator.py (locate_and_notify) -- absent/
 // empty until that async stage completes. Mirrors the shape documented in
 // shared/models/sign_session.py's module docstring.
-export type DetectedFieldType   = 'signature' | 'initials' | 'name' | 'date' | 'place'
+export type DetectedFieldType   = 'signature' | 'initials' | 'name' | 'date' | 'place' | 'text' | 'choice'
 export type DetectedFieldSource = 'textract_llm_confirmed' | 'llm_vision_only' | 'fallback_auto_layout' | 'org_configured' | 'org_added'
 
 export interface DetectedField {
@@ -64,6 +64,8 @@ export interface DetectedField {
   required?:    boolean
   confirmed_by_org?: boolean
   date_format?: 'iso' | 'long' | 'day_month' | 'year_2' | 'year_4'
+  choice_group?: string   // choice boxes: which question this option belongs to
+  option?:       string   // choice boxes: the printed option it sits over
 }
 
 export interface WorkingDocument {

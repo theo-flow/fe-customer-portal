@@ -149,6 +149,7 @@ export async function POST(req: NextRequest, { params }: { params: { formId: str
     instruction: f.instruction, required: f.required, confirmed_by_org: true,
     source: 'org_configured', confidence: 1,
     ...(f.date_format ? { date_format: f.date_format } : {}),
+    ...(f.field_type === 'choice' ? { choice_group: f.choice_group, option: f.option } : {}),
   }))
 
   const session: SignSession = {

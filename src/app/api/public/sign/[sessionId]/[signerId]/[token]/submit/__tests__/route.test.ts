@@ -172,6 +172,35 @@ describe('POST /api/public/sign/.../submit', () => {
       expect(JSON.stringify(s)).not.toContain('not mine')
     })
 
+    it('stores each typed answer and the option picked, per box, for the sealer', async () => {
+      const withDetails = [
+        ...FIELDS,
+        box({ field_id: 't1', field_type: 'text', signer_order: 1, page: 1, y: 0.2, instruction: 'Identity number' }),
+        box({ field_id: 't2', field_type: 'text', signer_order: 1, page: 1, y: 0.3, instruction: 'Employer, line 2', required: false }),
+        box({ field_id: 'c1', field_type: 'choice', signer_order: 1, page: 3, y: 0.2, x: 0.5, choice_group: 'occupied', option: 'is', instruction: 'Occupied?' }),
+        box({ field_id: 'c2', field_type: 'choice', signer_order: 1, page: 3, y: 0.2, x: 0.56, choice_group: 'occupied', option: 'is not' }),
+      ]
+      reads(session({}, [signer(1), signer(2)], withDetails))
+      const res = await POST(req({ ...customerAnswer, textValues: { t1: ' 8001015009087 ', w1: 'not mine' }, choices: { occupied: 'c2' } }), params(1))
+      expect(res.status).toBe(200)
+      const s = savedSession().signers[0]
+      expect(s.field_values).toMatchObject({ t1: { value: '8001015009087' }, c2: { value: 'is not' } })
+      expect(s.field_values).not.toHaveProperty('t2')
+      expect(s.field_values).not.toHaveProperty('c1')
+      expect(JSON.stringify(s)).not.toContain('not mine')
+    })
+
+    it('refuses a missing required answer or an unpicked question', async () => {
+      const withDetails = [
+        ...FIELDS,
+        box({ field_id: 't1', field_type: 'text', signer_order: 1, page: 1, y: 0.2, instruction: 'Identity number' }),
+      ]
+      reads(session({}, [signer(1), signer(2)], withDetails))
+      const res = await POST(req(customerAnswer), params(1))
+      expect(res.status).toBe(400)
+      expect((await res.json()).error).toBe('Please fill in: Identity number (page 1).')
+    })
+
     it('leaves the other signer untouched and moves the session to IN_PROGRESS', async () => {
       await POST(req(customerAnswer), params(1))
       const saved = savedSession()

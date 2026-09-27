@@ -58,9 +58,15 @@ export default function SignFormEditorPage() {
 
   return (
     <div>
-      <Link href={`/operator/orgs/${orgId}/sign-forms`} className="text-[12px] font-medium text-gray-400 hover:text-black">
-        ← Back to Sign forms
-      </Link>
+      <div className="flex items-center justify-between gap-4">
+        <Link href={`/operator/orgs/${orgId}/sign-forms`} className="text-[12px] font-medium text-gray-400 hover:text-black">
+          ← Back to Sign forms
+        </Link>
+        <Link href={`/operator/orgs/${orgId}/sign-forms/${formId}/preview`}
+              className="text-[12px] font-semibold px-4 py-2 rounded-full border border-black/[0.15] hover:border-black/40 whitespace-nowrap">
+          Preview saved version
+        </Link>
+      </div>
       <div className="mt-4 mb-6">
         <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-400 mb-1">TheoFlow Sign · Set up a form</p>
         <h1 className="font-display text-[2.1rem] leading-tight text-black">{data.layout.name}</h1>

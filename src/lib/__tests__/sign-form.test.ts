@@ -326,3 +326,39 @@ describe('standard_document', () => {
   })
 })
 
+
+describe('typed-answer and choice boxes', () => {
+  const consent = (extra: FormField[]): FormLayout => ({
+    name: 'Consent', page_count: 2, page_width: 595.32, page_height: 841.92, roles: ['Customer'], anchors: [], role_defaults: [],
+    fields: [box({ field_id: 's1', page: 2 }), ...extra],
+  })
+  const text = box({ field_id: 't1', field_type: 'text', instruction: 'Identity number', y: 0.2, width: 0.35, height: 0.025 })
+  const choice = (id: string, option: string, x: number) =>
+    box({ field_id: id, field_type: 'choice', page: 2, x, y: 0.3, width: 0.05, height: 0.02, choice_group: 'occupied', option, instruction: 'Is the property occupied by you?' })
+
+  it('keeps a typed-answer box and its label', () => {
+    const r = validateLayout(consent([text]))
+    expect(r.ok && r.layout.fields.find(f => f.field_id === 't1')).toMatchObject({ field_type: 'text', instruction: 'Identity number' })
+  })
+
+  it('keeps a choice question with its options', () => {
+    const r = validateLayout(consent([choice('c1', 'is', 0.5), choice('c2', 'is not', 0.56)]))
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.layout.fields.filter(f => f.field_type === 'choice').map(f => [f.choice_group, f.option])).toEqual([['occupied', 'is'], ['occupied', 'is not']])
+  })
+
+  it('refuses a choice with no option text or question name', () => {
+    const r = validateLayout(consent([{ ...choice('c1', '', 0.5) }, choice('c2', 'is not', 0.56)]))
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.errors.join(' ')).toMatch(/no option text/)
+    const r2 = validateLayout(consent([{ ...choice('c1', 'is', 0.5), choice_group: ' ' }, choice('c2', 'is not', 0.56)]))
+    expect(!r2.ok && r2.errors.join(' ')).toMatch(/no question name/)
+  })
+
+  it('refuses a question with only one option, or the same option twice', () => {
+    const one = validateLayout(consent([choice('c1', 'is', 0.5)]))
+    expect(!one.ok && one.errors.join(' ')).toMatch(/at least two options/)
+    const twice = validateLayout(consent([choice('c1', 'is', 0.5), choice('c2', 'IS', 0.56)]))
+    expect(!twice.ok && twice.errors.join(' ')).toMatch(/same option twice/)
+  })
+})

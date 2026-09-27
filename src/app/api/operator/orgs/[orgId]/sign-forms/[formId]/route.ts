@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { ddbDocClient, s3Client, TABLE, SIGN_BUCKET } from '@/lib/aws'
 import { isReadType, validateLayout } from '@/lib/sign-form'
 import type { FormField } from '@/lib/sign-form'
-import {
+import { loadCurrentForm,
   requireOperator, orgExists, isSafeId, pointerKey, versionKey, sampleKey, isTransactionConflict,
 } from '@/lib/sign-forms-server'
 
@@ -23,16 +23,7 @@ const SAMPLE_URL_SECONDS = 900   // long enough for an editing session to load e
 
 type Params = { params: { orgId: string; formId: string } }
 
-async function loadCurrent(orgId: string, formId: string) {
-  const db = ddbDocClient()
-  const pointer = await db.send(new GetCommand({ TableName: TABLE, Key: pointerKey(orgId, formId) }))
-  if (!pointer.Item || pointer.Item.form_status === 'ARCHIVED') return null
-  const version = await db.send(new GetCommand({
-    TableName: TABLE, Key: versionKey(orgId, formId, pointer.Item.current_version as number),
-  }))
-  if (!version.Item) return null
-  return { pointer: pointer.Item, version: version.Item }
-}
+const loadCurrent = loadCurrentForm
 
 // The current version of one form plus a short-lived link to its sample PDF,
 // for the editor.
