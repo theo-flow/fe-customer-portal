@@ -16,6 +16,7 @@ vi.mock('@/lib/token', () => ({ verifyJwtClaims: vi.fn() }))
 vi.mock('@aws-sdk/lib-dynamodb', () => ({
   GetCommand: vi.fn(function (this: unknown, input: unknown) { return { __type: 'Get', input } }),
   PutCommand: vi.fn(function (this: unknown, input: unknown) { return { __type: 'Put', input } }),
+  UpdateCommand: vi.fn(function (this: unknown, input: unknown) { return { __type: 'Update', input } }),
 }))
 vi.mock('@aws-sdk/client-s3', () => ({
   DeleteObjectCommand: vi.fn(function (this: unknown, input: unknown) { return { __type: 'S3Delete', input } }),
@@ -81,6 +82,15 @@ describe('DELETE /api/sign/sessions/[sessionId]/documents', () => {
     expect(item.metadata).toMatchObject({ form_name: 'New AOA', submission_id: 'DOC-1' })
     expect(item.metadata.documents_deleted_at).toBeTruthy()
     expect(item.signers[0]).toMatchObject({ role: 'Customer', status: 'SIGNED', name: '', email: '' })
+  })
+
+  it('takes the session off the org list by marking its pointer', async () => {
+    expect((await DELETE(req, params)).status).toBe(200)
+    const updates = mockSend.mock.calls.filter(([c]) => c.__type === 'Update').map(([c]) => c.input)
+    expect(updates).toEqual([expect.objectContaining({
+      Key: { PK: `ORG#${ORG_ID}`, SK: `SESSION#${SESSION_ID}` },
+      UpdateExpression: 'SET documentsDeleted = :t',
+    })])
   })
 
   it.each(['CANCELLED', 'EXPIRED', 'DECLINED', 'FAILED'] as const)('works for a %s session (source only)', async (status) => {

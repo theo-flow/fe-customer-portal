@@ -9,8 +9,8 @@ import SignSessionsPage from '../page'
 const json = (body: unknown, ok = true, status = 200) => ({ ok, status, json: async () => body }) as Response
 
 const session = (over: Record<string, unknown>) => ({
-  sessionId: 's', status: 'SIGNED', createdAt: 'c', updatedAt: 'u', submissionId: null, completedKey: 'sign/completed/s/completed.pdf',
-  completedSha256: null, documentsDeleted: false, signers: [{ signerId: 'a', name: 'Thandi', email: 't@example.com', status: 'SIGNED' }], ...over,
+  sessionId: 's', status: 'SIGNED', createdAt: 'c', updatedAt: 'u', submissionId: null, documentName: null, completedKey: 'sign/completed/s/completed.pdf',
+  completedSha256: null, signers: [{ signerId: 'a', name: 'Thandi', email: 't@example.com', status: 'SIGNED' }], ...over,
 })
 
 function serve(sessions: unknown[], del: Response = json({ ok: true })) {
@@ -35,12 +35,12 @@ describe('Sign sessions page: deleting documents', () => {
     expect(screen.getAllByRole('button', { name: 'Delete documents' })).toHaveLength(1)
   })
 
-  it('warns that it cannot be undone (and to download a signed copy first), then deletes', async () => {
-    const fetchMock = serve([session({ sessionId: 'done' })])
+  it('warns that it cannot be undone (and to download a signed copy first), then deletes and drops the row', async () => {
+    const fetchMock = serve([session({ sessionId: 'done', documentName: 'New AOA' })])
     render(<SignSessionsPage />)
     fireEvent.click(await screen.findByRole('button', { name: 'Delete documents' }))
     expect(window.confirm).toHaveBeenCalledWith(expect.stringMatching(/cannot be undone.*Download the signed copy first/))
-    await screen.findByText('Documents deleted.')
+    await waitFor(() => expect(screen.queryByText('New AOA')).not.toBeInTheDocument())
     expect(fetchMock).toHaveBeenCalledWith('/api/sign/sessions/done/documents', { method: 'DELETE' })
   })
 
@@ -59,12 +59,12 @@ describe('Sign sessions page: deleting documents', () => {
     await screen.findByText('Could not delete the documents. Please try again.')
   })
 
-  it('a session whose documents are gone says so, with no view, delete or resend', async () => {
-    serve([session({ status: 'EXPIRED', documentsDeleted: true, completedKey: null, signers: [{ signerId: 'a', name: '', email: '', status: 'EXPIRED' }] })])
+  it('titles a session with its document name, never "Standalone document"', async () => {
+    serve([session({ sessionId: 'f', documentName: 'New AOA' }), session({ sessionId: 'x', createdAt: 'b' })])
     render(<SignSessionsPage />)
-    await screen.findByText('Documents deleted')
-    expect(screen.queryByRole('button', { name: /Delete documents|View document|Send new link|Cancel/ })).not.toBeInTheDocument()
-    expect(screen.getByText('Signer')).toBeInTheDocument()     // no name is kept
+    await screen.findByText('New AOA')
+    expect(screen.getByText('Document')).toBeInTheDocument()
+    expect(screen.queryByText('Standalone document')).not.toBeInTheDocument()
   })
 })
 

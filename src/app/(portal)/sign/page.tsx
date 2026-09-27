@@ -19,9 +19,9 @@ interface SessionSummary {
   createdAt:    string
   updatedAt:    string
   submissionId: string | null
+  documentName: string | null
   completedKey: string | null
   completedSha256: string | null
-  documentsDeleted?: boolean
   signers:      SessionSigner[]
 }
 
@@ -44,16 +44,19 @@ function StatusPill({ status }: { status: SessionSummary['status'] }) {
   )
 }
 
-function SessionRow({ session, onChanged }: { session: SessionSummary; onChanged: () => void }) {
+function SessionRow({ session, onChanged, onDeleted }: {
+  session:   SessionSummary
+  onChanged: () => void
+  onDeleted: (sessionId: string) => void
+}) {
   const signedCount = session.signers.filter(s => s.status === 'SIGNED').length
   const declined = session.signers.filter(s => s.status === 'DECLINED')
   const [opening, setOpening] = useState(false)
   const [busy, setBusy]       = useState<string | null>(null)
   const [notice, setNotice]   = useState<string | null>(null)
 
-  const gone = !!session.documentsDeleted
-  const isOpen = !gone && (session.status === 'PENDING' || session.status === 'IN_PROGRESS' || session.status === 'EXPIRED')
-  const canDelete = !gone && ['SIGNED', 'CANCELLED', 'EXPIRED', 'DECLINED', 'FAILED'].includes(session.status)
+  const isOpen = session.status === 'PENDING' || session.status === 'IN_PROGRESS' || session.status === 'EXPIRED'
+  const canDelete = ['SIGNED', 'CANCELLED', 'EXPIRED', 'DECLINED', 'FAILED'].includes(session.status)
 
   async function cancelSession() {
     if (!window.confirm('Cancel this signing session? Signers will no longer be able to sign.')) return
@@ -81,8 +84,8 @@ function SessionRow({ session, onChanged }: { session: SessionSummary; onChanged
     try {
       const res = await fetch(`/api/sign/sessions/${session.sessionId}/documents`, { method: 'DELETE' })
       const data = await res.json().catch(() => ({}))
-      setNotice(res.ok ? 'Documents deleted.' : (data.error ?? 'Could not delete the documents.'))
-      if (res.ok) onChanged()
+      if (res.ok) { onDeleted(session.sessionId); return }
+      setNotice(data.error ?? 'Could not delete the documents.')
     } catch {
       setNotice('Could not delete the documents. Please try again.')
     } finally {
@@ -145,7 +148,7 @@ function SessionRow({ session, onChanged }: { session: SessionSummary; onChanged
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-[14px] font-semibold text-black">
-            {session.submissionId ? `Attached to ${session.submissionId}` : 'Standalone document'}
+            {session.documentName ?? (session.submissionId ? `Attached to ${session.submissionId}` : 'Document')}
           </p>
           <p className="text-[12px] text-gray-400 mt-0.5">
             {signedCount} of {session.signers.length} signer{session.signers.length !== 1 ? 's' : ''} signed
@@ -191,17 +194,13 @@ function SessionRow({ session, onChanged }: { session: SessionSummary; onChanged
             {busy === 'delete' ? 'Deleting…' : 'Delete documents'}
           </button>
         )}
-        {gone ? (
-          <span className="text-[12px] text-gray-400 whitespace-nowrap">Documents deleted</span>
-        ) : (
-          <button
-            type="button"
-            onClick={viewDocument}
-            disabled={opening}
-            className="text-[12px] font-medium text-indigo-500 hover:text-indigo-700 transition-colors disabled:opacity-50 whitespace-nowrap">
-            {opening ? 'Opening…' : session.completedKey ? 'View signed document' : 'View document'}
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={viewDocument}
+          disabled={opening}
+          className="text-[12px] font-medium text-indigo-500 hover:text-indigo-700 transition-colors disabled:opacity-50 whitespace-nowrap">
+          {opening ? 'Opening…' : session.completedKey ? 'View signed document' : 'View document'}
+        </button>
       </div>
       {notice && <p className="mt-2 text-[12px] text-gray-500" role="status">{notice}</p>}
       {declined.map(d => (
@@ -320,7 +319,10 @@ export default function SignSessionsPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {sessions.map(s => <SessionRow key={s.sessionId} session={s} onChanged={refresh}/>)}
+          {sessions.map(s => (
+            <SessionRow key={s.sessionId} session={s} onChanged={refresh}
+                        onDeleted={id => setSessions(prev => prev.filter(x => x.sessionId !== id))}/>
+          ))}
           {loadError && (
             <p role="alert" className="text-[12px] text-red-500 text-center">Could not load sessions. Please try again.</p>
           )}

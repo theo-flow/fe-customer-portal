@@ -58,10 +58,15 @@ export async function GET(req: NextRequest) {
       TableName:                 TABLE,
       KeyConditionExpression:    'PK = :pk AND begins_with(SK, :prefix)',
       ExpressionAttributeValues: { ':pk': `ORG#${orgId}`, ':prefix': 'SESSION#' },
-      ProjectionExpression:      'sessionId, createdAt',
+      ProjectionExpression:      'sessionId, createdAt, documentsDeleted',
       ExclusiveStartKey:         startKey,
     }))
-    for (const p of index.Items ?? []) pointers.push({ sessionId: p.sessionId as string, createdAt: (p.createdAt as string) ?? '' })
+    // A session whose documents were deleted is gone from the list. The pointer
+    // itself stays (counts rely on it) and is marked when the documents go.
+    for (const p of index.Items ?? []) {
+      if (p.documentsDeleted) continue
+      pointers.push({ sessionId: p.sessionId as string, createdAt: (p.createdAt as string) ?? '' })
+    }
     startKey = index.LastEvaluatedKey
   } while (startKey)
 
@@ -79,16 +84,18 @@ export async function GET(req: NextRequest) {
         Key:       { PK: `SESSION#${p.sessionId}`, SK: 'SESSION' },
       }))
       const session = result.Item as SignSession | undefined
-      if (!session) return null
+      // Also covers sessions deleted before pointers were marked, and those
+      // cleaned up automatically by fn-18.
+      if (!session || isPurged(session)) return null
       return {
         sessionId:     session.session_id,
         status:        session.status,
         createdAt:     session.created_at,
         updatedAt:     session.updated_at,
         submissionId:  (session.metadata as { submission_id?: string } | null)?.submission_id ?? null,
+        documentName:  documentName(session),
         completedKey:  session.completed_document?.s3_key ?? null,
         completedSha256: session.completed_document?.sha256 ?? null,
-        documentsDeleted: isPurged(session),
         signers: session.signers.map(s => ({
           signerId: s.signer_id, name: s.name, email: s.email, status: s.status,
           declineReason: s.decline_reason ?? null, declinedAt: s.declined_at ?? null,
@@ -98,6 +105,15 @@ export async function GET(req: NextRequest) {
   )
 
   return NextResponse.json({ sessions: sessions.filter(Boolean), nextCursor })
+}
+
+// What the org calls this document: the configured form's name, otherwise the
+// file name it was uploaded (or attached) under.
+function documentName(session: SignSession): string | null {
+  const formName = (session.metadata as { form_name?: string } | null)?.form_name
+  if (formName) return formName
+  const key = session.source_document?.s3_key
+  return key ? key.split('/').pop() || null : null
 }
 
 export async function POST(req: NextRequest) {
