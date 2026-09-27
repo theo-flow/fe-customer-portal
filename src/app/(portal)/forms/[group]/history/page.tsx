@@ -248,8 +248,8 @@ export default function VersionHistoryPage({ params }: { params: { group: string
   return (
     <div>
       <div className="mb-8">
-        <Link href="/forms" className="text-[12px] font-medium text-gray-400 hover:text-black transition-colors">
-          ← Back to forms
+        <Link href="/templates" className="text-[12px] font-medium text-gray-400 hover:text-black transition-colors">
+          ← Back to templates
         </Link>
         <h1 className="font-display text-[2.1rem] leading-tight text-black mt-2">{groupLabel} — history</h1>
         <p className="text-[13px] text-gray-400 mt-1">
