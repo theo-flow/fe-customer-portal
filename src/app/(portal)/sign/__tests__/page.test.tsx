@@ -85,7 +85,8 @@ describe('Sign sessions page: paging and refreshing', () => {
     vi.stubGlobal('fetch', fetchMock)
     return fetchMock
   }
-  const listCalls = (fetchMock: ReturnType<typeof serveInPages>) => fetchMock.mock.calls.filter(c => String(c[0]).startsWith('/api/sign/sessions')).length
+  // only the sessions list; the Available forms section loads once on its own
+  const listCalls = (fetchMock: { mock: { calls: unknown[][] } }) => fetchMock.mock.calls.filter(c => String(c[0]).startsWith('/api/sign/sessions')).length
 
   it('shows the newest page with Load more, and Load more adds the older ones below and then goes away', async () => {
     const fetchMock = serveInPages()
@@ -114,11 +115,11 @@ describe('Sign sessions page: paging and refreshing', () => {
     const fetchMock = vi.fn(async () => json({ sessions: rows(1, 1, 'PENDING'), nextCursor: null }))
     vi.stubGlobal('fetch', fetchMock)
     render(<SignSessionsPage />)
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(listCalls(fetchMock)).toBe(1))
     await vi.advanceTimersByTimeAsync(14000)
-    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(listCalls(fetchMock)).toBe(1)
     await vi.advanceTimersByTimeAsync(2000)
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(listCalls(fetchMock)).toBe(2))
   })
 
   it('does not refresh at all when every session is finished', async () => {
@@ -136,8 +137,45 @@ describe('Sign sessions page: paging and refreshing', () => {
     const fetchMock = vi.fn(async () => json({ sessions: rows(1, 1, 'PENDING'), nextCursor: null }))
     vi.stubGlobal('fetch', fetchMock)
     render(<SignSessionsPage />)
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(listCalls(fetchMock)).toBe(1))
     await vi.advanceTimersByTimeAsync(60000)
-    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(listCalls(fetchMock)).toBe(1)
+  })
+})
+
+describe('Sign sessions page: available forms', () => {
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
+
+  function serveForms(forms: unknown, ok = true) {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url === '/api/sign/sessions') return json({ sessions: [] })
+      if (url === '/api/sign/forms') return ok ? json({ forms }) : json({}, false, 500)
+      return json({}, false, 404)
+    }))
+  }
+
+  it('lists each form the organisation can send, with a Send button that opens it already chosen', async () => {
+    serveForms([
+      { formId: 'aoa', name: 'New AOA', pageCount: 3, roles: ['Customer', 'Witness 1'], anchors: [] },
+      { formId: 'popi', name: 'POPI Agreement', pageCount: 1, roles: ['Customer'], anchors: [], standardDocument: true },
+    ])
+    render(<SignSessionsPage />)
+    await screen.findByText('New AOA')
+    expect(screen.getByText(/3 pages · signed by Customer, Witness 1/)).toBeInTheDocument()
+    expect(screen.getByText(/1 page · signed by Customer · no upload needed/)).toBeInTheDocument()
+    expect(screen.getAllByRole('link', { name: 'Send' }).map(a => a.getAttribute('href')))
+      .toEqual(['/sign/send?form=aoa', '/sign/send?form=popi'])
+  })
+
+  it('says when no forms are set up yet', async () => {
+    serveForms([])
+    render(<SignSessionsPage />)
+    await screen.findByText('No forms are set up yet')
+  })
+
+  it('says when the forms could not be loaded', async () => {
+    serveForms(null, false)
+    render(<SignSessionsPage />)
+    await screen.findByText('Your forms could not be loaded. Please reload the page.')
   })
 })

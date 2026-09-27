@@ -52,6 +52,15 @@ export default function SendFormPage() {
       .catch(() => setFormsError(true))
   }, [])
 
+  // Arriving from a form's Send button on the Sign page (?form=<id>): start
+  // with that form chosen.
+  useEffect(() => {
+    if (!forms || selectedId) return
+    const wanted = new URLSearchParams(window.location.search).get('form')
+    if (wanted && forms.some(f => f.formId === wanted)) chooseForm(wanted)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [forms])
+
   const selected = forms?.find(f => f.formId === selectedId) ?? null
   // A standard document is the same for everyone, so there is nothing to upload.
   const standard = !!selected?.standardDocument

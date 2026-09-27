@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { useOrg } from '@/lib/org-context'
 import { hasLive, mergeFirstPage } from '@/lib/sign-list'
+import type { FormSummary } from '@/lib/sign-form-match'
 
 interface SessionSigner {
   signerId: string
@@ -217,6 +218,61 @@ function SessionRow({ session, onChanged, onDeleted }: {
   )
 }
 
+// The forms this organisation can send, each with a Send button that opens the
+// send page with that form already chosen. Same list as the send page's picker.
+function AvailableForms() {
+  const [forms, setForms] = useState<FormSummary[] | null>(null)
+  const [error, setError] = useState(false)
+
+  useEffect(() => {
+    fetch('/api/sign/forms')
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error('load failed'))))
+      .then(d => setForms(d.forms as FormSummary[]))
+      .catch(() => setError(true))
+  }, [])
+
+  return (
+    <section className="mb-10" aria-labelledby="available-forms">
+      <h2 id="available-forms" className="text-[13px] font-semibold text-black mb-3">Available forms</h2>
+      {error && (
+        <p role="alert" className="text-[12px] text-red-500">Your forms could not be loaded. Please reload the page.</p>
+      )}
+      {!error && forms === null && (
+        <div className="h-[64px] rounded-2xl border border-black/[0.06] animate-pulse bg-gray-50"/>
+      )}
+      {forms && forms.length === 0 && (
+        <div className="rounded-2xl border border-dashed border-black/[0.15] px-5 py-6 text-center">
+          <p className="text-[14px] font-semibold text-black mb-1">No forms are set up yet</p>
+          <p className="text-[13px] text-gray-400">
+            Forms are set up for you by TheoFlow. Contact us with the form you want to send and we will get it ready.
+          </p>
+        </div>
+      )}
+      {forms && forms.length > 0 && (
+        <div className="space-y-2">
+          {forms.map(f => (
+            <div key={f.formId} className="rounded-2xl border border-black/[0.08] px-5 py-3.5 flex items-center gap-4">
+              <div className="flex-1 min-w-0">
+                <p className="text-[14px] font-semibold text-black">{f.name}</p>
+                <p className="text-[12px] text-gray-400 mt-0.5">
+                  {f.pageCount} page{f.pageCount !== 1 ? 's' : ''} &middot; signed by {f.roles.join(', ')}
+                  {f.standardDocument && <> &middot; no upload needed</>}
+                </p>
+              </div>
+              <Link href={`/sign/send?form=${encodeURIComponent(f.formId)}`}
+                    aria-label={`Send ${f.name}`}
+                    className="text-[12px] font-semibold px-4 py-2 rounded-full bg-black text-white
+                               hover:bg-gray-800 transition-colors whitespace-nowrap">
+                Send
+              </Link>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
 // Sessions load a page at a time. The list only refreshes itself while
 // something on it is still in progress (a signer can sign at any moment), every
 // 15 seconds, and not at all while the tab is in the background.
@@ -305,6 +361,9 @@ export default function SignSessionsPage() {
         </div>
       </div>
 
+      <AvailableForms/>
+
+      <h2 className="text-[13px] font-semibold text-black mb-3">Sent for signing</h2>
       {sessions.length === 0 ? (
         <div className="rounded-2xl border border-black/[0.06] py-20 text-center">
           <p className="text-[15px] font-semibold text-black mb-1">No signing sessions yet</p>
