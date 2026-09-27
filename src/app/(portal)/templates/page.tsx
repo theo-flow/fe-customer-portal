@@ -33,6 +33,7 @@ interface GroupState {
   serverFieldCount?:  number | null
   serverVersion?:     number | null
   serverReviewCount?: number | null
+  publishedVersion?:  number | null
 }
 
 function validate(f: File): string {
@@ -44,15 +45,18 @@ function validate(f: File): string {
 
 // ── Single group upload card ──────────────────────────────────────────────────
 
-function GroupCard({ fg, state, onFileSelect, onUpload, onRetry }: {
+function GroupCard({ fg, state, onFileSelect, onUpload, onRetry, onPublished }: {
   fg:           { group: string; groupLabel: string }
   state:        GroupState
   onFileSelect: (group: string, file: File) => void
   onUpload:     (group: string) => void
   onRetry:      (group: string) => void
+  onPublished:  (group: string, version: number) => void
 }) {
   const inputRef  = useRef<HTMLInputElement>(null)
   const [drag, setDrag] = useState(false)
+  const [publishing, setPublishing]     = useState(false)
+  const [publishError, setPublishError] = useState<string | null>(null)
 
   const pick = (f: File) => {
     const err = validate(f)
@@ -65,12 +69,38 @@ function GroupCard({ fg, state, onFileSelect, onUpload, onRetry }: {
   const failed      = phase === 'done' && serverStatus === 'ERROR'
   const needsReview = phase === 'done' && serverStatus === 'NEEDS_REVIEW'
   const analysing   = phase === 'done' && (!serverStatus || serverStatus === 'ANALYZING')
+  // The analysed version is the one on show here; it is live only once it is
+  // the published version. Publishing puts it on the Forms page.
+  const isPublished = analysed && serverVersion != null && state.publishedVersion === serverVersion
+
+  async function handlePublish() {
+    if (serverVersion == null) return
+    setPublishing(true)
+    setPublishError(null)
+    try {
+      const res = await fetch(`/api/forms/${fg.group}/publish`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ version: serverVersion }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        setPublishError(body.error ?? 'Failed to publish.')
+        return
+      }
+      onPublished(fg.group, serverVersion)
+    } catch {
+      setPublishError('Something went wrong. Please try again.')
+    } finally {
+      setPublishing(false)
+    }
+  }
 
   return (
     <div className="rounded-2xl border border-black/[0.08] p-5">
 
       {/* Header row */}
-      <div className="flex items-center gap-3 mb-4">
+      <div className="flex flex-wrap items-center gap-3 mb-4">
         <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0
                          ${analysed ? 'bg-green-50' : failed ? 'bg-red-50' : needsReview ? 'bg-amber-50' : 'bg-gray-50'}`}>
           {analysed ? (
@@ -127,18 +157,48 @@ function GroupCard({ fg, state, onFileSelect, onUpload, onRetry }: {
           </span>
         )}
         {analysed && (
-          <>
-            <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full
-                             bg-green-50 text-green-700">
-              Ready
-            </span>
+          // Own row under the title on a phone, beside it on a wider screen.
+          <div className="flex flex-wrap items-center gap-3 basis-full pl-12 sm:basis-auto sm:pl-0">
+            {isPublished ? (
+              <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full
+                               bg-green-50 text-green-700">
+                Published
+              </span>
+            ) : (
+              <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full
+                               bg-gray-100 text-gray-500">
+                Not published
+              </span>
+            )}
+            <Link
+              href={`/forms/${fg.group}/preview`}
+              className="text-[11px] font-medium text-black hover:text-gray-500 transition-colors whitespace-nowrap"
+            >
+              Preview →
+            </Link>
+            {!isPublished && (
+              <button
+                onClick={handlePublish}
+                disabled={publishing}
+                className="text-[11px] font-semibold px-3 py-1.5 rounded-full
+                           bg-black text-white hover:bg-gray-800 transition-colors disabled:opacity-50 whitespace-nowrap"
+              >
+                {publishing ? 'Publishing…' : 'Publish'}
+              </button>
+            )}
+            <Link
+              href={`/forms/${fg.group}/history`}
+              className="text-[11px] font-medium text-gray-400 hover:text-black transition-colors whitespace-nowrap"
+            >
+              History
+            </Link>
             <button
               onClick={() => onRetry(fg.group)}
               className="text-[11px] font-medium text-gray-400 hover:text-black transition-colors"
             >
               Replace
             </button>
-          </>
+          </div>
         )}
         {failed && (
           <button
@@ -165,6 +225,10 @@ function GroupCard({ fg, state, onFileSelect, onUpload, onRetry }: {
           </>
         )}
       </div>
+
+      {publishError && (
+        <p className="text-[12px] text-red-500 font-medium -mt-2 mb-2">{publishError}</p>
+      )}
 
       {/* Drop zone — idle or error */}
       {(phase === 'idle' || phase === 'error') && (
@@ -410,6 +474,7 @@ export default function TemplatesPage() {
           serverFieldCount:  latest.fieldCount,
           serverVersion:     latest.version,
           serverReviewCount: latest.reviewNoteCount,
+          publishedVersion:  res.value.publishedVersion ?? null,
         })
       })
       setInitialStatusLoading(false)
@@ -438,7 +503,7 @@ export default function TemplatesPage() {
         try {
           const res = await fetch(`/api/forms/${group}/versions`)
           if (!res.ok || cancelled) continue
-          const data = await res.json() as { versions: FormVersion[] }
+          const data = await res.json() as { versions: FormVersion[]; publishedVersion: number | null }
           const latest = data.versions[0]
           if (!latest || cancelled) continue
           setState(group, {
@@ -448,6 +513,7 @@ export default function TemplatesPage() {
             serverFieldCount:  latest.fieldCount,
             serverVersion:     latest.version,
             serverReviewCount: latest.reviewNoteCount,
+            publishedVersion:  data.publishedVersion ?? null,
           })
         } catch {
           // transient — next 5s tick retries
@@ -531,6 +597,10 @@ export default function TemplatesPage() {
     }
   }
 
+  function handlePublished(group: string, version: number) {
+    setState(group, { publishedVersion: version })
+  }
+
   function handleRetry(group: string) {
     setState(group, { phase: 'idle', file: undefined, progress: 0, error: '' })
   }
@@ -573,7 +643,7 @@ export default function TemplatesPage() {
         </p>
         <h1 className="font-display text-[2.1rem] leading-tight text-black">Blank templates</h1>
         <p className="text-[13px] text-gray-400 mt-1">
-          Upload a blank PDF for each form group. Once analysed, a shareable digital form appears on your Forms page.
+          Upload a blank PDF for each form group. Once it is analysed, preview it and publish it. Published forms appear on your Forms page.
         </p>
       </div>
 
@@ -632,6 +702,7 @@ export default function TemplatesPage() {
               onFileSelect={handleFileSelect}
               onUpload={handleUpload}
               onRetry={handleRetry}
+              onPublished={handlePublished}
             />
           ))}
         </div>

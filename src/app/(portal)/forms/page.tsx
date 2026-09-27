@@ -17,58 +17,13 @@ interface FormSchema {
   needsReviewCount:  number | null
 }
 
-// ── Status pill ───────────────────────────────────────────────────────────────
+// ── Published form row ────────────────────────────────────────────────────────
+// Only published forms are listed here. Uploading, previewing, reviewing and
+// publishing a form all happen on the Templates page.
 
-function SchemaStatus({ status }: { status: string }) {
-  if (status === 'READY') return (
-    <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1
-                     rounded-full bg-green-50 text-green-700">
-      <span className="w-1.5 h-1.5 rounded-full bg-green-500"/>Published
-    </span>
-  )
-  if (status === 'ANALYZING') return (
-    <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1
-                     rounded-full bg-amber-50 text-amber-700">
-      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"/>Analysing
-    </span>
-  )
-  if (status === 'NEEDS_REVIEW') return (
-    <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1
-                     rounded-full bg-amber-50 text-amber-700">
-      <span className="w-1.5 h-1.5 rounded-full bg-amber-500"/>Needs review
-    </span>
-  )
-  if (status === 'DRAFT') return (
-    <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1
-                     rounded-full bg-gray-100 text-gray-500">
-      <span className="w-1.5 h-1.5 rounded-full bg-gray-400"/>Not published
-    </span>
-  )
-  return (
-    <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1
-                     rounded-full bg-red-50 text-red-600">
-      <span className="w-1.5 h-1.5 rounded-full bg-red-500"/>Error
-    </span>
-  )
-}
-
-// ── Form group row ────────────────────────────────────────────────────────────
-
-function GroupRow({ group, groupLabel, schema, orgId, onPublished }: {
-  group:       string
-  groupLabel:  string
-  schema?:     FormSchema
-  orgId:       string
-  onPublished: () => void
-}) {
-  const [copied, setCopied]         = useState(false)
-  const [publishing, setPublishing] = useState(false)
-  const [publishError, setPublishError] = useState<string | null>(null)
-  const isReady = schema?.status === 'READY'
-  // Forged and passed review, just sitting unpublished -- the only DRAFT
-  // case that has anything to actually publish (as opposed to no template
-  // uploaded at all, which is the !schema branch below).
-  const canPublish = schema?.status === 'DRAFT' && schema.latestVersion > 0
+function PublishedRow({ schema, orgId }: { schema: FormSchema; orgId: string }) {
+  const [copied, setCopied] = useState(false)
+  const { group, groupLabel, fieldCount } = schema
 
   function copyLink() {
     const url = `${window.location.origin}/fill/${orgId}/${group}`
@@ -78,38 +33,13 @@ function GroupRow({ group, groupLabel, schema, orgId, onPublished }: {
     })
   }
 
-  async function handlePublish() {
-    if (!schema) return
-    setPublishing(true)
-    setPublishError(null)
-    try {
-      const res = await fetch(`/api/forms/${group}/publish`, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ version: schema.latestVersion }),
-      })
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}))
-        setPublishError(body.error ?? 'Failed to publish.')
-        return
-      }
-      onPublished()
-    } catch {
-      setPublishError('Something went wrong — please try again.')
-    } finally {
-      setPublishing(false)
-    }
-  }
-
   return (
-    <div className={`rounded-2xl border px-5 py-4 flex items-center gap-4 transition-all
-                     ${isReady ? 'border-black/[0.1] hover:border-black/[0.18]'
-                               : 'border-black/[0.06]'}`}>
+    <div className="rounded-2xl border border-black/[0.1] hover:border-black/[0.18] px-5 py-4
+                    flex items-center gap-4 transition-all">
 
       {/* Icon */}
-      <div className={`w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center
-                       ${isReady ? 'bg-indigo-50' : 'bg-gray-100'}`}>
-        <svg className={`w-5 h-5 ${isReady ? 'text-indigo-500' : 'text-gray-300'}`}
+      <div className="w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center bg-indigo-50">
+        <svg className="w-5 h-5 text-indigo-500"
              fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
           <path strokeLinecap="round" strokeLinejoin="round"
                 d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0
@@ -121,88 +51,28 @@ function GroupRow({ group, groupLabel, schema, orgId, onPublished }: {
       <div className="flex-1 min-w-0">
         <p className="text-[14px] font-semibold text-black">{groupLabel}</p>
         <p className="text-[12px] text-gray-400 mt-0.5">
-          {!schema
-            ? 'No template uploaded yet'
-            : isReady
-              ? `${schema.fieldCount} field${schema.fieldCount !== 1 ? 's' : ''}`
-              : schema.status === 'ERROR'
-                ? <span className="text-red-600">{schema.errorMessage || 'Something went wrong while analysing this template.'}</span>
-                : schema.status === 'NEEDS_REVIEW'
-                  ? <span className="text-amber-700">{schema.needsReviewCount} field{schema.needsReviewCount !== 1 ? 's' : ''} need review</span>
-                  : schema.status === 'ANALYZING'
-                    ? 'Analysing…'
-                    : `v${schema.latestVersion} forged — not yet published`}
-          {isReady && (
-            <button onClick={copyLink}
-                    className="ml-3 text-indigo-500 hover:text-indigo-700 font-medium transition-colors">
-              {copied ? '✓ Link copied' : 'Copy share link'}
-            </button>
-          )}
+          {fieldCount} field{fieldCount !== 1 ? 's' : ''}
+          <button onClick={copyLink}
+                  className="ml-3 text-indigo-500 hover:text-indigo-700 font-medium transition-colors">
+            {copied ? '✓ Link copied' : 'Copy share link'}
+          </button>
         </p>
-        {publishError && <p className="text-[12px] text-red-500 mt-1">{publishError}</p>}
       </div>
 
       {/* Right side */}
       <div className="flex items-center gap-3 flex-shrink-0">
-        {schema ? (
-          <>
-            <SchemaStatus status={schema.status}/>
-            {schema.status === 'ERROR' && (
-              <Link href="/templates"
-                    className="text-[12px] font-semibold px-4 py-2 rounded-full bg-black text-white
-                               hover:bg-gray-800 transition-colors whitespace-nowrap">
-                Upload new file →
-              </Link>
-            )}
-            {schema.status === 'NEEDS_REVIEW' && (
-              <Link href={`/forms/${group}/review/${schema.latestVersion}`}
-                    className="text-[12px] font-semibold px-4 py-2 rounded-full bg-black text-white
-                               hover:bg-gray-800 transition-colors whitespace-nowrap">
-                Review →
-              </Link>
-            )}
-            {canPublish && (
-              <>
-                {/* Version-less: always the current forged version, so re-forging
-                    while still configuring never leaves this link stale or makes
-                    someone guess which numbered version is the latest one. */}
-                <Link href={`/forms/${group}/preview`}
-                      className="text-[12px] font-medium text-black hover:text-gray-500 transition-colors whitespace-nowrap">
-                  Preview →
-                </Link>
-                <button onClick={handlePublish} disabled={publishing}
-                        className="text-[12px] font-semibold px-4 py-2 rounded-full bg-black text-white
-                                   hover:bg-gray-800 transition-colors disabled:opacity-50 whitespace-nowrap">
-                  {publishing ? 'Publishing…' : 'Publish'}
-                </button>
-              </>
-            )}
-            {schema.latestVersion > 0 && (
-              <Link href={`/forms/${group}/history`}
-                    className="text-[12px] font-medium text-gray-400 hover:text-black transition-colors whitespace-nowrap">
-                History →
-              </Link>
-            )}
-            {isReady && (
-              <Link href={`/forms/${group}/recipients`}
-                    className="text-[12px] font-medium text-gray-400 hover:text-black transition-colors whitespace-nowrap">
-                Recipients →
-              </Link>
-            )}
-            {isReady && (
-              <Link href={`/fill/${orgId}/${group}`} target="_blank"
-                    className="text-[12px] font-medium text-black hover:text-gray-500 transition-colors whitespace-nowrap">
-                Preview →
-              </Link>
-            )}
-          </>
-        ) : (
-          <Link href="/templates"
-                className="text-[12px] font-semibold px-4 py-2 rounded-full bg-black
-                           text-white hover:bg-gray-800 transition-colors whitespace-nowrap">
-            Upload template
-          </Link>
-        )}
+        <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1
+                         rounded-full bg-green-50 text-green-700">
+          <span className="w-1.5 h-1.5 rounded-full bg-green-500"/>Published
+        </span>
+        <Link href={`/forms/${group}/recipients`}
+              className="text-[12px] font-medium text-gray-400 hover:text-black transition-colors whitespace-nowrap">
+          Recipients →
+        </Link>
+        <Link href={`/fill/${orgId}/${group}`} target="_blank"
+              className="text-[12px] font-medium text-black hover:text-gray-500 transition-colors whitespace-nowrap">
+          Open form →
+        </Link>
       </div>
     </div>
   )
@@ -225,15 +95,14 @@ export default function FormsPage() {
 
   useEffect(() => { loadSchemas() }, [])
 
-  const schemaMap = Object.fromEntries(schemas.map(s => [s.group, s]))
   // /api/forms returns every SCHEMA# pointer for the org, which can include
   // orphaned groups left over from earlier form-group configurations that
-  // are no longer in the org's current formGroups list -- only count READY
-  // schemas that still belong to a current group, or this diverges from the
-  // "X of Y" denominator (Y = formGroups.length) and produces a nonsensical
-  // count like "5 of 3".
-  const currentGroupKeys = new Set(formGroups.map(fg => fg.group))
-  const readyCount = schemas.filter(s => s.status === 'READY' && currentGroupKeys.has(s.group)).length
+  // are no longer in the org's current formGroups list -- only list published
+  // schemas that still belong to a current group, in the org's group order.
+  const schemaMap = Object.fromEntries(schemas.map(s => [s.group, s]))
+  const published = formGroups
+    .map(fg => schemaMap[fg.group])
+    .filter((s): s is FormSchema => s != null && s.publishedVersion != null)
 
   if (orgLoading || loadingSchemas) {
     return (
@@ -254,47 +123,26 @@ export default function FormsPage() {
         </p>
         <h1 className="font-display text-[2.1rem] leading-tight text-black">Your forms</h1>
         <p className="text-[13px] text-gray-400 mt-1">
-          {readyCount} of {formGroups.length} form group{formGroups.length !== 1 ? 's' : ''} published
+          {published.length} published form{published.length !== 1 ? 's' : ''}
         </p>
       </div>
 
-      {/* How it works banner — shown when no forms ready yet */}
-      {readyCount === 0 && formGroups.length > 0 && (
-        <div className="rounded-2xl border border-indigo-100 bg-indigo-50 px-5 py-4 mb-6
-                        flex items-start gap-3">
-          <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center flex-shrink-0 mt-0.5">
-            <svg className="w-4 h-4 text-indigo-600" fill="none" viewBox="0 0 24 24"
-                 stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-            </svg>
-          </div>
-          <div>
-            <p className="text-[13px] font-semibold text-indigo-900 mb-0.5">How TheoFlow Channel works</p>
-            <p className="text-[12px] text-indigo-700 leading-relaxed">
-              Upload a blank PDF template for each form group using TheoFlow Forge. Once analysed, a
-              shareable link appears here that anyone can use to fill and submit the form — no account required.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Form group list */}
-      {formGroups.length === 0 ? (
+      {published.length === 0 ? (
         <div className="rounded-2xl border border-black/[0.06] py-20 text-center">
-          <p className="text-[15px] font-semibold text-black mb-1">No form groups configured</p>
-          <p className="text-[13px] text-gray-400">Contact your administrator.</p>
+          <p className="text-[15px] font-semibold text-black mb-1">No published forms yet</p>
+          <p className="text-[13px] text-gray-400 mb-6">
+            Upload a blank template, preview it and publish it. It will then appear here with a link to share.
+          </p>
+          <Link href="/templates"
+                className="text-[12px] font-semibold px-4 py-2 rounded-full bg-black text-white
+                           hover:bg-gray-800 transition-colors whitespace-nowrap">
+            Go to templates →
+          </Link>
         </div>
       ) : (
         <div className="space-y-3">
-          {formGroups.map(fg => (
-            <GroupRow
-              key={fg.group}
-              group={fg.group}
-              groupLabel={fg.groupLabel}
-              schema={schemaMap[fg.group]}
-              orgId={orgId}
-              onPublished={loadSchemas}
-            />
+          {published.map(s => (
+            <PublishedRow key={s.group} schema={s} orgId={orgId}/>
           ))}
         </div>
       )}
