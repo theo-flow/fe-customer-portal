@@ -6,6 +6,17 @@ an OpenNext SSR Lambda (`theoflow-portal-production-server`) behind CloudFront, 
 — every deploy is manual: `npm run build:deploy`, zip `.open-next/server-function`,
 `aws lambda update-function-code`, sync `.open-next/assets` to S3, invalidate CloudFront.
 
+## Sign forms (locked)
+
+- **Follow `docs/sign-form-design-method.md` in `daai-insure-platform` exactly.** Every printed
+  blank is a box on its line filled in by the person it belongs to; printed options are choices,
+  circled on the sealed copy; each person only has their own part. Every new or changed form is
+  shown to the owner as a local preview (fn-13 `scripts/preview_sign_form.py`) and approved before
+  anything is merged, deployed or saved. `src/lib/__tests__/sign-form-lock.test.ts` fails if an
+  approved layout or the email wording drifts; `sign-form-preview.ts` `emailLines` must stay in
+  step with fn-13 `_instructions_for` (shared `fixtures/email_contract.json`). Only change the
+  fingerprints with an owner-approved change, in both repos together.
+
 ## Copy / typography rules
 
 - **No em dashes (`—`) or double dashes (`--`) anywhere in user-visible text — use a single

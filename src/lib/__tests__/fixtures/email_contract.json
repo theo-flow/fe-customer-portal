@@ -1,0 +1,814 @@
+{
+  "note": "Same file in fn-13 tests/fixtures/sign_forms/ and fe-customer-portal src/lib/__tests__/fixtures/. fn-13 _instructions_for and the portal emailLines must both give \"expected\". Change only with an owner-approved change to docs/sign-form-design-method.md.",
+  "cases": [
+    {
+      "name": "Consent to Accept Service via Email/SMS/MMS/WhatsApp (Single Customer) - Customer",
+      "roles": [
+        "Customer"
+      ],
+      "role": "Customer",
+      "fields": [
+        {
+          "role": "Customer",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.4939,
+          "y": 0.1602,
+          "instruction": "Full names and surname"
+        },
+        {
+          "role": "Customer",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.4581,
+          "y": 0.1744,
+          "instruction": "Identity number"
+        },
+        {
+          "role": "Customer",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.368,
+          "y": 0.2617,
+          "instruction": "Home loan account number"
+        },
+        {
+          "role": "Customer",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.2437,
+          "y": 0.2762,
+          "instruction": "The property (address) the home loan is over"
+        },
+        {
+          "role": "Customer",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.1248,
+          "y": 0.2906,
+          "instruction": "The property, second line"
+        },
+        {
+          "role": "Customer",
+          "field_type": "choice",
+          "page": 2,
+          "x": 0.3982,
+          "y": 0.2715,
+          "instruction": "Is the property occupied by you?"
+        },
+        {
+          "role": "Customer",
+          "field_type": "choice",
+          "page": 2,
+          "x": 0.4161,
+          "y": 0.2715,
+          "instruction": "Is the property occupied by you?"
+        },
+        {
+          "role": "Customer",
+          "field_type": "choice",
+          "page": 2,
+          "x": 0.7077,
+          "y": 0.2715,
+          "instruction": "Is the property your primary residence?"
+        },
+        {
+          "role": "Customer",
+          "field_type": "choice",
+          "page": 2,
+          "x": 0.7371,
+          "y": 0.2715,
+          "instruction": "Is the property your primary residence?"
+        },
+        {
+          "role": "Customer",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.2236,
+          "y": 0.5436,
+          "instruction": "Email address"
+        },
+        {
+          "role": "Customer",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.2352,
+          "y": 0.5807,
+          "instruction": "Mobile number"
+        },
+        {
+          "role": "Customer",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.121,
+          "y": 0.6677,
+          "instruction": "Where you are employed, line 1"
+        },
+        {
+          "role": "Customer",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.121,
+          "y": 0.6967,
+          "instruction": "Where you are employed, line 2"
+        },
+        {
+          "role": "Customer",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.121,
+          "y": 0.7257,
+          "instruction": "Where you are employed, line 3"
+        },
+        {
+          "role": "Customer",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.121,
+          "y": 0.7548,
+          "instruction": "Where you are employed, line 4"
+        },
+        {
+          "role": "Customer",
+          "field_type": "text",
+          "page": 2,
+          "x": 0.121,
+          "y": 0.1405,
+          "instruction": "Where you live (home address), line 1"
+        },
+        {
+          "role": "Customer",
+          "field_type": "text",
+          "page": 2,
+          "x": 0.121,
+          "y": 0.1695,
+          "instruction": "Where you live (home address), line 2"
+        },
+        {
+          "role": "Customer",
+          "field_type": "text",
+          "page": 2,
+          "x": 0.121,
+          "y": 0.1986,
+          "instruction": "Where you live (home address), line 3"
+        },
+        {
+          "role": "Customer",
+          "field_type": "text",
+          "page": 2,
+          "x": 0.121,
+          "y": 0.2275,
+          "instruction": "Where you live (home address), line 4"
+        },
+        {
+          "role": "Customer",
+          "field_type": "signature",
+          "page": 2,
+          "x": 0.1897,
+          "y": 0.3787,
+          "instruction": "Add your signature at the bottom of the page"
+        },
+        {
+          "role": "Customer",
+          "field_type": "name",
+          "page": 2,
+          "x": 0.1692,
+          "y": 0.447,
+          "instruction": "Your name is added for you"
+        },
+        {
+          "role": "Customer",
+          "field_type": "date",
+          "page": 2,
+          "x": 0.1571,
+          "y": 0.4904,
+          "instruction": "Add the date you signed"
+        }
+      ],
+      "expected": [
+        "Page 1: Fill in your details on the highlighted lines.",
+        "Page 2: Fill in your details on the highlighted lines. Choose the option that applies on the highlighted words. Your name is added for you. Add the date you signed. Add your signature at the bottom of the page."
+      ]
+    },
+    {
+      "name": "Consent to Accept Service via Email/SMS/MMS/WhatsApp (Joint Customers) - Customer 1",
+      "roles": [
+        "Customer 1",
+        "Customer 2"
+      ],
+      "role": "Customer 1",
+      "fields": [
+        {
+          "role": "Customer 1",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.4939,
+          "y": 0.1602,
+          "instruction": "Full names and surname"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.4581,
+          "y": 0.1744,
+          "instruction": "Identity number"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.368,
+          "y": 0.2617,
+          "instruction": "Home loan account number"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.2437,
+          "y": 0.2762,
+          "instruction": "The property (address) the home loan is over"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.1248,
+          "y": 0.2906,
+          "instruction": "The property, second line"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "choice",
+          "page": 2,
+          "x": 0.3982,
+          "y": 0.2715,
+          "instruction": "Is the property occupied by you?"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "choice",
+          "page": 2,
+          "x": 0.4161,
+          "y": 0.2715,
+          "instruction": "Is the property occupied by you?"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "choice",
+          "page": 2,
+          "x": 0.7077,
+          "y": 0.2715,
+          "instruction": "Is the property your primary residence?"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "choice",
+          "page": 2,
+          "x": 0.7371,
+          "y": 0.2715,
+          "instruction": "Is the property your primary residence?"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.2236,
+          "y": 0.5436,
+          "instruction": "Email address"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.2352,
+          "y": 0.5807,
+          "instruction": "Mobile number"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.121,
+          "y": 0.6677,
+          "instruction": "Where you are employed, line 1"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.121,
+          "y": 0.6967,
+          "instruction": "Where you are employed, line 2"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.121,
+          "y": 0.7257,
+          "instruction": "Where you are employed, line 3"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.121,
+          "y": 0.7548,
+          "instruction": "Where you are employed, line 4"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "text",
+          "page": 2,
+          "x": 0.121,
+          "y": 0.1405,
+          "instruction": "Where you live (home address), line 1"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "text",
+          "page": 2,
+          "x": 0.121,
+          "y": 0.1695,
+          "instruction": "Where you live (home address), line 2"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "text",
+          "page": 2,
+          "x": 0.121,
+          "y": 0.1986,
+          "instruction": "Where you live (home address), line 3"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "text",
+          "page": 2,
+          "x": 0.121,
+          "y": 0.2275,
+          "instruction": "Where you live (home address), line 4"
+        },
+        {
+          "role": "Customer 2",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.43,
+          "y": 0.221,
+          "instruction": "Full names and surname"
+        },
+        {
+          "role": "Customer 2",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.43,
+          "y": 0.239,
+          "instruction": "Identity number"
+        },
+        {
+          "role": "Customer 2",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.6469,
+          "y": 0.5516,
+          "instruction": "Email address"
+        },
+        {
+          "role": "Customer 2",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.6545,
+          "y": 0.5807,
+          "instruction": "Mobile number"
+        },
+        {
+          "role": "Customer 2",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.5444,
+          "y": 0.6677,
+          "instruction": "Where you are employed, line 1"
+        },
+        {
+          "role": "Customer 2",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.5444,
+          "y": 0.6967,
+          "instruction": "Where you are employed, line 2"
+        },
+        {
+          "role": "Customer 2",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.5444,
+          "y": 0.7257,
+          "instruction": "Where you are employed, line 3"
+        },
+        {
+          "role": "Customer 2",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.5444,
+          "y": 0.7548,
+          "instruction": "Where you are employed, line 4"
+        },
+        {
+          "role": "Customer 2",
+          "field_type": "text",
+          "page": 2,
+          "x": 0.5444,
+          "y": 0.1405,
+          "instruction": "Where you live (home address), line 1"
+        },
+        {
+          "role": "Customer 2",
+          "field_type": "text",
+          "page": 2,
+          "x": 0.5444,
+          "y": 0.1695,
+          "instruction": "Where you live (home address), line 2"
+        },
+        {
+          "role": "Customer 2",
+          "field_type": "text",
+          "page": 2,
+          "x": 0.5444,
+          "y": 0.1986,
+          "instruction": "Where you live (home address), line 3"
+        },
+        {
+          "role": "Customer 2",
+          "field_type": "text",
+          "page": 2,
+          "x": 0.5444,
+          "y": 0.2275,
+          "instruction": "Where you live (home address), line 4"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "signature",
+          "page": 2,
+          "x": 0.1897,
+          "y": 0.3787,
+          "instruction": "Add your signature at the bottom of the page"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "name",
+          "page": 2,
+          "x": 0.1692,
+          "y": 0.447,
+          "instruction": "Your name is added for you"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "date",
+          "page": 2,
+          "x": 0.1571,
+          "y": 0.4904,
+          "instruction": "Add the date you signed"
+        },
+        {
+          "role": "Customer 2",
+          "field_type": "signature",
+          "page": 2,
+          "x": 0.6132,
+          "y": 0.3787,
+          "instruction": "Add your signature at the bottom of the page"
+        },
+        {
+          "role": "Customer 2",
+          "field_type": "name",
+          "page": 2,
+          "x": 0.5926,
+          "y": 0.447,
+          "instruction": "Your name is added for you"
+        },
+        {
+          "role": "Customer 2",
+          "field_type": "date",
+          "page": 2,
+          "x": 0.5804,
+          "y": 0.4904,
+          "instruction": "Add the date you signed"
+        }
+      ],
+      "expected": [
+        "Page 1: Fill in your details on the highlighted lines.",
+        "Page 2: Fill in your details on the highlighted lines. Choose the option that applies on the highlighted words. Your name is added for you. Add the date you signed. Add your signature at the bottom of the page."
+      ]
+    },
+    {
+      "name": "Consent to Accept Service via Email/SMS/MMS/WhatsApp (Joint Customers) - Customer 2",
+      "roles": [
+        "Customer 1",
+        "Customer 2"
+      ],
+      "role": "Customer 2",
+      "fields": [
+        {
+          "role": "Customer 1",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.4939,
+          "y": 0.1602,
+          "instruction": "Full names and surname"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.4581,
+          "y": 0.1744,
+          "instruction": "Identity number"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.368,
+          "y": 0.2617,
+          "instruction": "Home loan account number"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.2437,
+          "y": 0.2762,
+          "instruction": "The property (address) the home loan is over"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.1248,
+          "y": 0.2906,
+          "instruction": "The property, second line"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "choice",
+          "page": 2,
+          "x": 0.3982,
+          "y": 0.2715,
+          "instruction": "Is the property occupied by you?"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "choice",
+          "page": 2,
+          "x": 0.4161,
+          "y": 0.2715,
+          "instruction": "Is the property occupied by you?"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "choice",
+          "page": 2,
+          "x": 0.7077,
+          "y": 0.2715,
+          "instruction": "Is the property your primary residence?"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "choice",
+          "page": 2,
+          "x": 0.7371,
+          "y": 0.2715,
+          "instruction": "Is the property your primary residence?"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.2236,
+          "y": 0.5436,
+          "instruction": "Email address"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.2352,
+          "y": 0.5807,
+          "instruction": "Mobile number"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.121,
+          "y": 0.6677,
+          "instruction": "Where you are employed, line 1"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.121,
+          "y": 0.6967,
+          "instruction": "Where you are employed, line 2"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.121,
+          "y": 0.7257,
+          "instruction": "Where you are employed, line 3"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.121,
+          "y": 0.7548,
+          "instruction": "Where you are employed, line 4"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "text",
+          "page": 2,
+          "x": 0.121,
+          "y": 0.1405,
+          "instruction": "Where you live (home address), line 1"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "text",
+          "page": 2,
+          "x": 0.121,
+          "y": 0.1695,
+          "instruction": "Where you live (home address), line 2"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "text",
+          "page": 2,
+          "x": 0.121,
+          "y": 0.1986,
+          "instruction": "Where you live (home address), line 3"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "text",
+          "page": 2,
+          "x": 0.121,
+          "y": 0.2275,
+          "instruction": "Where you live (home address), line 4"
+        },
+        {
+          "role": "Customer 2",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.43,
+          "y": 0.221,
+          "instruction": "Full names and surname"
+        },
+        {
+          "role": "Customer 2",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.43,
+          "y": 0.239,
+          "instruction": "Identity number"
+        },
+        {
+          "role": "Customer 2",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.6469,
+          "y": 0.5516,
+          "instruction": "Email address"
+        },
+        {
+          "role": "Customer 2",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.6545,
+          "y": 0.5807,
+          "instruction": "Mobile number"
+        },
+        {
+          "role": "Customer 2",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.5444,
+          "y": 0.6677,
+          "instruction": "Where you are employed, line 1"
+        },
+        {
+          "role": "Customer 2",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.5444,
+          "y": 0.6967,
+          "instruction": "Where you are employed, line 2"
+        },
+        {
+          "role": "Customer 2",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.5444,
+          "y": 0.7257,
+          "instruction": "Where you are employed, line 3"
+        },
+        {
+          "role": "Customer 2",
+          "field_type": "text",
+          "page": 1,
+          "x": 0.5444,
+          "y": 0.7548,
+          "instruction": "Where you are employed, line 4"
+        },
+        {
+          "role": "Customer 2",
+          "field_type": "text",
+          "page": 2,
+          "x": 0.5444,
+          "y": 0.1405,
+          "instruction": "Where you live (home address), line 1"
+        },
+        {
+          "role": "Customer 2",
+          "field_type": "text",
+          "page": 2,
+          "x": 0.5444,
+          "y": 0.1695,
+          "instruction": "Where you live (home address), line 2"
+        },
+        {
+          "role": "Customer 2",
+          "field_type": "text",
+          "page": 2,
+          "x": 0.5444,
+          "y": 0.1986,
+          "instruction": "Where you live (home address), line 3"
+        },
+        {
+          "role": "Customer 2",
+          "field_type": "text",
+          "page": 2,
+          "x": 0.5444,
+          "y": 0.2275,
+          "instruction": "Where you live (home address), line 4"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "signature",
+          "page": 2,
+          "x": 0.1897,
+          "y": 0.3787,
+          "instruction": "Add your signature at the bottom of the page"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "name",
+          "page": 2,
+          "x": 0.1692,
+          "y": 0.447,
+          "instruction": "Your name is added for you"
+        },
+        {
+          "role": "Customer 1",
+          "field_type": "date",
+          "page": 2,
+          "x": 0.1571,
+          "y": 0.4904,
+          "instruction": "Add the date you signed"
+        },
+        {
+          "role": "Customer 2",
+          "field_type": "signature",
+          "page": 2,
+          "x": 0.6132,
+          "y": 0.3787,
+          "instruction": "Add your signature at the bottom of the page"
+        },
+        {
+          "role": "Customer 2",
+          "field_type": "name",
+          "page": 2,
+          "x": 0.5926,
+          "y": 0.447,
+          "instruction": "Your name is added for you"
+        },
+        {
+          "role": "Customer 2",
+          "field_type": "date",
+          "page": 2,
+          "x": 0.5804,
+          "y": 0.4904,
+          "instruction": "Add the date you signed"
+        }
+      ],
+      "expected": [
+        "Page 1: Fill in your details on the highlighted lines.",
+        "Page 2: Fill in your details on the highlighted lines. Your name is added for you. Add the date you signed. Add your signature at the bottom of the page."
+      ]
+    }
+  ]
+}
