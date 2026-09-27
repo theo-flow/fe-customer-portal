@@ -1,5 +1,5 @@
 import { DeleteObjectCommand } from '@aws-sdk/client-s3'
-import { PutCommand } from '@aws-sdk/lib-dynamodb'
+import { PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb'
 import { NextRequest, NextResponse } from 'next/server'
 import { ddbDocClient, s3Client, TABLE, SIGN_BUCKET } from '@/lib/aws'
 import { loadOwnedSession, isConditionalCheckFailure } from '@/lib/sign-server'
@@ -19,7 +19,7 @@ export async function DELETE(
 
   const owned = await loadOwnedSession(sessionId, 'sign/sessions/documents')
   if (!owned.ok) return owned.response
-  const { session } = owned
+  const { session, orgId } = owned
 
   if (isPurged(session)) {
     return NextResponse.json({ error: 'The documents for this session were already deleted.' }, { status: 409 })
@@ -55,6 +55,19 @@ export async function DELETE(
     }
     console.error('[sign/sessions/documents] DynamoDB PutCommand failed', { sessionId, error: err })
     return NextResponse.json({ error: 'Could not finish deleting. Please try again.' }, { status: 500 })
+  }
+
+  // Takes the session off the org's list. The documents are already gone, so a
+  // failure here is only logged: the list also skips a deleted session it reads.
+  try {
+    await ddbDocClient().send(new UpdateCommand({
+      TableName: TABLE,
+      Key: { PK: `ORG#${orgId}`, SK: `SESSION#${sessionId}` },
+      UpdateExpression: 'SET documentsDeleted = :t',
+      ExpressionAttributeValues: { ':t': true },
+    }))
+  } catch (err) {
+    console.error('[sign/sessions/documents] Could not mark the org pointer', { orgId, sessionId, error: err })
   }
 
   return NextResponse.json({ ok: true })

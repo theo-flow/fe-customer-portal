@@ -159,16 +159,36 @@ describe('GET /api/sign/sessions', () => {
     expect(sessions[0].signers[1]).toMatchObject({ declineReason: null, declinedAt: null })
   })
 
-  it('says whether a session\'s documents were deleted', async () => {
+  it('leaves out sessions whose documents were deleted, marked or not', async () => {
     const live = { session_id: 'a', status: 'SIGNED', created_at: 'c', updated_at: 'u', metadata: {}, signers: [] }
     const gone = { session_id: 'b', status: 'SIGNED', created_at: 'c', updated_at: 'u', metadata: { documents_deleted_at: '2026-02-01T00:00:00.000Z' }, signers: [] }
+    const reads: string[] = []
     mockDdbSend.mockImplementation(async (cmd: { __type: string; input: { Key?: { PK: string } } }) => {
-      if (cmd.__type === 'Query') return { Items: [{ sessionId: 'a', createdAt: '2026-02-02T00:00:00.000Z' }, { sessionId: 'b', createdAt: '2026-02-01T00:00:00.000Z' }] }
-      if (cmd.__type === 'Get') return { Item: cmd.input.Key!.PK === 'SESSION#a' ? live : gone }
+      if (cmd.__type === 'Query') return { Items: [
+        { sessionId: 'a', createdAt: '2026-02-03T00:00:00.000Z' },
+        { sessionId: 'b', createdAt: '2026-02-02T00:00:00.000Z' },
+        { sessionId: 'c', createdAt: '2026-02-01T00:00:00.000Z', documentsDeleted: true },
+      ] }
+      if (cmd.__type === 'Get') { reads.push(cmd.input.Key!.PK); return { Item: cmd.input.Key!.PK === 'SESSION#a' ? live : gone } }
       return {}
     })
     const { sessions } = await (await GET({} as unknown as NextRequest)).json()
-    expect(sessions.map((x: { documentsDeleted: boolean }) => x.documentsDeleted)).toEqual([false, true])
+    expect(sessions.map((x: { sessionId: string }) => x.sessionId)).toEqual(['a'])
+    expect(reads).not.toContain('SESSION#c')
+  })
+
+  it('names each session by its form, otherwise by the uploaded file', async () => {
+    const byId: Record<string, unknown> = {
+      'SESSION#f': { session_id: 'f', status: 'SIGNED', created_at: 'c', updated_at: 'u', metadata: { form_name: 'New AOA' }, source_document: { s3_key: 'sign/source/f/aoa.pdf' }, signers: [] },
+      'SESSION#u': { session_id: 'u', status: 'SIGNED', created_at: 'c', updated_at: 'u', metadata: {}, source_document: { s3_key: 'sign/source/u/Lease 2026.pdf' }, signers: [] },
+    }
+    mockDdbSend.mockImplementation(async (cmd: { __type: string; input: { Key?: { PK: string } } }) => {
+      if (cmd.__type === 'Query') return { Items: [{ sessionId: 'f', createdAt: '2026-02-02T00:00:00.000Z' }, { sessionId: 'u', createdAt: '2026-02-01T00:00:00.000Z' }] }
+      if (cmd.__type === 'Get') return { Item: byId[cmd.input.Key!.PK] }
+      return {}
+    })
+    const { sessions } = await (await GET({} as unknown as NextRequest)).json()
+    expect(sessions.map((x: { documentName: string }) => x.documentName)).toEqual(['New AOA', 'Lease 2026.pdf'])
   })
 
   describe('paging', () => {
@@ -243,7 +263,7 @@ describe('GET /api/sign/sessions', () => {
       await call()
       const query = mockDdbSend.mock.calls.map(([c]) => c).find(c => c.__type === 'Query')
       expect(query.input.ExpressionAttributeValues[':pk']).toBe(`ORG#${ORG_ID}`)
-      expect(query.input.ProjectionExpression).toBe('sessionId, createdAt')
+      expect(query.input.ProjectionExpression).toBe('sessionId, createdAt, documentsDeleted')
     })
   })
 })
